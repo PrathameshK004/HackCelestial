@@ -12,6 +12,7 @@ interface AuthContextType {
   verifyAndRegister: (data: RegisterUserPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
   resendOtp: (emailId: string, purpose?: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
+  updateProfile: (payload: { username: string; upiId: string }) => Promise<{ success: boolean; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -115,6 +116,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           userId: response.data.userId,
           username: response.data.username,
           emailId: credentials.emailId,
+          upiId: response.data.upiId || '',
         };
 
         saveAuthSession(loggedUser, response.data.accessToken, response.data.refreshToken);
@@ -204,6 +206,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const updateProfile = async (payload: { username: string; upiId: string }) => {
+    if (!user || !token) return { success: false, message: 'Authentication required' };
+    try {
+      const response = await authService.updateProfile(user.userId, payload, token);
+      const updatedUser = { ...user, username: payload.username.trim(), upiId: payload.upiId.trim().toLowerCase() };
+      setUser(updatedUser);
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+      return { success: true, message: response.message };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Could not update profile' };
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -216,6 +231,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         verifyAndRegister,
         resendOtp,
         logout,
+        updateProfile,
       }}
     >
       {children}

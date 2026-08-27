@@ -1,16 +1,14 @@
 import React from 'react';
-import { ArrowRight, Bookmark, RotateCcw } from 'lucide-react';
+import { ArrowRight, RotateCcw } from 'lucide-react';
 
 interface CreateGroupActionBarProps {
   onCancel: () => void;
-  onSaveDraft: () => void;
   onContinue: () => void;
   isSubmitting?: boolean;
 }
 
 export const CreateGroupActionBar: React.FC<CreateGroupActionBarProps> = ({
   onCancel,
-  onSaveDraft,
   onContinue,
   isSubmitting = false
 }) => {
@@ -29,15 +27,6 @@ export const CreateGroupActionBar: React.FC<CreateGroupActionBarProps> = ({
         </div>
 
         <div className="action-bar-right">
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={onSaveDraft}
-          >
-            <Bookmark size={15} />
-            <span>Save Draft</span>
-          </button>
-
           <button
             type="button"
             className="btn btn-primary"

@@ -23,6 +23,7 @@ const initializeDatabase = async () => {
             username VARCHAR(255) NOT NULL,
             email_id VARCHAR(255) NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
+            upi_id VARCHAR(255),
             is_temp BOOLEAN NOT NULL DEFAULT FALSE,
             code_hash TEXT,
             code_expiry TIMESTAMPTZ,
@@ -30,6 +31,7 @@ const initializeDatabase = async () => {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS upi_id VARCHAR(255)`);
 
     // 2. Refresh Tokens Table
     await pool.query(`
@@ -61,6 +63,8 @@ const initializeDatabase = async () => {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await pool.query(`ALTER TABLE groups ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'`);
+    await pool.query(`ALTER TABLE groups ADD COLUMN IF NOT EXISTS settled_at TIMESTAMPTZ`);
 
     // 4. Group Members Table
     await pool.query(`
@@ -72,6 +76,7 @@ const initializeDatabase = async () => {
             email VARCHAR(255) NOT NULL,
             role VARCHAR(50) NOT NULL DEFAULT 'Traveler',
             avatar_bg VARCHAR(50),
+            upi_id VARCHAR(255),
             is_registered BOOLEAN NOT NULL DEFAULT FALSE,
             joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT unique_group_member_email UNIQUE (group_id, email)
@@ -89,6 +94,35 @@ const initializeDatabase = async () => {
             role VARCHAR(50) NOT NULL DEFAULT 'Traveler',
             status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
             expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS expenses (
+            id UUID PRIMARY KEY,
+            group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            description VARCHAR(255) NOT NULL,
+            amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+            paid_by UUID NOT NULL REFERENCES group_members(id) ON DELETE RESTRICT,
+            shares JSONB NOT NULL,
+            created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await pool.query(`ALTER TABLE group_members ADD COLUMN IF NOT EXISTS upi_id VARCHAR(255)`);
+    await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) NOT NULL DEFAULT 'CASH'`);
+    await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(255)`);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS settlement_records (
+            id UUID PRIMARY KEY,
+            group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            paid_by UUID NOT NULL REFERENCES group_members(id) ON DELETE RESTRICT,
+            paid_to UUID NOT NULL REFERENCES group_members(id) ON DELETE RESTRICT,
+            amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+            payment_method VARCHAR(20) NOT NULL,
+            remarks VARCHAR(255) NOT NULL,
+            created_by UUID REFERENCES users(id) ON DELETE SET NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);

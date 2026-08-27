@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Compass, HelpCircle, ShieldCheck, LogOut } from 'lucide-react';
+import { Compass, HelpCircle, ShieldCheck, LogOut, Pencil, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface CreateGroupHeaderProps {
@@ -7,8 +7,12 @@ interface CreateGroupHeaderProps {
 }
 
 export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClick }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileName, setProfileName] = useState(user?.username || '');
+  const [profileUpi, setProfileUpi] = useState(user?.upiId || '');
+  const [profileError, setProfileError] = useState('');
 
   // Generate initials from username or fallback
   const getInitials = (name?: string) => {
@@ -72,6 +76,7 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
                   {user?.emailId && <div className="dropdown-user-email">{user.emailId}</div>}
                 </div>
                 <div className="user-dropdown-divider"></div>
+                <button type="button" className="user-dropdown-item" onClick={() => { setProfileName(user?.username || ''); setProfileUpi(user?.upiId || ''); setProfileError(''); setShowDropdown(false); setShowProfile(true); }}><Pencil size={15} /><span>Edit Profile</span></button>
                 <button
                   type="button"
                   className="user-dropdown-item text-rose"
@@ -88,6 +93,7 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
           </div>
         </div>
       </div>
+      {showProfile && <div className="modal-overlay" onClick={() => setShowProfile(false)}><div className="profile-dialog" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true"><button className="modal-close-btn" onClick={() => setShowProfile(false)} aria-label="Close profile editor"><X size={18} /></button><h2>Edit Profile</h2><p className="profile-dialog-copy">Update the name and UPI ID used for group settlements.</p><form onSubmit={async (event) => { event.preventDefault(); if (!profileName.trim() || !/^\w[\w.-]{1,}@[\w.-]+$/.test(profileUpi.trim())) { setProfileError('Enter a valid name and UPI ID, for example name@bank.'); return; } const result = await updateProfile({ username: profileName, upiId: profileUpi }); if (result.success) setShowProfile(false); else setProfileError(result.message || 'Could not update profile'); }}><label className="profile-field">Name<input value={profileName} onChange={(event) => setProfileName(event.target.value)} required /></label><label className="profile-field">UPI ID<input value={profileUpi} onChange={(event) => setProfileUpi(event.target.value)} placeholder="name@bank" required /></label>{profileError && <div className="field-error-msg">{profileError}</div>}<button className="primary-action" type="submit">Save profile</button></form></div></div>}
     </header>
   );
 };

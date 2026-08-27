@@ -35,7 +35,7 @@ async function checkRegisteredUser(req, res) {
         }
 
         const result = await pool.query(
-            `SELECT id, username, email_id, is_temp FROM users 
+            `SELECT id, username, email_id, upi_id, is_temp FROM users 
              WHERE (LOWER(email_id) = $1 OR LOWER(username) = $1) AND is_temp = FALSE 
              LIMIT 1`,
             [query]
@@ -50,6 +50,7 @@ async function checkRegisteredUser(req, res) {
                     id: row.id,
                     username: row.username,
                     email: row.email_id,
+                    upiId: row.upi_id,
                 }
             });
         }
@@ -121,6 +122,7 @@ async function createUser(req, res) {
         const emailId = (req.body.emailId || '').trim().toLowerCase();
         const password = req.body.password;
         const code = (req.body.code || '').toString().trim();
+        const upiId = (req.body.upiId || '').trim().toLowerCase();
 
         const tempUser = await User.findOne({ emailId: emailId });
 
@@ -133,7 +135,8 @@ async function createUser(req, res) {
             return sendSuccess(res, "User already verified", {
                 userId: tempUser._id,
                 username: tempUser.username,
-                emailId: tempUser.emailId
+                emailId: tempUser.emailId,
+                upiId: tempUser.upiId
             }, 200);
         }
 
@@ -154,12 +157,14 @@ async function createUser(req, res) {
         tempUser.isTemp = false;
         if (username) tempUser.username = username;
         if (password) tempUser.password = password;
+        tempUser.upiId = upiId;
         await tempUser.save();
 
         const responseData = {
             userId: tempUser._id,
             username: tempUser.username,
-            emailId: tempUser.emailId
+            emailId: tempUser.emailId,
+            upiId: tempUser.upiId
         };
 
         return sendSuccess(res, "Account verified successfully", responseData, 201);
@@ -180,7 +185,7 @@ async function createUser(req, res) {
 async function createTempUser(req, res) {
     try {
         let tempUser;
-        const { username, emailId, password } = req.body;
+        const { username, emailId, password, upiId } = req.body;
 
         try {
             const existingUser = await User.findOne({ emailId: emailId });
@@ -202,6 +207,7 @@ async function createTempUser(req, res) {
         } else {
             tempUser.username = username;
             tempUser.password = password;
+            tempUser.upiId = upiId;
         }
 
         // Send OTP to the user's email
@@ -243,9 +249,10 @@ async function updateUser(req, res) {
         }
 
         user.username = updatedUserData.username || user.username;
-        user.emailId = updatedUserData.emailId || user.emailId;
+        user.upiId = updatedUserData.upiId || user.upiId;
 
         await user.save();
+        await pool.query('UPDATE group_members SET name = $1, upi_id = $2 WHERE user_id = $3', [user.username, user.upiId, user._id]);
 
         return sendSuccess(res, "User updated successfully", user);
     } catch (err) {
@@ -304,6 +311,8 @@ async function validateLogin(req, res) {
         const responseData = {
             userId: user._id,
             username: user.username,
+            emailId: user.emailId,
+            upiId: user.upiId,
             accessToken: token,
             refreshToken: refreshToken
         };

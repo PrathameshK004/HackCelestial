@@ -1,8 +1,10 @@
-import { 
+import {
   TripFormData, 
   CreatedGroupData, 
   CheckRegisteredUserResponse,
-  ShareLinks 
+  ShareLinks,
+  GroupSummary,
+  SettlementData
 } from '../types/group';
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
@@ -92,6 +94,7 @@ export const groupService = {
           email: t.email.trim().toLowerCase(),
           role: t.role,
           avatarBg: t.avatarBg,
+          upiId: t.upiId,
         })),
       }),
     });
@@ -109,9 +112,31 @@ export const groupService = {
   /**
    * Get all trips for the authenticated user
    */
-  async getMyGroups(): Promise<{ err?: any; message: string; data: any[] }> {
-    return request<{ err?: any; message: string; data: any[] }>('/groups/my-groups', {
+  async getMyGroups(): Promise<{ err?: any; message: string; data: GroupSummary[] }> {
+    return request<{ err?: any; message: string; data: GroupSummary[] }>('/groups/my-groups', {
       method: 'GET',
+    });
+  },
+
+  async getSettlement(groupId: string): Promise<{ data: SettlementData }> {
+    return request<{ data: SettlementData }>(`/groups/${groupId}/settlement`);
+  },
+
+  async addExpense(groupId: string, expense: { description: string; amount: string; participants: string[]; paymentMethod: 'CASH' | 'UPI'; paymentReference?: string }) {
+    return request<{ data: unknown }>(`/groups/${groupId}/expenses`, {
+      method: 'POST',
+      body: JSON.stringify(expense),
+    });
+  },
+
+  async settleGroup(groupId: string) {
+    return request<{ data: unknown }>(`/groups/${groupId}/settle`, { method: 'POST' });
+  },
+
+  async recordSettlement(groupId: string, payment: { paidTo: string; amount: string; remarks: string; paymentMethod: 'CASH' | 'UPI'; paymentReference?: string }) {
+    return request<{ data: unknown }>(`/groups/${groupId}/settlement-payments`, {
+      method: 'POST',
+      body: JSON.stringify(payment),
     });
   },
 

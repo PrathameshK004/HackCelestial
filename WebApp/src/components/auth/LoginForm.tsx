@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface LoginFormProps {
@@ -57,12 +57,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleFillDemo = () => {
-    setEmailId('yogesh@example.com');
-    setPassword('Password@123');
-    setErrorMessage(null);
   };
 
   return (
@@ -207,16 +201,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
 
         {/* Social / Alternative buttons */}
         <div className="auth-social-grid">
-          <button
-            type="button"
-            className="auth-social-btn"
-            onClick={handleFillDemo}
-            title="Auto-fill sample credentials for quick demo"
-          >
-            <Sparkles size={16} className="text-emerald" />
-            <span>Quick Demo Fill</span>
-          </button>
-
           <button
             type="button"
             className="auth-social-btn"

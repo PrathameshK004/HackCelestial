@@ -20,6 +20,9 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   startDateError,
   endDateError
 }) => {
+  const today = new Date();
+  const minimumDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
   return (
     <div className="form-group">
       <div className="dates-grid">
@@ -36,6 +39,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               type="date"
               className={`text-input ${startDateError ? 'has-error' : ''}`}
               value={startDate}
+              min={minimumDate}
               onChange={(e) => onStartDateChange(e.target.value)}
             />
           </div>
@@ -55,7 +59,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               type="date"
               className={`text-input ${endDateError ? 'has-error' : ''}`}
               value={endDate}
-              min={startDate}
+              min={startDate > minimumDate ? startDate : minimumDate}
               onChange={(e) => onEndDateChange(e.target.value)}
             />
           </div>

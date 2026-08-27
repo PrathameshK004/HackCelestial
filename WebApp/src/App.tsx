@@ -1,10 +1,11 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { CreateGroupPage, AuthPage } from './pages';
+import { CreateGroupPage, AuthPage, HomePage } from './pages';
 import { Compass, Loader2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
+  const [showCreateGroup, setShowCreateGroup] = React.useState(false);
 
   if (isLoading) {
     return (
@@ -23,7 +24,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  return isAuthenticated ? <CreateGroupPage /> : <AuthPage />;
+  return isAuthenticated ? (showCreateGroup ? <CreateGroupPage onBack={() => setShowCreateGroup(false)} /> : <HomePage onCreateGroup={() => setShowCreateGroup(true)} />) : <AuthPage />;
 };
 
 export const App: React.FC = () => {

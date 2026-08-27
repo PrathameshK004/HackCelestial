@@ -12,6 +12,7 @@ export interface Traveler {
   avatarBg?: string;
   isRegistered?: boolean;
   userId?: string | null;
+  upiId?: string;
 }
 
 export interface TripFormData {
@@ -58,6 +59,33 @@ export interface CreatedGroupData {
   createdAt: string;
 }
 
+export interface GroupSummary {
+  id: string;
+  name: string;
+  destination: string;
+  startDate: string | null;
+  endDate: string | null;
+  currency: Currency;
+  status?: 'ACTIVE' | 'SETTLED';
+  memberCount: string | number;
+  createdAt: string;
+}
+
+export interface SettlementTransfer {
+  from: string;
+  to: string;
+  fromName: string;
+  toName: string;
+  amount: string;
+}
+
+export interface SettlementData {
+  members: Traveler[];
+  expenses: Array<{ id: string; description: string; amount: string; paidBy: string; paidByName?: string; createdBy?: string; createdByName?: string; shares: Array<{ memberId: string; amountCents: number }>; paymentMethod?: 'CASH' | 'UPI'; paymentReference?: string; createdAt: string }>;
+  transfers: SettlementTransfer[];
+  settlementHistory?: Array<{ id: string; amount: string; paymentMethod: 'CASH' | 'UPI'; remarks: string; createdAt: string; paidByName: string; paidToName: string }>;
+}
+
 export interface CheckRegisteredUserResponse {
   err?: any;
   message?: string;
@@ -68,6 +96,7 @@ export interface CheckRegisteredUserResponse {
       id: string;
       username: string;
       email: string;
+      upiId?: string | null;
     } | null;
   };
   statusCode: number;

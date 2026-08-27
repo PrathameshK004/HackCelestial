@@ -36,13 +36,9 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
 
   if (!isOpen) return null;
 
-  const inviteUrl = createdGroup?.inviteUrl || `http://localhost:3000/join/${createdGroup?.inviteCode || 'TRIP-DEMO'}`;
-  const shareLinks = createdGroup?.shareLinks || {
-    whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(`Join our trip "${tripData.groupName}" to ${tripData.destination} on Triptual: ${inviteUrl}`)}`,
-    telegram: `https://t.me/share/url?url=${encodeURIComponent(inviteUrl)}&text=${encodeURIComponent(`Join our trip to ${tripData.destination}!`)}`,
-    sms: `sms:?body=${encodeURIComponent(`Join our trip "${tripData.groupName}" to ${tripData.destination}: ${inviteUrl}`)}`,
-    copyLink: inviteUrl
-  };
+  if (!createdGroup?.inviteUrl || !createdGroup.shareLinks) return null;
+  const inviteUrl = createdGroup.inviteUrl;
+  const shareLinks = createdGroup.shareLinks;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(inviteUrl);
@@ -87,14 +83,14 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Compass size={18} className="text-emerald-600" />
               <strong style={{ fontSize: '1.05rem', color: 'var(--slate-900)' }}>
-                {tripData.groupName || createdGroup?.name}
+                {createdGroup.name}
               </strong>
             </div>
             <span className="trip-type-pill">{tripData.tripType || createdGroup?.tripType}</span>
           </div>
 
           <p style={{ fontSize: '0.85rem', color: 'var(--slate-600)', margin: '6px 0 0 0' }}>
-            📍 <strong>{tripData.destination || createdGroup?.destination}</strong> •{' '}
+            📍 <strong>{createdGroup.destination}</strong> •{' '}
             {startDateFormatted && endDateFormatted ? `${startDateFormatted} - ${endDateFormatted}` : `${durationDays} Days`} •{' '}
             {tripData.currency} ({tripData.expenseSplit} split)
           </p>
@@ -109,7 +105,7 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
                 Invite Travelers via Multi-App Links
               </h4>
             </div>
-            <span className="invite-code-pill">Code: {createdGroup?.inviteCode || 'TRIP-READY'}</span>
+            <span className="invite-code-pill">Code: {createdGroup.inviteCode}</span>
           </div>
 
           {/* Copyable Link Input */}

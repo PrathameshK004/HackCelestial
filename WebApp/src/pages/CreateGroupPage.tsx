@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plane, Compass, Sparkles } from 'lucide-react';
+import { ArrowLeft, Plane, Compass, Sparkles } from 'lucide-react';
 import { CreateGroupHeader } from '../components/CreateGroupHeader';
 
 import { StepProgress } from '../components/StepProgress';
@@ -20,7 +20,7 @@ import { TripFormData, Traveler, TripType, Currency, ExpenseSplit, CreatedGroupD
 import { groupService } from '../services/group.service';
 import { useAuth } from '../context/AuthContext';
 
-export const CreateGroupPage: React.FC = () => {
+export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
   const [formData, setFormData] = useState<TripFormData>(INITIAL_MOCK_TRIP);
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -195,11 +195,6 @@ export const CreateGroupPage: React.FC = () => {
     addToast('Form reset to default sample values', 'info');
   };
 
-  const handleSaveDraft = () => {
-    localStorage.setItem('triptual_trip_draft', JSON.stringify(formData));
-    addToast('Trip draft saved securely in browser!', 'success');
-  };
-
   const handleContinueToReview = () => {
     const newErrors: Record<string, string> = {};
 
@@ -214,13 +209,17 @@ export const CreateGroupPage: React.FC = () => {
     }
     if (!formData.endDate) {
       newErrors.endDate = 'End date is required';
+    } else if (formData.endDate < new Date().toISOString().slice(0, 10)) {
+      newErrors.endDate = 'End date must be today or later';
     } else if (formData.startDate && new Date(formData.endDate) < new Date(formData.startDate)) {
       newErrors.endDate = 'End date cannot be earlier than start date';
     }
-    if (formData.travelers.length === 0) {
-      newErrors.travelers = 'At least one traveler is required';
+    if (formData.startDate && formData.startDate < new Date().toISOString().slice(0, 10)) {
+      newErrors.startDate = 'Start date must be today or later';
     }
-
+    if (formData.travelers.length < 2) {
+      newErrors.travelers = 'At least two members are required';
+    }
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       addToast('Please complete all required fields', 'error');
@@ -261,6 +260,7 @@ export const CreateGroupPage: React.FC = () => {
       <CreateGroupHeader onHelpClick={() => addToast('GroupTrip Ledger: Create trip, invite companions, track splits & settle debts.', 'info')} />
 
       <main className="main-content">
+        <button type="button" className="create-back-button" onClick={onBack || (() => window.history.back())}><ArrowLeft size={17} /> Back to dashboard</button>
         {/* Page Heading */}
         <section className="page-header-section">
           <div className="page-badge">
@@ -399,7 +399,6 @@ export const CreateGroupPage: React.FC = () => {
       {currentStep === 1 && (
         <CreateGroupActionBar
           onCancel={handleReset}
-          onSaveDraft={handleSaveDraft}
           onContinue={handleContinueToReview}
         />
       )}

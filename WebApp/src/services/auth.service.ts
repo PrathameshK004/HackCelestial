@@ -97,6 +97,7 @@ export const authService = {
         username: payload.username.trim(),
         emailId: payload.emailId.trim().toLowerCase(),
         password: payload.password,
+        upiId: payload.upiId.trim().toLowerCase(),
       }),
     });
   },
@@ -112,6 +113,7 @@ export const authService = {
         emailId: payload.emailId.trim().toLowerCase(),
         password: payload.password,
         code: payload.code.trim(),
+        upiId: payload.upiId.trim().toLowerCase(),
       }),
     });
   },
@@ -155,6 +157,14 @@ export const authService = {
     return request<AuthResponse>(`/users/${userId}`, {
       method: 'GET',
       token,
+    });
+  },
+
+  async updateProfile(userId: string, payload: { username: string; upiId: string }, token?: string | null): Promise<AuthResponse> {
+    return request<AuthResponse>(`/users/${userId}`, {
+      method: 'PUT',
+      token,
+      body: JSON.stringify({ username: payload.username.trim(), upiId: payload.upiId.trim().toLowerCase() }),
     });
   },
 };

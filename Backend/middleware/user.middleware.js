@@ -41,11 +41,11 @@ function validateUserId(req, res, next) {
  * Validate new user data (with OTP verification)
  */
 async function validateNewUser(req, res, next) {
-  const { username, emailId, password, code } = req.body;
+  const { username, emailId, password, code, upiId } = req.body;
 
   // Check required fields
-  if (!username || !emailId || !password || !code) {
-    return sendError(res, 'Username, Email, Password and OTP are required fields.', null, 400);
+  if (!username || !emailId || !password || !code || !upiId) {
+    return sendError(res, 'Username, Email, Password, UPI ID and OTP are required fields.', null, 400);
   }
 
   // Validate email format
@@ -61,6 +61,9 @@ async function validateNewUser(req, res, next) {
   // Validate username
   if (!isValidUsername(username)) {
     return sendError(res, 'Username must be at least 3 characters long.', null, 400);
+  }
+  if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(upiId.trim())) {
+    return sendError(res, 'Invalid UPI ID format.', null, 400);
   }
 
   try {
@@ -79,10 +82,10 @@ async function validateNewUser(req, res, next) {
  * Validate temporary user data (initial registration)
  */
 async function validateNewTempUser(req, res, next) {
-  const { username, emailId, password } = req.body;
+  const { username, emailId, password, upiId } = req.body;
 
-  if (!username || !emailId || !password) {
-    return sendError(res, 'Username, Email and Password are required fields.', null, 400);
+  if (!username || !emailId || !password || !upiId) {
+    return sendError(res, 'Username, Email, Password and UPI ID are required fields.', null, 400);
   }
 
   if (!isValidEmail(emailId)) {
@@ -96,6 +99,9 @@ async function validateNewTempUser(req, res, next) {
   if (!isValidUsername(username)) {
     return sendError(res, 'Username must be at least 3 characters long.', null, 400);
   }
+  if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(upiId.trim())) {
+    return sendError(res, 'Invalid UPI ID format.', null, 400);
+  }
 
   next();
 }
@@ -104,21 +110,14 @@ async function validateNewTempUser(req, res, next) {
  * Validate user update data
  */
 async function validateUpdateUser(req, res, next) {
-  const { username, emailId } = req.body;
-
-  if (emailId) {
-    if (!isValidEmail(emailId)) {
-      return sendError(res, 'Invalid email format.', null, 400);
-    }
-
-    const existingUser = await User.findOne({ emailId });
-    if (existingUser && existingUser._id !== req.params.userId) {
-      return sendError(res, 'Email already exists.', null, 400);
-    }
-  }
+  const { username, upiId } = req.body;
 
   if (username && !isValidUsername(username)) {
     return sendError(res, 'Username must be at least 3 characters long.', null, 400);
+  }
+
+  if (upiId && !/^\w[\w.-]{1,}@[\w.-]+$/.test(upiId.trim())) {
+    return sendError(res, 'Invalid UPI ID format.', null, 400);
   }
 
   next();

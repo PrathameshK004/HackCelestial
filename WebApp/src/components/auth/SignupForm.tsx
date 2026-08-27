@@ -18,6 +18,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
   const [lastName, setLastName] = useState('');
   const [emailId, setEmailId] = useState('');
   const [password, setPassword] = useState('');
+  const [upiId, setUpiId] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(true);
 
@@ -82,6 +83,10 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
       setErrorMessage('Password must be at least 6 characters long');
       return;
     }
+    if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(upiId.trim())) {
+      setErrorMessage('Please enter a valid UPI ID, for example name@bank');
+      return;
+    }
 
     if (!agreeTerms) {
       setErrorMessage('Please agree to the Terms & Condition');
@@ -95,6 +100,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
         username: fullName,
         emailId: emailId.trim().toLowerCase(),
         password,
+        upiId: upiId.trim().toLowerCase(),
       });
 
       if (res.success) {
@@ -197,6 +203,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
         emailId: emailId.trim().toLowerCase(),
         password,
         code: fullCode,
+        upiId: upiId.trim().toLowerCase(),
       });
 
       if (res.success) {
@@ -360,6 +367,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+          </div>
+
+          <div className="auth-field-group">
+            <label htmlFor="signup-upi" className="auth-field-label">UPI ID</label>
+            <input id="signup-upi" type="text" className="auth-modern-input" placeholder="name@bank" value={upiId} onChange={(e) => { setUpiId(e.target.value); if (errorMessage) setErrorMessage(null); }} autoComplete="off" required disabled={isLoading} />
           </div>
 
           {/* Create Account Dark Pill Button */}

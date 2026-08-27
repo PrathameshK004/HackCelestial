@@ -38,7 +38,7 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
                 {travelers.length} {travelers.length === 1 ? 'Traveler' : 'Travelers'}
               </span>
             </h3>
-            <p className="section-subtitle">Add registered friends or invite new members to join this trip ledger.</p>
+            <p className="section-subtitle">You can create this group with yourself only, or add friends and invite members.</p>
           </div>
 
           <button

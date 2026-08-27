@@ -9,7 +9,11 @@ module.exports = {
     updateGroup,
     deleteGroup,
     addGroupMember,
-    removeGroupMember
+    removeGroupMember,
+    addExpense,
+    getSettlement,
+    settleGroup,
+    recordSettlement
 };
 
 /**
@@ -26,6 +30,9 @@ async function createGroup(req, res) {
     const client = await pool.connect();
     try {
         const userId = req.userKey; // from verifyToken middleware
+        if (!userId) {
+            return sendError(res, 'Authentication required to create a group', null, 401);
+        }
         const {
             groupName,
             destination,
@@ -51,15 +58,25 @@ async function createGroup(req, res) {
         // Fetch organizer details
         let organizerName = 'Organizer';
         let organizerEmail = '';
+        let organizerUpiId = null;
         if (userId) {
-            const userRes = await client.query('SELECT username, email_id FROM users WHERE id = $1', [userId]);
+            const userRes = await client.query('SELECT username, email_id, upi_id FROM users WHERE id = $1', [userId]);
             if (userRes.rows.length > 0) {
                 organizerName = userRes.rows[0].username;
                 organizerEmail = userRes.rows[0].email_id;
+                organizerUpiId = userRes.rows[0].upi_id;
             }
         }
 
         const groupId = crypto.randomUUID();
+        const additionalTravelers = Array.isArray(travelers) ? travelers : [];
+        const additionalMemberCount = additionalTravelers.filter((traveler) => {
+            const email = (traveler?.email || '').trim().toLowerCase();
+            return email && email !== organizerEmail.toLowerCase();
+        }).length;
+        if (additionalMemberCount < 1) {
+            return sendError(res, 'At least two group members are required, including you', null, 400);
+        }
 
         // 1. Insert Group Record
         const groupInsertQuery = `
@@ -88,10 +105,10 @@ async function createGroup(req, res) {
         // 2. Insert Organizer as Group Member
         if (organizerEmail) {
             await client.query(`
-                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, joined_at)
-                VALUES ($1, $2, $3, $4, $5, 'Organizer', '#059669', TRUE, NOW())
+                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, upi_id, is_registered, joined_at)
+                VALUES ($1, $2, $3, $4, $5, 'Organizer', '#059669', $6, TRUE, NOW())
                 ON CONFLICT (group_id, email) DO NOTHING
-            `, [crypto.randomUUID(), groupId, userId, organizerName, organizerEmail.toLowerCase()]);
+            `, [crypto.randomUUID(), groupId, userId, organizerName, organizerEmail.toLowerCase(), organizerUpiId]);
         }
 
         // 3. Process Initial Travelers
@@ -106,11 +123,12 @@ async function createGroup(req, res) {
             });
         }
 
-        for (const traveler of travelers) {
+        for (const traveler of additionalTravelers) {
             const email = (traveler.email || '').trim().toLowerCase();
             const name = (traveler.name || '').trim() || email.split('@')[0];
             const role = traveler.role || 'Traveler';
             const avatarBg = traveler.avatarBg || '#0284c7';
+            const upiId = (traveler.upiId || '').trim().toLowerCase();
 
             if (!email || email === organizerEmail.toLowerCase()) continue;
 
@@ -126,14 +144,15 @@ async function createGroup(req, res) {
 
             const memberId = crypto.randomUUID();
             await client.query(`
-                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, joined_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, upi_id, is_registered, joined_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
                 ON CONFLICT (group_id, email) DO UPDATE SET
                     name = EXCLUDED.name,
                     role = EXCLUDED.role,
-                    avatar_bg = EXCLUDED.avatar_bg,
+                        avatar_bg = EXCLUDED.avatar_bg,
+                        upi_id = EXCLUDED.upi_id,
                     is_registered = EXCLUDED.is_registered
-            `, [memberId, groupId, travelerUserId, displayName, email, role, avatarBg, isRegistered]);
+                    `, [memberId, groupId, travelerUserId, displayName, email, role, avatarBg, upiId, isRegistered]);
 
             membersList.push({
                 id: memberId,
@@ -142,7 +161,8 @@ async function createGroup(req, res) {
                 role,
                 avatarBg,
                 isRegistered,
-                userId: travelerUserId
+                userId: travelerUserId,
+                upiId
             });
         }
 
@@ -209,7 +229,7 @@ async function getGroupById(req, res) {
 
         // Fetch members
         const membersQuery = await pool.query(`
-            SELECT id, user_id as "userId", name, email, role, avatar_bg as "avatarBg", 
+            SELECT id, user_id as "userId", name, email, role, avatar_bg as "avatarBg", upi_id as "upiId", 
                    is_registered as "isRegistered", joined_at as "joinedAt"
             FROM group_members 
             WHERE group_id = $1 
@@ -276,7 +296,7 @@ async function getMyGroups(req, res) {
 
         const groupsQuery = await pool.query(`
             SELECT DISTINCT g.id, g.name, g.destination, g.start_date as "startDate", 
-                   g.end_date as "endDate", g.trip_type as "tripType", g.currency, 
+                   g.end_date as "endDate", g.trip_type as "tripType", g.currency, g.status,
                    g.expense_split as "expenseSplit", g.description, g.created_by as "createdBy", 
                    g.created_at as "createdAt",
                    COUNT(gm.id) as "memberCount"
@@ -370,7 +390,7 @@ async function deleteGroup(req, res) {
 async function addGroupMember(req, res) {
     try {
         const { groupId } = req.params;
-        const { name, email, role = 'Traveler', avatarBg = '#0284c7' } = req.body;
+        const { name, email, role = 'Traveler', avatarBg = '#0284c7', upiId } = req.body;
 
         if (!email || !email.trim()) {
             return sendError(res, "Member email is required", null, 400);
@@ -378,24 +398,29 @@ async function addGroupMember(req, res) {
 
         const cleanEmail = email.trim().toLowerCase();
         const cleanName = (name || '').trim() || cleanEmail.split('@')[0];
+        const cleanUpiId = (upiId || '').trim().toLowerCase();
+        if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(cleanUpiId)) return sendError(res, 'A valid UPI ID is required', null, 400);
 
         // Check if user is on platform
-        const userRes = await pool.query('SELECT id, username FROM users WHERE LOWER(email_id) = $1 AND is_temp = FALSE', [cleanEmail]);
+        const userRes = await pool.query('SELECT id, username, upi_id FROM users WHERE LOWER(email_id) = $1 AND is_temp = FALSE', [cleanEmail]);
         const isRegistered = userRes.rows.length > 0;
         const travelerUserId = isRegistered ? userRes.rows[0].id : null;
         const displayName = isRegistered ? userRes.rows[0].username : cleanName;
+        const memberUpiId = isRegistered ? (userRes.rows[0].upi_id || cleanUpiId) : cleanUpiId;
+        if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(memberUpiId)) return sendError(res, 'This registered user has no UPI ID. Ask them to update their profile first.', null, 400);
 
         const memberId = crypto.randomUUID();
         const memberResult = await pool.query(`
-            INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, joined_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, upi_id, is_registered, joined_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
             ON CONFLICT (group_id, email) DO UPDATE SET
                 name = EXCLUDED.name,
                 role = EXCLUDED.role,
                 avatar_bg = EXCLUDED.avatar_bg,
+                upi_id = EXCLUDED.upi_id,
                 is_registered = EXCLUDED.is_registered
             RETURNING id, user_id as "userId", name, email, role, avatar_bg as "avatarBg", is_registered as "isRegistered", joined_at as "joinedAt"
-        `, [memberId, groupId, travelerUserId, displayName, cleanEmail, role, avatarBg, isRegistered]);
+        `, [memberId, groupId, travelerUserId, displayName, cleanEmail, role, avatarBg, memberUpiId, isRegistered]);
 
         return sendSuccess(res, "Member added successfully", memberResult.rows[0]);
 
@@ -418,5 +443,179 @@ async function removeGroupMember(req, res) {
     } catch (error) {
         console.error("Remove Member Error:", error);
         return sendError(res, "Failed to remove group member", error, 500);
+    }
+}
+
+async function ensureGroupMember(groupId, userId) {
+    const result = await pool.query(`
+        SELECT gm.id FROM group_members gm
+        LEFT JOIN groups g ON g.id = gm.group_id
+        WHERE gm.group_id = $1 AND (gm.user_id = $2 OR g.created_by = $2)
+        LIMIT 1
+    `, [groupId, userId]);
+    return result.rows.length > 0;
+}
+
+function parseAmountToCents(value) {
+    const text = String(value ?? '').trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+    const [whole, fraction = ''] = text.split('.');
+    const cents = Number(`${whole}${fraction.padEnd(2, '0')}`);
+    return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+}
+
+function calculateSettlement(expenses, members, settlementRecords = []) {
+    const balances = new Map(members.map((member) => [member.id, 0]));
+    for (const expense of expenses) {
+        const amountCents = parseAmountToCents(expense.amount);
+        if (!amountCents) continue;
+        balances.set(expense.paidBy, (balances.get(expense.paidBy) || 0) + amountCents);
+        for (const share of expense.shares || []) {
+            balances.set(share.memberId, (balances.get(share.memberId) || 0) - Number(share.amountCents));
+        }
+    }
+    for (const record of settlementRecords) {
+        const amountCents = parseAmountToCents(record.amount);
+        if (!amountCents) continue;
+        balances.set(record.paidBy, (balances.get(record.paidBy) || 0) + amountCents);
+        balances.set(record.paidTo, (balances.get(record.paidTo) || 0) - amountCents);
+    }
+    const creditors = [...balances].filter(([, amount]) => amount > 0).map(([memberId, amountCents]) => ({ memberId, amountCents }));
+    const debtors = [...balances].filter(([, amount]) => amount < 0).map(([memberId, amountCents]) => ({ memberId, amountCents: -amountCents }));
+    const transfers = [];
+    let debtorIndex = 0;
+    let creditorIndex = 0;
+    while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+        const debtor = debtors[debtorIndex];
+        const creditor = creditors[creditorIndex];
+        const amountCents = Math.min(debtor.amountCents, creditor.amountCents);
+        transfers.push({ from: debtor.memberId, to: creditor.memberId, amount: (amountCents / 100).toFixed(2) });
+        debtor.amountCents -= amountCents;
+        creditor.amountCents -= amountCents;
+        if (debtor.amountCents === 0) debtorIndex++;
+        if (creditor.amountCents === 0) creditorIndex++;
+    }
+    return transfers;
+}
+
+async function addExpense(req, res) {
+    const { groupId } = req.params;
+    const { description, amount, participants, paymentMethod = 'CASH', paymentReference = null } = req.body;
+    try {
+        if (!(await ensureGroupMember(groupId, req.userKey))) return sendError(res, 'You are not a member of this group', null, 403);
+        const groupState = await pool.query('SELECT status FROM groups WHERE id = $1', [groupId]);
+        if (!groupState.rows.length) return sendError(res, 'Group not found', null, 404);
+        if (groupState.rows[0].status === 'SETTLED') return sendError(res, 'Settled groups cannot accept new expenses', null, 409);
+        const amountCents = parseAmountToCents(amount);
+        if (!description?.trim() || !amountCents) return sendError(res, 'Description and amount are required', null, 400);
+        if (!['CASH', 'UPI'].includes(paymentMethod)) return sendError(res, 'Unsupported payment method', null, 400);
+        const memberResult = await pool.query('SELECT id, user_id as "userId" FROM group_members WHERE group_id = $1 ORDER BY joined_at ASC', [groupId]);
+        const memberIds = memberResult.rows.map((member) => member.id);
+        const payer = memberResult.rows.find((member) => member.userId === req.userKey);
+        if (!payer) return sendError(res, 'Your account is not a member of this group', null, 403);
+        const selected = [...new Set((participants || memberIds).filter((id) => memberIds.includes(id)))];
+        if (!selected.length) return sendError(res, 'At least one participant is required', null, 400);
+        const base = Math.floor(amountCents / selected.length);
+        let remainder = amountCents % selected.length;
+        const shares = selected.map((memberId) => ({ memberId, amountCents: base + (remainder-- > 0 ? 1 : 0) }));
+        const result = await pool.query(`
+            INSERT INTO expenses (id, group_id, description, amount, paid_by, shares, created_by, payment_method, payment_reference)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, description, amount, paid_by as "paidBy", shares, payment_method as "paymentMethod", payment_reference as "paymentReference", created_at as "createdAt"
+        `, [crypto.randomUUID(), groupId, description.trim(), (amountCents / 100).toFixed(2), payer.id, JSON.stringify(shares), req.userKey, paymentMethod, paymentReference]);
+        return sendSuccess(res, 'Expense added successfully', result.rows[0], 201);
+    } catch (error) {
+        console.error('Add Expense Error:', error);
+        return sendError(res, 'Failed to add expense', error, 500);
+    }
+}
+
+async function getSettlement(req, res) {
+    const { groupId } = req.params;
+    try {
+        if (!(await ensureGroupMember(groupId, req.userKey))) return sendError(res, 'You are not a member of this group', null, 403);
+        const [memberResult, expenseResult, settlementResult] = await Promise.all([
+            pool.query('SELECT id, user_id as "userId", name, email, upi_id as "upiId" FROM group_members WHERE group_id = $1 ORDER BY joined_at ASC', [groupId]),
+            pool.query(`SELECT e.id, e.description, e.amount, e.paid_by as "paidBy", payer.name as "paidByName", e.created_by as "createdBy", creator.username as "createdByName", e.shares, e.payment_method as "paymentMethod", e.payment_reference as "paymentReference", e.created_at as "createdAt" FROM expenses e JOIN group_members payer ON payer.id = e.paid_by LEFT JOIN users creator ON creator.id = e.created_by WHERE e.group_id = $1 ORDER BY e.created_at DESC`, [groupId]),
+            pool.query('SELECT paid_by as "paidBy", paid_to as "paidTo", amount FROM settlement_records WHERE group_id = $1', [groupId])
+        ]);
+        const transfers = calculateSettlement(expenseResult.rows, memberResult.rows, settlementResult.rows);
+        const names = Object.fromEntries(memberResult.rows.map((member) => [member.id, member.name]));
+        const historyResult = await pool.query(`SELECT sr.id, sr.amount, sr.payment_method as "paymentMethod", sr.remarks, sr.created_at as "createdAt", payer.name as "paidByName", payee.name as "paidToName" FROM settlement_records sr JOIN group_members payer ON payer.id = sr.paid_by JOIN group_members payee ON payee.id = sr.paid_to WHERE sr.group_id = $1 ORDER BY sr.created_at DESC`, [groupId]);
+        return sendSuccess(res, 'Settlement calculated successfully', {
+            members: memberResult.rows,
+            expenses: expenseResult.rows,
+            transfers: transfers.map((transfer) => ({ ...transfer, fromName: names[transfer.from], toName: names[transfer.to] })),
+            settlementHistory: historyResult.rows
+        });
+    } catch (error) {
+        console.error('Settlement Error:', error);
+        return sendError(res, 'Failed to calculate settlement', error, 500);
+    }
+}
+
+async function settleGroup(req, res) {
+    const { groupId } = req.params;
+    try {
+        const groupResult = await pool.query('SELECT created_by FROM groups WHERE id = $1', [groupId]);
+        if (!groupResult.rows.length) return sendError(res, 'Group not found', null, 404);
+        if (groupResult.rows[0].created_by !== req.userKey) return sendError(res, 'Only the organizer can settle this group', null, 403);
+        const [memberResult, expenseResult, settlementResult] = await Promise.all([
+            pool.query('SELECT id, name FROM group_members WHERE group_id = $1 ORDER BY joined_at ASC', [groupId]),
+            pool.query('SELECT amount, paid_by as "paidBy", shares FROM expenses WHERE group_id = $1', [groupId]),
+            pool.query('SELECT paid_by as "paidBy", paid_to as "paidTo", amount FROM settlement_records WHERE group_id = $1', [groupId])
+        ]);
+        const transfers = calculateSettlement(expenseResult.rows, memberResult.rows, settlementResult.rows);
+        if (transfers.length > 0) return sendError(res, 'The group still has outstanding payments', { transfers }, 409);
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            for (const transfer of transfers) {
+                await client.query(`INSERT INTO settlement_records (id, group_id, paid_by, paid_to, amount, payment_method, remarks, created_by) VALUES ($1, $2, $3, $4, $5, 'CASH', $6, $7)`, [crypto.randomUUID(), groupId, transfer.from, transfer.to, transfer.amount, 'Settlement transfer', req.userKey]);
+            }
+            const result = await client.query(`UPDATE groups SET status = 'SETTLED', settled_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING id, status, settled_at as "settledAt"`, [groupId]);
+            await client.query('COMMIT');
+            return sendSuccess(res, 'Group marked as settled', { ...result.rows[0], transfers });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Settle Group Error:', error);
+        return sendError(res, 'Failed to settle group', error, 500);
+    }
+}
+
+async function recordSettlement(req, res) {
+    const { groupId } = req.params;
+    const { paidTo, amount, remarks, paymentMethod = 'CASH', paymentReference = null } = req.body;
+    try {
+        if (!remarks?.trim() || !/^\d+(\.\d{1,2})?$/.test(String(amount || '')) || !paidTo) return sendError(res, 'Payee, amount, and remarks are required', null, 400);
+        if (!['CASH', 'UPI'].includes(paymentMethod)) return sendError(res, 'Unsupported payment method', null, 400);
+        const result = await pool.query(`
+            SELECT payer.id as "paidBy", payee.id as "paidTo"
+            FROM group_members payer
+            JOIN group_members payee ON payee.group_id = payer.group_id
+            WHERE payer.group_id = $1 AND payer.user_id = $2 AND payee.id = $3
+        `, [groupId, req.userKey, paidTo]);
+        if (!result.rows.length) return sendError(res, 'You can only settle payments from your own account', null, 403);
+        const [membersResult, expensesResult, recordsResult] = await Promise.all([
+            pool.query('SELECT id, name FROM group_members WHERE group_id = $1', [groupId]),
+            pool.query('SELECT amount, paid_by as "paidBy", shares FROM expenses WHERE group_id = $1', [groupId]),
+            pool.query('SELECT paid_by as "paidBy", paid_to as "paidTo", amount FROM settlement_records WHERE group_id = $1', [groupId])
+        ]);
+        const outstanding = calculateSettlement(expensesResult.rows, membersResult.rows, recordsResult.rows)
+            .find((transfer) => transfer.from === result.rows[0].paidBy && transfer.to === result.rows[0].paidTo);
+        if (!outstanding || Number(amount) > Number(outstanding.amount)) return sendError(res, 'Settlement amount exceeds the outstanding balance', null, 400);
+        const record = await pool.query(`
+            INSERT INTO settlement_records (id, group_id, paid_by, paid_to, amount, payment_method, remarks, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, amount, payment_method as "paymentMethod", remarks, created_at as "createdAt"
+        `, [crypto.randomUUID(), groupId, result.rows[0].paidBy, result.rows[0].paidTo, amount, paymentMethod, remarks.trim(), req.userKey]);
+        return sendSuccess(res, 'Settlement payment recorded', { ...record.rows[0], paymentReference });
+    } catch (error) {
+        console.error('Record Settlement Error:', error);
+        return sendError(res, 'Failed to record settlement payment', error, 500);
     }
 }
