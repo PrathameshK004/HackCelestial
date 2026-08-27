@@ -1,0 +1,8 @@
+# Environment variables
+Backend/.env
+
+# Node dependencies
+**/node_modules/
+
+# Build output
+WebApp/dist/
