@@ -1,6 +1,6 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { CreateGroupPage, AuthPage } from './pages';
+import { HomePage, AuthPage } from './pages';
 import { Compass, Loader2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -23,7 +23,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  return isAuthenticated ? <CreateGroupPage /> : <AuthPage />;
+  return isAuthenticated ? <HomePage /> : <AuthPage />;
 };
 
 export const App: React.FC = () => {
