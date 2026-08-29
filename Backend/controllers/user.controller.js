@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const axios = require('axios');
 // Import utilities
 const User = require('../modules/user.module.js');
 const { pool } = require('../utils/db.util');
@@ -20,7 +21,12 @@ module.exports = {
     logoutUser,
     refreshAccessToken,
     createTempUser,
-    checkRegisteredUser
+    checkRegisteredUser,
+    forgotPassword,
+    verifyResetOtp,
+    resetPassword,
+    changePassword,
+    googleAuth
 };
 
 /**
@@ -410,5 +416,213 @@ async function logoutUser(req, res) {
     res.clearCookie('refreshToken', { path: '/api/users' });
     return sendSuccess(res, "Successfully logged out");
 }
+
+/**
+ * Handle Forgot Password (Generate OTP and send email)
+ */
+async function forgotPassword(req, res) {
+    try {
+        const emailId = (req.body.emailId || '').trim().toLowerCase();
+        const user = await User.findOne({ emailId });
+
+        if (!user || user.isTemp) {
+            return sendError(res, "No active account found with this email address.", null, 404);
+        }
+
+        const otp = generateOTP();
+        user.code = otp;
+        user.codeExpiry = getOTPExpiry();
+        await user.save();
+
+        await sendOTPEmail(user.emailId, otp, user.username, "Password Reset");
+
+        return sendSuccess(res, "Password reset OTP sent to your registered email.", {
+            emailId: user.emailId
+        });
+    } catch (error) {
+        console.error("Forgot Password Error:", error.message);
+        return sendError(res, "Failed to process forgot password request", error, 500);
+    }
+}
+
+/**
+ * Verify OTP for Password Reset
+ */
+async function verifyResetOtp(req, res) {
+    try {
+        const emailId = (req.body.emailId || '').trim().toLowerCase();
+        const code = (req.body.code || '').toString().trim();
+
+        const user = await User.findOne({ emailId });
+        if (!user || user.isTemp) {
+            return sendError(res, "User not found.", null, 404);
+        }
+
+        if (isOTPExpired(user.codeExpiry)) {
+            return sendError(res, "OTP has expired. Please click 'Resend Code'.", null, 400);
+        }
+
+        const isCodeValid = await verifyOTP(code, user.code);
+        if (!isCodeValid) {
+            return sendError(res, "Invalid OTP code. Please check your email and try again.", null, 400);
+        }
+
+        return sendSuccess(res, "OTP verified successfully. You may now create a new password.");
+    } catch (error) {
+        console.error("Verify Reset OTP Error:", error.message);
+        return sendError(res, "Failed to verify OTP", error, 500);
+    }
+}
+
+/**
+ * Reset Password with OTP & New Password
+ */
+async function resetPassword(req, res) {
+    try {
+        const emailId = (req.body.emailId || '').trim().toLowerCase();
+        const code = (req.body.code || '').toString().trim();
+        const newPassword = req.body.newPassword;
+
+        const user = await User.findOne({ emailId });
+        if (!user || user.isTemp) {
+            return sendError(res, "User not found.", null, 404);
+        }
+
+        if (isOTPExpired(user.codeExpiry)) {
+            return sendError(res, "OTP has expired. Please click 'Resend Code'.", null, 400);
+        }
+
+        const isCodeValid = await verifyOTP(code, user.code);
+        if (!isCodeValid) {
+            return sendError(res, "Invalid OTP code. Please try again.", null, 400);
+        }
+
+        // Update password and clear OTP
+        user.password = newPassword;
+        user.code = null;
+        user.codeExpiry = null;
+        await user.save();
+
+        // Revoke all existing refresh tokens for security
+        await pool.query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1', [user._id]);
+
+        return sendSuccess(res, "Password reset successfully. You can now log in with your new password.");
+    } catch (error) {
+        console.error("Reset Password Error:", error.message);
+        return sendError(res, "Failed to reset password", error, 500);
+    }
+}
+
+/**
+ * Authenticated Change Password
+ */
+async function changePassword(req, res) {
+    try {
+        const userId = req.userKey;
+        const { currentPassword, newPassword } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user || user.isTemp) {
+            return sendError(res, "User not found.", null, 404);
+        }
+
+        const isPasswordValid = await verifyPassword(currentPassword, user.password);
+        if (!isPasswordValid) {
+            return sendError(res, "Current password is incorrect.", null, 400);
+        }
+
+        user.password = newPassword;
+        await user.save();
+
+        return sendSuccess(res, "Password updated successfully.");
+    } catch (error) {
+        console.error("Change Password Error:", error.message);
+        return sendError(res, "Failed to change password", error, 500);
+    }
+}
+
+/**
+ * Handle Google OAuth / Google Sign-In authentication
+ */
+async function googleAuth(req, res) {
+    try {
+        const credential = req.body.credential || req.body.token || req.body.idToken;
+
+        if (!credential) {
+            return sendError(res, "Google credential / ID token is required", null, 400);
+        }
+
+        // Verify token with Google's tokeninfo API
+        let googleUserData;
+        try {
+            const googleRes = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`, {
+                timeout: 8000
+            });
+            googleUserData = googleRes.data;
+        } catch (verifyErr) {
+            console.error("Google token verification failed:", verifyErr.response?.data || verifyErr.message);
+            return sendError(res, "Invalid or expired Google token. Please try signing in again.", null, 401);
+        }
+
+        const { email, name, sub, email_verified } = googleUserData;
+
+        if (!email) {
+            return sendError(res, "Unable to retrieve email from Google account", null, 400);
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+
+        // Check if user already exists
+        let user = await User.findOne({ emailId: normalizedEmail });
+
+        if (user) {
+            // If user existed as temp user, activate them
+            if (user.isTemp) {
+                user.isTemp = false;
+                user.code = null;
+                user.codeExpiry = null;
+                if (!user.username && name) {
+                    user.username = name.trim();
+                }
+                await user.save();
+            }
+        } else {
+            // Automatically create new user for Google Sign-In
+            const username = name ? name.trim() : normalizedEmail.split('@')[0];
+            const randomPassword = crypto.randomBytes(32).toString('hex');
+
+            user = await User.create({
+                username,
+                emailId: normalizedEmail,
+                password: randomPassword,
+                isTemp: false,
+                upiId: null
+            });
+        }
+
+        // Generate application JWT access and refresh tokens
+        const token = createToken(user._id);
+        const refreshToken = createRefreshToken(user._id);
+        await storeRefreshToken(user._id, refreshToken);
+
+        setAuthCookies(res, token, refreshToken);
+
+        const responseData = {
+            userId: user._id,
+            username: user.username,
+            emailId: user.emailId,
+            upiId: user.upiId,
+            accessToken: token,
+            refreshToken: refreshToken
+        };
+
+        return sendSuccess(res, "Google Sign-In successful", responseData);
+    } catch (error) {
+        console.error("Google Auth Error:", error.message);
+        return sendError(res, "Failed to authenticate with Google", error, 500);
+    }
+}
+
+
 
 

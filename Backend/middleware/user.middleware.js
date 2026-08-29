@@ -17,7 +17,11 @@ module.exports = {
   validateNewUser,
   validateUpdateUser,
   validateOtpReq,
-  validateNewTempUser
+  validateNewTempUser,
+  validateForgotPassword,
+  validateVerifyResetOtp,
+  validateResetPassword,
+  validateChangePassword
 }
 
 /**
@@ -158,10 +162,91 @@ function validateOtpReq(req, res, next) {
     return sendError(res, 'Purpose must be a string.', null, 400);
   }
 
-  const validPurposes = ["Sign Up"];
+  const validPurposes = ["Sign Up", "Password Reset", "Verification"];
   if (!validPurposes.includes(purpose)) {
-    return sendError(res, 'Purpose must be "Sign Up".', null, 400);
+    return sendError(res, 'Invalid OTP purpose.', null, 400);
   }
 
   next(); 
 }
+
+/**
+ * Validate forgot password request
+ */
+function validateForgotPassword(req, res, next) {
+  const { emailId } = req.body;
+
+  if (!emailId || !emailId.trim()) {
+    return sendError(res, 'Email address is required.', null, 400);
+  }
+
+  if (!isValidEmail(emailId.trim())) {
+    return sendError(res, 'Invalid email format. Please provide a valid email.', null, 400);
+  }
+
+  next();
+}
+
+/**
+ * Validate reset OTP verification request
+ */
+function validateVerifyResetOtp(req, res, next) {
+  const { emailId, code } = req.body;
+
+  if (!emailId || !emailId.trim()) {
+    return sendError(res, 'Email address is required.', null, 400);
+  }
+
+  if (!code || !code.toString().trim()) {
+    return sendError(res, 'Verification code (OTP) is required.', null, 400);
+  }
+
+  next();
+}
+
+/**
+ * Validate reset password request
+ */
+function validateResetPassword(req, res, next) {
+  const { emailId, code, newPassword } = req.body;
+
+  if (!emailId || !emailId.trim()) {
+    return sendError(res, 'Email address is required.', null, 400);
+  }
+
+  if (!code || !code.toString().trim()) {
+    return sendError(res, 'Verification code (OTP) is required.', null, 400);
+  }
+
+  if (!newPassword) {
+    return sendError(res, 'New password is required.', null, 400);
+  }
+
+  if (!isValidPassword(newPassword)) {
+    return sendError(res, 'New password must be at least 6 characters long.', null, 400);
+  }
+
+  next();
+}
+
+/**
+ * Validate authenticated change password request
+ */
+function validateChangePassword(req, res, next) {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return sendError(res, 'Both current password and new password are required.', null, 400);
+  }
+
+  if (!isValidPassword(newPassword)) {
+    return sendError(res, 'New password must be at least 6 characters long.', null, 400);
+  }
+
+  if (currentPassword === newPassword) {
+    return sendError(res, 'New password must be different from current password.', null, 400);
+  }
+
+  next();
+}
+

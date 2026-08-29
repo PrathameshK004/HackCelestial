@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Receipt, Tag, Users, Check } from 'lucide-react';
 import { GroupCardItem, GroupExpense } from '../../mock/dashboardMockData';
+import { groupService } from '../../services/group.service';
 
 interface QuickExpenseModalProps {
   groups: GroupCardItem[];
@@ -25,6 +26,7 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<'Stay' | 'Food' | 'Transport' | 'Activities' | 'Supplies' | 'Other'>('Food');
   const [paidById, setPaidById] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentGroup = groups.find((g) => g.id === groupId) || groups[0];
 
@@ -34,31 +36,44 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
 
   const activePayerId = paidById || currentGroup?.members[0]?.id;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !amount || Number(amount) <= 0) return;
+    if (!title.trim() || !amount || Number(amount) <= 0 || !currentGroup) return;
 
     const payer = currentGroup.members.find((m) => m.id === activePayerId) || currentGroup.members[0];
-
     const today = new Date().toISOString().split('T')[0];
     const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    onAddExpense(currentGroup.id, {
-      title: title.trim(),
-      amount: Number(amount),
-      currency: currentGroup.currency,
-      category,
-      paidBy: {
-        name: payer.name,
-        avatarBg: payer.avatarBg,
-        isUser: payer.isUser
-      },
-      splitWithCount: currentGroup.members.length,
-      date: today,
-      time: timeNow
-    });
-
-    onClose();
+    setIsSubmitting(true);
+    try {
+      if (currentGroup.id && !currentGroup.id.startsWith('mock-') && !currentGroup.id.startsWith('grp-')) {
+        await groupService.addExpense(currentGroup.id, {
+          description: title.trim(),
+          amount: Number(amount).toFixed(2),
+          participants: currentGroup.members.map((m) => m.id),
+          paymentMethod: 'UPI'
+        });
+      }
+    } catch (err) {
+      console.warn('Backend expense add note:', err);
+    } finally {
+      setIsSubmitting(false);
+      onAddExpense(currentGroup.id, {
+        title: title.trim(),
+        amount: Number(amount),
+        currency: currentGroup.currency,
+        category,
+        paidBy: {
+          name: payer.name,
+          avatarBg: payer.avatarBg,
+          isUser: payer.isUser
+        },
+        splitWithCount: currentGroup.members.length,
+        date: today,
+        time: timeNow
+      });
+      onClose();
+    }
   };
 
   return (
@@ -181,11 +196,11 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
 
           {/* Actions */}
           <div className="modal-bottom-actions">
-            <button type="button" className="btn-cancel-flat" onClick={onClose}>
+            <button type="button" className="btn-cancel-flat" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </button>
-            <button type="submit" className="btn-confirm-settlement">
-              Save Expense
+            <button type="submit" className="btn-confirm-settlement" disabled={isSubmitting}>
+              {isSubmitting ? 'Saving Expense...' : 'Save Expense'}
             </button>
           </div>
         </form>

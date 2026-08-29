@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
+import { authService } from '../../services/auth.service';
+
 interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -34,6 +36,37 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [upiId, setUpiId] = useState('yogesh@okaxis');
   const [defaultCurrency, setDefaultCurrency] = useState('INR (₹)');
   const [isSaved, setIsSaved] = useState(false);
+
+  // Change Password States
+  const [showChangePasswordSection, setShowChangePasswordSection] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword) return;
+    if (newPassword.length < 6) {
+      setPasswordMsg({ type: 'error', text: 'New password must be at least 6 characters.' });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setPasswordMsg(null);
+    try {
+      const res = await authService.changePassword({
+        currentPassword,
+        newPassword
+      });
+      setPasswordMsg({ type: 'success', text: res.message || 'Password updated successfully!' });
+      setCurrentPassword('');
+      setNewPassword('');
+    } catch (err: any) {
+      setPasswordMsg({ type: 'error', text: err.message || 'Failed to update password.' });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,6 +199,65 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <option value="AED (AED)">AED (AED) — UAE Dirham</option>
               </select>
             </div>
+          </div>
+
+          {/* Security & Change Password Section */}
+          <div className="form-group-block" style={{ marginTop: '14px', borderTop: '1px solid var(--border-light)', paddingTop: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label className="form-group-label" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <ShieldCheck size={15} className="text-emerald" />
+                <span>Security & Password</span>
+              </label>
+              <button
+                type="button"
+                className="auth-switch-link"
+                style={{ background: 'none', border: 'none', fontSize: '0.78rem' }}
+                onClick={() => setShowChangePasswordSection(!showChangePasswordSection)}
+              >
+                {showChangePasswordSection ? 'Hide' : 'Change Password'}
+              </button>
+            </div>
+
+            {showChangePasswordSection && (
+              <div style={{ background: 'var(--bg-app)', padding: '12px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {passwordMsg && (
+                  <div className={`ticket-success-alert`} style={{ padding: '8px 12px', fontSize: '0.8rem', background: passwordMsg.type === 'error' ? '#fef2f2' : '#ecfdf5', color: passwordMsg.type === 'error' ? '#991b1b' : '#065f46' }}>
+                    {passwordMsg.text}
+                  </div>
+                )}
+                <div>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--slate-700)' }}>Current Password</label>
+                  <input
+                    type="password"
+                    className="styled-text-input"
+                    placeholder="Enter current password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    style={{ fontSize: '0.84rem', padding: '8px 10px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--slate-700)' }}>New Password</label>
+                  <input
+                    type="password"
+                    className="styled-text-input"
+                    placeholder="Minimum 6 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    style={{ fontSize: '0.84rem', padding: '8px 10px' }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="primary-action-btn"
+                  style={{ padding: '7px 14px', fontSize: '0.8rem', alignSelf: 'flex-start' }}
+                  onClick={handleChangePassword}
+                  disabled={isChangingPassword || !currentPassword || !newPassword}
+                >
+                  {isChangingPassword ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="profile-preferences-strip">

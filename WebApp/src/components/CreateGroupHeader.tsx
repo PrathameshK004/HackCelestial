@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Compass, HelpCircle, ShieldCheck, LogOut, Pencil, X } from 'lucide-react';
+import { HelpCircle, ShieldCheck, LogOut, Pencil, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface CreateGroupHeaderProps {
@@ -30,13 +30,15 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
   return (
     <header className="header-wrapper">
       <div className="header-inner">
-        <a href="#home" className="brand-logo" title="GroupTrip Ledger Home">
-          <div className="brand-icon-box">
-            <Compass size={22} strokeWidth={2.4} />
-          </div>
+        <a href="#home" className="brand-logo" title="Triptual Home">
+          <img
+            src="/triptual-logo.png"
+            alt="Triptual"
+            style={{ width: '36px', height: '36px', borderRadius: '9999px', objectFit: 'cover' }}
+          />
           <div>
-            <div>GroupTrip Ledger</div>
-            <div className="brand-tagline">Travel & Expense Hub</div>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 600 }}>Triptual</div>
+            <div className="brand-tagline">Group Travel & Smart Ledger</div>
           </div>
         </a>
 

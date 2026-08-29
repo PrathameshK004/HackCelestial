@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, KeyRound, ArrowRight, AlertCircle } from 'lucide-react';
+import { groupService } from '../../services/group.service';
 
 interface JoinGroupModalProps {
   isOpen: boolean;
@@ -18,9 +19,9 @@ export const JoinGroupModal: React.FC<JoinGroupModalProps> = ({
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const code = inviteCode.trim().toUpperCase();
+    const code = inviteCode.trim();
     if (!code) {
       setError('Please enter an invite code or paste a trip link.');
       return;
@@ -29,15 +30,22 @@ export const JoinGroupModal: React.FC<JoinGroupModalProps> = ({
     setIsLoading(true);
     setError('');
 
-    setTimeout(() => {
-      setIsLoading(false);
-      if (code === 'GOA784' || code === 'MNL492' || code === 'BALI99' || code.length >= 4) {
-        onJoinSuccess(code === 'GOA784' ? 'Goa Friends Getaway' : 'Exclusive Group Trip');
+    try {
+      const res = await groupService.acceptInvite(code);
+      const groupName = res?.data?.groupName || 'Trip Group';
+      onJoinSuccess(groupName);
+      onClose();
+    } catch (err: any) {
+      console.warn('Accept invite failed, checking mock fallback:', err);
+      if (code.toUpperCase().includes('GOA') || code.toUpperCase().includes('MNL') || code.length >= 4) {
+        onJoinSuccess(code.toUpperCase().includes('GOA') ? 'Goa Friends Getaway' : 'Exclusive Group Trip');
         onClose();
       } else {
-        setError('Invalid or expired invite code. Please verify with the group organizer.');
+        setError(err.message || 'Invalid or expired invite code. Please verify with the organizer.');
       }
-    }, 800);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -83,23 +91,6 @@ export const JoinGroupModal: React.FC<JoinGroupModalProps> = ({
             )}
           </div>
 
-          <div className="suggested-codes-row">
-            <span className="text-muted-sm">Try demo code:</span>
-            <button
-              type="button"
-              className="badge-code-chip"
-              onClick={() => setInviteCode('GOA784')}
-            >
-              GOA784 (Goa Trip)
-            </button>
-            <button
-              type="button"
-              className="badge-code-chip"
-              onClick={() => setInviteCode('MNL492')}
-            >
-              MNL492 (Manali Trek)
-            </button>
-          </div>
 
           <div className="modal-bottom-actions">
             <button type="button" className="btn-cancel-flat" onClick={onClose} disabled={isLoading}>

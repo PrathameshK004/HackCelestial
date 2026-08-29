@@ -112,6 +112,10 @@ async function getInviteDetails(req, res) {
             return sendError(res, "Invite code is required", null, 400);
         }
 
+        const rawCode = (inviteCode || '').trim().replace(/^.*\/join\//, '');
+        const normalizedCode = rawCode.toUpperCase();
+        const shortCode = normalizedCode.replace(/^TRIP-/, '');
+
         const inviteQuery = await pool.query(
             `SELECT gi.*, g.name as "groupName", g.destination, g.start_date as "startDate", 
                     g.end_date as "endDate", g.trip_type as "tripType", g.currency, 
@@ -119,8 +123,8 @@ async function getInviteDetails(req, res) {
              FROM group_invitations gi
              JOIN groups g ON gi.group_id = g.id
              LEFT JOIN users u ON gi.invited_by = u.id
-             WHERE UPPER(gi.invite_code) = UPPER($1) LIMIT 1`,
-            [inviteCode]
+             WHERE UPPER(gi.invite_code) = $1 OR UPPER(REPLACE(gi.invite_code, 'TRIP-', '')) = $2 LIMIT 1`,
+            [normalizedCode, shortCode]
         );
 
         if (inviteQuery.rows.length === 0) {
@@ -171,12 +175,16 @@ async function acceptInvite(req, res) {
             return sendError(res, "Please log in or sign up to accept this invitation", null, 401);
         }
 
+        const rawCode = (inviteCode || '').trim().replace(/^.*\/join\//, '');
+        const normalizedCode = rawCode.toUpperCase();
+        const shortCode = normalizedCode.replace(/^TRIP-/, '');
+
         const inviteQuery = await client.query(
             `SELECT gi.*, g.name as "groupName" 
              FROM group_invitations gi
              JOIN groups g ON gi.group_id = g.id
-             WHERE UPPER(gi.invite_code) = UPPER($1) LIMIT 1`,
-            [inviteCode]
+             WHERE UPPER(gi.invite_code) = $1 OR UPPER(REPLACE(gi.invite_code, 'TRIP-', '')) = $2 LIMIT 1`,
+            [normalizedCode, shortCode]
         );
 
         if (inviteQuery.rows.length === 0) {

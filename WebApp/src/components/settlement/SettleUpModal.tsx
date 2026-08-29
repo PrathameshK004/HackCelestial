@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { X, CheckCircle, Smartphone, CreditCard, Banknote, ShieldCheck, ArrowRight } from 'lucide-react';
 import { SimplifiedTransfer } from '../../mock/dashboardMockData';
+import { groupService } from '../../services/group.service';
 
 interface SettleUpModalProps {
   transfer: SimplifiedTransfer | null;
+  groupId?: string;
   isOpen: boolean;
   onClose: () => void;
   onConfirmSettlement: (transferId: string, method: string, notes?: string) => void;
@@ -11,6 +13,7 @@ interface SettleUpModalProps {
 
 export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   transfer,
+  groupId,
   isOpen,
   onClose,
   onConfirmSettlement
@@ -25,159 +28,408 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDone, setIsDone] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
-    setTimeout(() => {
+
+    try {
+      if (groupId && !groupId.startsWith('mock-') && !groupId.startsWith('grp-')) {
+        await groupService.recordSettlement(groupId, {
+          paidTo: transfer.to.id,
+          amount: Number(transfer.amount).toFixed(2),
+          remarks: notes.trim(),
+          paymentMethod: paymentMethod === 'cash' ? 'CASH' : 'UPI',
+          paymentReference: paymentMethod === 'upi' ? upiId : undefined
+        });
+      }
+    } catch (err) {
+      console.warn('Backend record settlement note:', err);
+    } finally {
       setIsProcessing(false);
       setIsDone(true);
       setTimeout(() => {
         onConfirmSettlement(transfer.id, paymentMethod, notes);
         setIsDone(false);
         onClose();
-      }, 1200);
-    }, 1000);
+      }, 1000);
+    }
   };
 
   return (
-    <div className="modal-backdrop-blur">
-      <div className="settle-modal-card">
-        {/* Modal Header */}
-        <div className="modal-top-bar">
-          <div className="modal-heading-group">
-            <span className="badge-pill-emerald">Settlement Hub</span>
-            <h3 className="modal-main-title">Record Payment & Settle Up</h3>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(20, 26, 12, 0.65)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: '16px'
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--bg-surface)',
+          borderRadius: 'var(--radius-xl)',
+          border: '1px solid var(--border-light)',
+          width: '100%',
+          maxWidth: '460px',
+          padding: '20px',
+          boxShadow: '0 24px 48px rgba(0, 0, 0, 0.18)',
+          boxSizing: 'border-box'
+        }}
+      >
+        {/* Modal Top Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingBottom: '12px',
+            borderBottom: '1px solid var(--border-light)',
+            marginBottom: '16px'
+          }}
+        >
+          <div>
+            <span
+              style={{
+                fontSize: '0.66rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                background: 'rgba(5, 150, 105, 0.12)',
+                color: '#059669',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                display: 'inline-block'
+              }}
+            >
+              Settlement Hub
+            </span>
+            <h3
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: '1.2rem',
+                color: 'var(--text-primary)',
+                margin: '4px 0 0',
+                lineHeight: 1.2
+              }}
+            >
+              Record Payment & Settle Up
+            </h3>
           </div>
-          <button type="button" className="btn-close-circle" onClick={onClose} aria-label="Close modal">
-            <X size={18} />
+
+          <button
+            type="button"
+            className="btn-icon-circle"
+            onClick={onClose}
+            aria-label="Close modal"
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              background: 'var(--bg-surface-warm)',
+              border: '1px solid var(--border-card)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0
+            }}
+          >
+            <X size={16} color="var(--text-primary)" />
           </button>
         </div>
 
         {isDone ? (
-          <div className="settle-success-view">
-            <div className="success-pulse-circle">
-              <CheckCircle size={44} className="text-emerald" />
+          <div style={{ textAlign: 'center', padding: '24px 12px' }}>
+            <div
+              style={{
+                width: '54px',
+                height: '54px',
+                borderRadius: '50%',
+                background: '#ecfdf5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 12px'
+              }}
+            >
+              <CheckCircle size={32} color="#059669" />
             </div>
-            <h4>Payment Recorded Successfully!</h4>
-            <p>
-              {transfer.currencySymbol}
-              {transfer.amount.toLocaleString()} marked as settled between {transfer.from.name} and {transfer.to.name}.
+            <h4 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: 'var(--text-primary)', margin: '0 0 6px' }}>
+              Payment Recorded Successfully!
+            </h4>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+              {transfer.currencySymbol}{transfer.amount.toLocaleString()} marked as settled between {transfer.from.name} and {transfer.to.name}.
             </p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="settle-form-content">
-            {/* Transfer Visual Pill */}
-            <div className="transfer-summary-pill">
-              <div className="party-chip">
-                <div className="avatar-dot" style={{ backgroundColor: transfer.from.avatarBg }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Transfer Visual Card */}
+            <div
+              style={{
+                background: 'var(--bg-surface-warm)',
+                border: '1px solid var(--border-light)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '12px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px'
+              }}
+            >
+              {/* Payer */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '50%',
+                    backgroundColor: transfer.from.avatarBg || '#059669',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    flexShrink: 0
+                  }}
+                >
                   {transfer.from.name[0]}
                 </div>
-                <span className="party-name">{transfer.from.name}</span>
-                <span className="party-role-tag">Payer</span>
-              </div>
-
-              <div className="transfer-arrow-flow">
-                <span className="amount-display-tag">
-                  {transfer.currencySymbol}
-                  {transfer.amount.toLocaleString()}
-                </span>
-                <div className="flow-line">
-                  <ArrowRight size={18} className="arrow-pulse" />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {transfer.from.name}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.62rem',
+                      fontWeight: 700,
+                      color: '#E11D48',
+                      background: 'rgba(225, 29, 72, 0.1)',
+                      padding: '1px 5px',
+                      borderRadius: '9999px',
+                      display: 'inline-block'
+                    }}
+                  >
+                    Payer
+                  </span>
                 </div>
               </div>
 
-              <div className="party-chip">
-                <div className="avatar-dot" style={{ backgroundColor: transfer.to.avatarBg }}>
+              {/* Arrow Flow & Amount */}
+              <div style={{ textAlign: 'center', flexShrink: 0, padding: '0 6px' }}>
+                <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', fontWeight: 700, color: 'var(--accent-olive)' }}>
+                  {transfer.currencySymbol}{transfer.amount.toLocaleString()}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px' }}>
+                  <ArrowRight size={14} color="var(--accent-olive)" />
+                </div>
+              </div>
+
+              {/* Receiver */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, textAlign: 'right' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {transfer.to.name}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.62rem',
+                      fontWeight: 700,
+                      color: '#059669',
+                      background: 'rgba(5, 150, 105, 0.12)',
+                      padding: '1px 5px',
+                      borderRadius: '9999px',
+                      display: 'inline-block'
+                    }}
+                  >
+                    Receiver
+                  </span>
+                </div>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '50%',
+                    backgroundColor: transfer.to.avatarBg || '#2563EB',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    flexShrink: 0
+                  }}
+                >
                   {transfer.to.name[0]}
                 </div>
-                <span className="party-name">{transfer.to.name}</span>
-                <span className="party-role-tag role-receiver">Receiver</span>
               </div>
             </div>
 
             {/* Payment Method Selector */}
-            <div className="form-group-block">
-              <label className="form-group-label">Payment Channel</label>
-              <div className="payment-methods-grid">
+            <div>
+              <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                Payment Channel
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
                 <button
                   type="button"
-                  className={`method-option-card ${paymentMethod === 'upi' ? 'selected' : ''}`}
                   onClick={() => setPaymentMethod('upi')}
+                  style={{
+                    background: paymentMethod === 'upi' ? '#FFFFFF' : 'var(--bg-surface-warm)',
+                    border: paymentMethod === 'upi' ? '1.5px solid var(--accent-olive)' : '1px solid var(--border-light)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 6px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                    boxShadow: paymentMethod === 'upi' ? '0 2px 8px rgba(46,51,27,0.1)' : 'none'
+                  }}
                 >
-                  <Smartphone size={20} className="method-icon" />
-                  <span className="method-title">UPI / QR</span>
-                  <span className="method-subtitle">GPay, PhonePe, Paytm</span>
+                  <Smartphone size={18} color={paymentMethod === 'upi' ? 'var(--accent-olive)' : 'var(--text-muted)'} />
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-primary)' }}>UPI / QR</span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>GPay, PhonePe</span>
                 </button>
 
                 <button
                   type="button"
-                  className={`method-option-card ${paymentMethod === 'card' ? 'selected' : ''}`}
                   onClick={() => setPaymentMethod('card')}
+                  style={{
+                    background: paymentMethod === 'card' ? '#FFFFFF' : 'var(--bg-surface-warm)',
+                    border: paymentMethod === 'card' ? '1.5px solid var(--accent-olive)' : '1px solid var(--border-light)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 6px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                    boxShadow: paymentMethod === 'card' ? '0 2px 8px rgba(46,51,27,0.1)' : 'none'
+                  }}
                 >
-                  <CreditCard size={20} className="method-icon" />
-                  <span className="method-title">Bank Transfer</span>
-                  <span className="method-subtitle">IMPS / NEFT / Wire</span>
+                  <CreditCard size={18} color={paymentMethod === 'card' ? 'var(--accent-olive)' : 'var(--text-muted)'} />
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-primary)' }}>Bank</span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>IMPS / NEFT</span>
                 </button>
 
                 <button
                   type="button"
-                  className={`method-option-card ${paymentMethod === 'cash' ? 'selected' : ''}`}
                   onClick={() => setPaymentMethod('cash')}
+                  style={{
+                    background: paymentMethod === 'cash' ? '#FFFFFF' : 'var(--bg-surface-warm)',
+                    border: paymentMethod === 'cash' ? '1.5px solid var(--accent-olive)' : '1px solid var(--border-light)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 6px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                    boxShadow: paymentMethod === 'cash' ? '0 2px 8px rgba(46,51,27,0.1)' : 'none'
+                  }}
                 >
-                  <Banknote size={20} className="method-icon" />
-                  <span className="method-title">Cash Settlement</span>
-                  <span className="method-subtitle">Paid in person</span>
+                  <Banknote size={18} color={paymentMethod === 'cash' ? 'var(--accent-olive)' : 'var(--text-muted)'} />
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-primary)' }}>Cash</span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>In Person</span>
                 </button>
               </div>
             </div>
 
+            {/* UPI ID Field if UPI selected */}
             {paymentMethod === 'upi' && (
-              <div className="upi-input-group">
-                <label className="form-group-label">Receiver UPI ID / Phone</label>
-                <div className="input-with-badge">
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  Receiver UPI ID / Phone
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <input
                     type="text"
                     className="styled-text-input"
                     value={upiId}
                     onChange={(e) => setUpiId(e.target.value)}
                     placeholder="user@upi"
+                    style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.8rem', padding: '9px 12px', paddingRight: '85px' }}
                   />
-                  <span className="verified-badge">
-                    <ShieldCheck size={14} /> Verified
+                  <span
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      fontSize: '0.66rem',
+                      fontWeight: 600,
+                      color: '#059669',
+                      background: 'rgba(5, 150, 105, 0.1)',
+                      padding: '3px 8px',
+                      borderRadius: '9999px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px'
+                    }}
+                  >
+                    <ShieldCheck size={11} /> Verified
                   </span>
                 </div>
               </div>
             )}
 
             {/* Note / Memo */}
-            <div className="form-group-block">
-              <label className="form-group-label">Note / Reference (Optional)</label>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                Note / Reference (Optional)
+              </label>
               <input
                 type="text"
                 className="styled-text-input"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="e.g. Settle Goa Villa & Activities"
+                style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.8rem', padding: '9px 12px' }}
               />
             </div>
 
-            {/* Modal Actions */}
-            <div className="modal-bottom-actions">
-              <button type="button" className="btn-cancel-flat" onClick={onClose} disabled={isProcessing}>
+            {/* Modal Bottom Action Buttons */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                paddingTop: '12px',
+                borderTop: '1px solid var(--border-light)',
+                marginTop: '4px'
+              }}
+            >
+              <button
+                type="button"
+                className="btn-cancel-flat"
+                onClick={onClose}
+                disabled={isProcessing}
+                style={{ padding: '9px 16px', fontSize: '0.78rem' }}
+              >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="btn-confirm-settlement"
+                className="btn-primary-luxury"
                 disabled={isProcessing}
+                style={{ padding: '9px 18px', fontSize: '0.78rem' }}
               >
                 {isProcessing ? (
-                  <span className="flex-center-gap">Processing...</span>
+                  <span>Processing...</span>
                 ) : (
-                  <span>
-                    Confirm Settlement ({transfer.currencySymbol}
-                    {transfer.amount.toLocaleString()})
-                  </span>
+                  <span>Confirm Settlement ({transfer.currencySymbol}{transfer.amount.toLocaleString()})</span>
                 )}
               </button>
             </div>

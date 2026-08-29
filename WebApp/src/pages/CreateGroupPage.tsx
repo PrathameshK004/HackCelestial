@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ArrowLeft, Plane, Compass, Sparkles } from 'lucide-react';
-import { CreateGroupHeader } from '../components/CreateGroupHeader';
+import { ArrowLeft, Compass, Sparkles } from 'lucide-react';
 
 import { StepProgress } from '../components/StepProgress';
 import { DestinationInput } from '../components/DestinationInput';
@@ -256,26 +255,57 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
   };
 
   return (
-    <div className="app-container">
-      <CreateGroupHeader onHelpClick={() => addToast('GroupTrip Ledger: Create trip, invite companions, track splits & settle debts.', 'info')} />
+    <div className="profile-page-root animate-fade-in" style={{ paddingBottom: '90px' }}>
+      <div className="profile-page-container" style={{ maxWidth: '680px', padding: '12px 14px 40px' }}>
+        {/* Clean Header: Back Button + Title */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '16px',
+            paddingBottom: '12px',
+            borderBottom: '1px solid var(--border-light)'
+          }}
+        >
+          <button
+            type="button"
+            className="btn-icon-circle"
+            onClick={onBack || (() => window.history.back())}
+            title="Back"
+            style={{
+              width: '38px',
+              height: '38px',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-card)',
+              borderRadius: '50%',
+              cursor: 'pointer'
+            }}
+          >
+            <ArrowLeft size={18} color="var(--text-primary)" />
+          </button>
 
-      <main className="main-content">
-        <button type="button" className="create-back-button" onClick={onBack || (() => window.history.back())}><ArrowLeft size={17} /> Back to dashboard</button>
-        {/* Page Heading */}
-        <section className="page-header-section">
-          <div className="page-badge">
-            <Plane size={13} />
-            <span>Group Travel & Expense Coordinator</span>
+          <div>
+            <h1
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: '1.35rem',
+                color: 'var(--text-primary)',
+                margin: 0,
+                lineHeight: 1.2
+              }}
+            >
+              {currentStep === 4 ? 'Review & Confirm Group' : 'Create a New Group'}
+            </h1>
+            <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
+              Set up your trip, invite companions, and track shared balances.
+            </p>
           </div>
-          <h1 className="page-title">
-            {currentStep === 4 ? 'Review & Confirm Group' : 'Create a New Group'}
-          </h1>
-          <p className="page-subtitle">
-            {currentStep === 4
-              ? 'Review your travel group setup and confirm details to generate the expense ledger.'
-              : 'Set up your trip, invite your travelers, and keep every booking and expense organized from day one.'}
-          </p>
-        </section>
+        </div>
 
         {/* Step Progress Indicator */}
         <StepProgress currentStep={currentStep} />
@@ -393,7 +423,6 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
             </aside>
           </div>
         )}
-      </main>
 
       {/* Fixed Bottom Action Bar (in Step 1) */}
       {currentStep === 1 && (
@@ -419,6 +448,7 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
         startDateFormatted={startDateFormatted}
         endDateFormatted={endDateFormatted}
       />
+      </div>
     </div>
   );
 };

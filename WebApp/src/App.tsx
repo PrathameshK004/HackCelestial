@@ -1,7 +1,7 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CreateGroupPage, AuthPage, HomePage } from './pages';
-import { Compass, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -11,12 +11,14 @@ const AppContent: React.FC = () => {
     return (
       <div className="auth-loading-screen">
         <div className="auth-loading-card">
-          <div className="brand-icon-box brand-icon-pulse">
-            <Compass size={28} strokeWidth={2.4} />
-          </div>
+          <img
+            src="/triptual-logo.png"
+            alt="Triptual Logo"
+            style={{ width: '54px', height: '54px', borderRadius: '9999px', objectFit: 'cover' }}
+          />
           <div className="auth-loading-text">
-            <h3>GroupTrip Ledger</h3>
-            <p>Initializing secure session...</p>
+            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.4rem' }}>Triptual</h3>
+            <p>Initializing your smart expedition ledger...</p>
           </div>
           <Loader2 size={24} className="spin-animation text-emerald" />
         </div>
