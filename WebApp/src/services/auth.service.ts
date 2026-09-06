@@ -10,7 +10,7 @@ import {
   ResetPasswordPayload
 } from '../types/auth';
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://hackcelestial-api.onrender.com/api';
 
 interface RequestOptions extends RequestInit {
   token?: string | null;

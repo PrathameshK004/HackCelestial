@@ -21,7 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const USER_STORAGE_KEY = 'triptual_auth_user';
 const TOKEN_STORAGE_KEY = 'triptual_auth_token';
 const REFRESH_TOKEN_KEY = 'triptual_refresh_token';
-const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://hackcelestial-api.onrender.com/api';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
