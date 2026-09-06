@@ -2,7 +2,8 @@ import {
   TripFormData, 
   CreatedGroupData, 
   CheckRegisteredUserResponse,
-  ShareLinks 
+  ShareLinks,
+  SettlementData
 } from '../types/group';
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
@@ -190,6 +191,44 @@ export const groupService = {
     return request<{ err?: any; message: string; data: any }>(`/groups/${groupId}/invites/resend`, {
       method: 'POST',
       body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    });
+  },
+
+  async addExpense(groupId: string, payload: {
+    description: string;
+    amount: string;
+    participants: string[];
+    paymentMethod: string;
+    paymentReference?: string;
+  }): Promise<{ message: string; data: any }> {
+    return request<{ message: string; data: any }>(`/groups/${groupId}/expenses`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getSettlement(groupId: string): Promise<{ message: string; data: SettlementData }> {
+    return request<{ message: string; data: SettlementData }>(`/groups/${groupId}/settlement`, {
+      method: 'GET',
+    });
+  },
+
+  async recordSettlement(groupId: string, payload: {
+    paidTo: string;
+    amount: string;
+    remarks: string;
+    paymentMethod: string;
+    paymentReference?: string;
+  }): Promise<{ message: string; data: any }> {
+    return request<{ message: string; data: any }>(`/groups/${groupId}/settlements`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async settleGroup(groupId: string): Promise<{ message: string; data: any }> {
+    return request<{ message: string; data: any }>(`/groups/${groupId}/settle`, {
+      method: 'POST',
     });
   },
 };

@@ -11,6 +11,8 @@ interface AuthContextType {
   registerTemp: (data: RegisterTempPayload) => Promise<{ success: boolean; message?: string }>;
   verifyAndRegister: (data: RegisterUserPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
   resendOtp: (emailId: string, purpose?: string) => Promise<{ success: boolean; message?: string }>;
+  loginWithGoogle: (credential: string) => Promise<{ success: boolean; message?: string; user?: User }>;
+  updateProfile: (data: { username?: string; upiId?: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -19,6 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const USER_STORAGE_KEY = 'triptual_auth_user';
 const TOKEN_STORAGE_KEY = 'triptual_auth_token';
 const REFRESH_TOKEN_KEY = 'triptual_refresh_token';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
@@ -191,6 +194,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithGoogle = async (credential: string) => {
+    try {
+      const response = await authService.loginWithGoogle(credential);
+      if (!response.data) return { success: false, message: response.message || 'Google login failed' };
+      const loggedUser: User = {
+        userId: response.data.userId,
+        username: response.data.username,
+        emailId: response.data.emailId || '',
+      };
+      saveAuthSession(loggedUser, response.data.accessToken, response.data.refreshToken);
+      return { success: true, message: response.message, user: loggedUser };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Google login failed' };
+    }
+  };
+
+  const updateProfile = async (data: { username?: string; upiId?: string }) => {
+    if (!user || !token) throw new Error('You must be signed in to update your profile.');
+    const response = await fetch(`${API_BASE}/users/${user.userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Unable to update profile.');
+    saveAuthSession({ ...user, ...data });
+  };
+
   /**
    * Logout user
    */
@@ -215,6 +245,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         registerTemp,
         verifyAndRegister,
         resendOtp,
+        loginWithGoogle,
+        updateProfile,
         logout,
       }}
     >

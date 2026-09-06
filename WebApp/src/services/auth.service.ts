@@ -3,7 +3,11 @@ import {
   LoginPayload, 
   RegisterTempPayload, 
   RegisterUserPayload, 
-  SendOtpPayload 
+  SendOtpPayload,
+  PasswordChangePayload,
+  ForgotPasswordPayload,
+  VerifyResetOtpPayload,
+  ResetPasswordPayload
 } from '../types/auth';
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
@@ -155,6 +159,41 @@ export const authService = {
     return request<AuthResponse>(`/users/${userId}`, {
       method: 'GET',
       token,
+    });
+  },
+
+  async forgotPassword(payload: ForgotPasswordPayload): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ emailId: payload.emailId.trim().toLowerCase() }),
+    });
+  },
+
+  async verifyResetOtp(payload: VerifyResetOtpPayload): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/verify-reset-otp', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async resetPassword(payload: ResetPasswordPayload): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async changePassword(payload: PasswordChangePayload): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/change-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async loginWithGoogle(credential: string): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/google-login', {
+      method: 'POST',
+      body: JSON.stringify({ credential }),
     });
   },
 };

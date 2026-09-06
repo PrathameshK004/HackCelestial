@@ -19,6 +19,7 @@ router.get('/logout', usersController.logoutUser);
 router.post('/refresh', usersController.refreshAccessToken);
 router.get('/:userId', verifyToken, userMiddleware.validateUserId, usersController.getUserById);
 router.post('/login', userMiddleware.checkLogin, usersController.validateLogin);
+router.post('/google-login', usersController.googleLogin);
 router.post('/registerUser', userMiddleware.validateNewUser, usersController.createUser);
 router.post('/registerTempUser', userMiddleware.validateNewTempUser, usersController.createTempUser);
 router.post('/check-registered', usersController.checkRegisteredUser);

@@ -2,6 +2,7 @@
 Backend/.env
 .env
 **/.env
+WebApp/.env*
 
 # OS metadata
 .DS_Store

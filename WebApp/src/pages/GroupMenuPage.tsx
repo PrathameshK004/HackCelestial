@@ -243,7 +243,7 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
       const intent = new URL('upi://pay');
       intent.searchParams.set('pa', payee.upiId);
       intent.searchParams.set('pn', payee.name);
-      intent.searchParams.set('am', transfer.amount);
+      intent.searchParams.set('am', String(transfer.amount));
       intent.searchParams.set('tn', remarks.trim());
       intent.searchParams.set('cu', group.currency);
       reference = intent.toString();
@@ -254,7 +254,7 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
     try {
       await groupService.recordSettlement(group.id, {
         paidTo: payee.id.toString(),
-        amount: transfer.amount,
+        amount: String(transfer.amount),
         remarks: remarks.trim(),
         paymentMethod: method,
         paymentReference: reference

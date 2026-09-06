@@ -129,3 +129,44 @@ export interface CheckRegisteredUserResponse {
   };
   statusCode: number;
 }
+
+export interface GroupSummary {
+  id: string;
+  name: string;
+  destination: string;
+  currency: Currency;
+  startDate: string | null;
+  endDate: string | null;
+  memberCount: number;
+  status: 'ACTIVE' | 'SETTLED';
+  createdAt: string;
+}
+
+export interface SettlementMember extends Traveler {
+  upiId?: string;
+}
+
+export interface SettlementExpense {
+  id: string;
+  description: string;
+  amount: number | string;
+  paidBy: string;
+  paidByName?: string;
+  paymentMethod?: string;
+  shares: string[];
+  createdAt: string;
+}
+
+export interface SettlementTransfer {
+  from: string;
+  to: string;
+  fromName: string;
+  toName: string;
+  amount: number | string;
+}
+
+export interface SettlementData {
+  members: SettlementMember[];
+  expenses: SettlementExpense[];
+  transfers: SettlementTransfer[];
+}

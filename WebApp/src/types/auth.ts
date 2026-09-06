@@ -2,6 +2,25 @@ export interface User {
   userId: string;
   username: string;
   emailId: string;
+  upiId?: string;
+}
+
+export interface PasswordChangePayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface ForgotPasswordPayload {
+  emailId: string;
+}
+
+export interface VerifyResetOtpPayload {
+  emailId: string;
+  code: string;
+}
+
+export interface ResetPasswordPayload extends VerifyResetOtpPayload {
+  newPassword: string;
 }
 
 export interface AuthResponse {

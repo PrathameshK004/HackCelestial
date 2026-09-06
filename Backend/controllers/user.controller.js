@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { OAuth2Client } = require('google-auth-library');
 // Import utilities
 const User = require('../modules/user.module.js');
 const { pool } = require('../utils/db.util');
@@ -7,6 +8,8 @@ const { generateOTP, verifyOTP, isOTPExpired, getOTPExpiry } = require('../utils
 const { createToken, createRefreshToken, verifyRefreshToken } = require('../utils/jwt.util');
 const { verifyPassword } = require('../utils/verify.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 require('dotenv').config();
 
@@ -20,7 +23,8 @@ module.exports = {
     logoutUser,
     refreshAccessToken,
     createTempUser,
-    checkRegisteredUser
+    checkRegisteredUser,
+    googleLogin
 };
 
 /**
@@ -312,6 +316,61 @@ async function validateLogin(req, res) {
     } catch (error) {
         console.error("Login Error:", error.message);
         return sendError(res, "Internal Server Error", error, 500);
+    }
+}
+
+/**
+ * Verify a Google Identity Services credential and create or sign in the user.
+ */
+async function googleLogin(req, res) {
+    try {
+        const credential = req.body?.credential;
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+
+        if (!credential || !clientId) {
+            return sendError(res, 'Google sign-in is not configured', null, 503);
+        }
+
+        const ticket = await googleClient.verifyIdToken({
+            idToken: credential,
+            audience: clientId
+        });
+        const payload = ticket.getPayload();
+
+        if (!payload?.email || payload.email_verified !== true) {
+            return sendError(res, 'Google account email could not be verified', null, 401);
+        }
+
+        const emailId = payload.email.toLowerCase();
+        let user = await User.findOne({ emailId });
+        if (!user) {
+            user = await User.create({
+                username: payload.name || emailId.split('@')[0],
+                emailId,
+                password: crypto.randomBytes(32).toString('hex'),
+                isTemp: false
+            });
+        } else if (user.isTemp) {
+            user.isTemp = false;
+            user.username = payload.name || user.username;
+            await user.save();
+        }
+
+        const accessToken = createToken(user._id);
+        const refreshToken = createRefreshToken(user._id);
+        await storeRefreshToken(user._id, refreshToken);
+        setAuthCookies(res, accessToken, refreshToken);
+
+        return sendSuccess(res, 'Google login successful', {
+            userId: user._id,
+            username: user.username,
+            emailId: user.emailId,
+            accessToken,
+            refreshToken
+        });
+    } catch (error) {
+        console.error('Google Login Error:', error.message);
+        return sendError(res, 'Google sign-in failed', error, 401);
     }
 }
 

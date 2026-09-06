@@ -17,7 +17,7 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isRendered, setIsRendered] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
-  const clientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '324729375491-nl1j4657c42169gptkb1tm8ttoqkce8q.apps.googleusercontent.com';
+  const clientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
 
   const handleCredentialResponse = async (response: any) => {
     if (!response?.credential) {
