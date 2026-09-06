@@ -48,7 +48,7 @@ async function createGroupInvite(req, res) {
             VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, NOW())
         `, [crypto.randomUUID(), groupId, inviteCode, userId || null, email ? email.trim().toLowerCase() : null, role, expiresAt]);
 
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        const baseUrl = req.get('origin') || process.env.APP_URL || 'http://localhost:3000';
         const inviteUrl = `${baseUrl}/join/${inviteCode}`;
 
         // Send Email if requested

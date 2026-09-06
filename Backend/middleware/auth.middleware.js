@@ -28,8 +28,11 @@ const verifyToken = async (req, res, next) => {
         req.userKey = user._id; 
         next(); 
     } catch (err) {
-        console.error("Token verification error:", err.message);
-        return sendError(res, 'Unauthorized!', err, 401);
+        if (err.name === 'TokenExpiredError') {
+            res.setHeader('WWW-Authenticate', 'Bearer error="invalid_token", error_description="The access token expired"');
+            return sendError(res, 'Access token expired', { code: 'TOKEN_EXPIRED', message: 'jwt expired' }, 401);
+        }
+        return sendError(res, 'Unauthorized!', { code: 'INVALID_TOKEN', message: err.message }, 401);
     }
 };
 

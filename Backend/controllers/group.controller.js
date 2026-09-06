@@ -160,7 +160,7 @@ async function createGroup(req, res) {
             `, [crypto.randomUUID(), groupId, userId, organizerName, organizerEmail.toLowerCase()]);
         }
 
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        const baseUrl = req.get('origin') || process.env.APP_URL || 'http://localhost:3000';
 
         // 3. Process Initial Travelers (All invited travelers start in PENDING status until approved)
         const membersList = [];
@@ -330,7 +330,7 @@ async function getGroupById(req, res) {
 
         const group = groupQuery.rows[0];
 
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        const baseUrl = req.get('origin') || process.env.APP_URL || 'http://localhost:3000';
 
         // Fetch latest active general invite code
         const inviteQuery = await pool.query(`
@@ -556,7 +556,7 @@ async function addGroupMember(req, res) {
         const displayName = isRegistered ? userRes.rows[0].username : cleanName;
 
         const memberId = crypto.randomUUID();
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        const baseUrl = req.get('origin') || process.env.APP_URL || 'http://localhost:3000';
         const inviteCode = 'TRIP-' + crypto.randomBytes(4).toString('hex').toUpperCase();
         const inviteExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
@@ -669,7 +669,7 @@ async function resendInvite(req, res) {
             VALUES ($1, $2, $3, $4, $5, 'Traveler', 'PENDING', $6, NOW())
         `, [crypto.randomUUID(), groupId, inviteCode, userId || null, cleanEmail, inviteExpiry]);
 
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        const baseUrl = req.get('origin') || process.env.APP_URL || 'http://localhost:3000';
         const inviteUrl = `${baseUrl}/join/${inviteCode}`;
 
         // Send official email

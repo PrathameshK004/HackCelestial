@@ -42,12 +42,7 @@ const createRefreshToken = (userId) => {
  * @returns {object} Decoded token payload
  */
 const verifyToken = (token) => {
-    try {
-        return jwt.verify(token, process.env.JWTSecret, { subject: 'access' });
-    } catch (error) {
-        console.error("Token Verification Error:", error.message);
-        throw error;
-    }
+    return jwt.verify(token, process.env.JWTSecret, { subject: 'access' });
 };
 
 const verifyRefreshToken = (token) => {

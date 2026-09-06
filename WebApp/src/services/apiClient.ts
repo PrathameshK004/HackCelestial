@@ -3,7 +3,24 @@
  * Implements RFC 6749 / RFC 6750 Token Rotation and automatic request replay.
  */
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
+export const getApiBase = (): string => {
+  const envUrl = (import.meta as any).env?.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.trim().replace(/\/+$/, '');
+  }
+
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0';
+    if (isLocalhost) {
+      return '/api';
+    }
+  }
+
+  return 'https://hackcelestial-api.onrender.com/api';
+};
+
+export const API_BASE = getApiBase();
 
 export const TOKEN_STORAGE_KEY = 'triptual_auth_token';
 export const REFRESH_TOKEN_KEY = 'triptual_refresh_token';

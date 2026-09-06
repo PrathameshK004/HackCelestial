@@ -18,10 +18,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const USER_STORAGE_KEY = 'triptual_auth_user';
-const TOKEN_STORAGE_KEY = 'triptual_auth_token';
-const REFRESH_TOKEN_KEY = 'triptual_refresh_token';
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://hackcelestial-api.onrender.com/api';
+import { API_BASE, USER_STORAGE_KEY, TOKEN_STORAGE_KEY, REFRESH_TOKEN_KEY } from '../services/apiClient';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
@@ -84,6 +81,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     checkSession();
+
+    const handleSessionExpired = () => {
+      setUser(null);
+      setToken(null);
+    };
+
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => {
+      window.removeEventListener('auth:session-expired', handleSessionExpired);
+    };
   }, []);
 
   const saveAuthSession = (userData: User, accessToken?: string, refreshToken?: string) => {

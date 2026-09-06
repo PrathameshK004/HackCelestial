@@ -378,12 +378,14 @@ async function refreshAccessToken(req, res) {
     const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
 
     if (!refreshToken) {
-        return sendError(res, 'Refresh token is required', null, 401);
+        return sendError(res, 'Refresh token is required', { code: 'REFRESH_TOKEN_REQUIRED' }, 401);
     }
 
     try {
         const decoded = verifyRefreshToken(refreshToken);
         const tokenHash = hashToken(refreshToken);
+
+        // 1. Atomically consume the single-use refresh token
         const result = await pool.query(`
             UPDATE refresh_tokens
             SET revoked_at = NOW()
@@ -392,9 +394,26 @@ async function refreshAccessToken(req, res) {
         `, [tokenHash, decoded.key]);
 
         if (!result.rows[0]) {
-            return sendError(res, 'Invalid or expired refresh token', null, 401);
+            // 2. Concurrency Grace Period: If rotated within the last 30s, accommodate parallel requests
+            const recentRevocation = await pool.query(`
+                SELECT id FROM refresh_tokens
+                WHERE token_hash = $1 AND user_id = $2 AND revoked_at > NOW() - INTERVAL '30 seconds' AND expires_at > NOW()
+                LIMIT 1
+            `, [tokenHash, decoded.key]);
+
+            if (recentRevocation.rows.length > 0) {
+                const accessToken = createToken(decoded.key);
+                return sendSuccess(res, 'Token refreshed successfully', { accessToken });
+            }
+
+            // 3. Security: Token reuse detected beyond grace period, revoke all active sessions for this user
+            console.warn(`[Security Alert] Refresh token reuse detected for user ${decoded.key}. Revoking tokens.`);
+            await pool.query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL', [decoded.key]);
+
+            return sendError(res, 'Invalid or expired refresh token', { code: 'REFRESH_TOKEN_EXPIRED' }, 401);
         }
 
+        // 4. Issue rotated token pair
         const accessToken = createToken(decoded.key);
         const nextRefreshToken = createRefreshToken(decoded.key);
         await storeRefreshToken(decoded.key, nextRefreshToken);
@@ -402,8 +421,10 @@ async function refreshAccessToken(req, res) {
 
         return sendSuccess(res, 'Token refreshed successfully', { accessToken, refreshToken: nextRefreshToken });
     } catch (error) {
-        console.error('Refresh Token Error:', error.message);
-        return sendError(res, 'Invalid or expired refresh token', null, 401);
+        if (error.name !== 'TokenExpiredError') {
+            console.error('Refresh Token Error:', error.message);
+        }
+        return sendError(res, 'Invalid or expired refresh token', { code: 'REFRESH_TOKEN_EXPIRED' }, 401);
     }
 }
 

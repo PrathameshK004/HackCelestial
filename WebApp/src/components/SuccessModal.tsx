@@ -36,7 +36,8 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
 
   if (!isOpen) return null;
 
-  const inviteUrl = createdGroup?.inviteUrl || `http://localhost:3000/join/${createdGroup?.inviteCode || 'TRIP-DEMO'}`;
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  const inviteUrl = createdGroup?.inviteUrl || `${currentOrigin}/join/${createdGroup?.inviteCode || 'TRIP-DEMO'}`;
   const shareLinks = createdGroup?.shareLinks || {
     whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(`Join our trip "${tripData.groupName}" to ${tripData.destination} on Triptual: ${inviteUrl}`)}`,
     telegram: `https://t.me/share/url?url=${encodeURIComponent(inviteUrl)}&text=${encodeURIComponent(`Join our trip to ${tripData.destination}!`)}`,
