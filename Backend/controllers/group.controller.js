@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { pool } = require('../utils/db.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
+const { sendOfficialInviteEmail } = require('../utils/mail.util');
 
 module.exports = {
     createGroup,
@@ -10,10 +11,7 @@ module.exports = {
     deleteGroup,
     addGroupMember,
     removeGroupMember,
-    addExpense,
-    getSettlement,
-    settleGroup,
-    recordSettlement
+    resendInvite
 };
 
 /**
@@ -30,9 +28,6 @@ async function createGroup(req, res) {
     const client = await pool.connect();
     try {
         const userId = req.userKey; // from verifyToken middleware
-        if (!userId) {
-            return sendError(res, 'Authentication required to create a group', null, 401);
-        }
         const {
             groupName,
             destination,
@@ -43,47 +38,93 @@ async function createGroup(req, res) {
             expenseSplit = 'equal',
             description = '',
             coverImage = null,
-            travelers = []
+            travelers = [],
+            payment = null
         } = req.body;
 
         if (!groupName || !groupName.trim()) {
+            client.release();
             return sendError(res, "Group name is required", null, 400);
         }
         if (!destination || !destination.trim()) {
+            client.release();
             return sendError(res, "Destination is required", null, 400);
         }
-
-        await client.query('BEGIN');
 
         // Fetch organizer details
         let organizerName = 'Organizer';
         let organizerEmail = '';
-        let organizerUpiId = null;
         if (userId) {
-            const userRes = await client.query('SELECT username, email_id, upi_id FROM users WHERE id = $1', [userId]);
+            const userRes = await client.query('SELECT username, email_id FROM users WHERE id = $1', [userId]);
             if (userRes.rows.length > 0) {
                 organizerName = userRes.rows[0].username;
                 organizerEmail = userRes.rows[0].email_id;
-                organizerUpiId = userRes.rows[0].upi_id;
             }
         }
 
-        const groupId = crypto.randomUUID();
-        const additionalTravelers = Array.isArray(travelers) ? travelers : [];
-        const additionalMemberCount = additionalTravelers.filter((traveler) => {
-            const email = (traveler?.email || '').trim().toLowerCase();
-            return email && email !== organizerEmail.toLowerCase();
-        }).length;
-        if (additionalMemberCount < 1) {
-            return sendError(res, 'At least two group members are required, including you', null, 400);
+        // Calculate distinct members count
+        const distinctMembers = new Set();
+        if (organizerEmail) {
+            distinctMembers.add(organizerEmail.toLowerCase());
+        }
+        for (const traveler of travelers) {
+            const email = (traveler.email || '').trim().toLowerCase();
+            if (email) {
+                distinctMembers.add(email);
+            } else if (traveler.name && traveler.name.trim()) {
+                distinctMembers.add(traveler.name.trim().toLowerCase());
+            }
+        }
+        const totalMemberCount = Math.max(distinctMembers.size, travelers.length);
+        const isLargeGroup = totalMemberCount > 6;
+        const requiredFee = 19;
+
+        let memberTier = 'FREE';
+        let paymentStatus = 'FREE';
+        let paymentAmount = 0;
+        let paymentTransactionId = null;
+        let paidAt = null;
+
+        // Payment validation for groups with more than 6 members
+        if (isLargeGroup) {
+            const isPaymentValid = payment && 
+                (payment.status === 'PAID' || payment.status === 'SUCCESS' || payment.paid === true) &&
+                (payment.amount === undefined || Number(payment.amount) >= requiredFee);
+
+            if (!isPaymentValid) {
+                client.release();
+                return res.status(402).json({
+                    success: false,
+                    message: `Groups with more than 6 members require a ₹${requiredFee} upgrade fee. Only up to 6 members are free.`,
+                    data: {
+                        requiresPayment: true,
+                        freeLimit: 6,
+                        memberCount: totalMemberCount,
+                        fee: requiredFee,
+                        currency: 'INR'
+                    }
+                });
+            }
+
+            memberTier = 'PREMIUM';
+            paymentStatus = 'PAID';
+            paymentAmount = requiredFee;
+            paymentTransactionId = payment.transactionId || ('TXN-' + crypto.randomBytes(4).toString('hex').toUpperCase());
+            paidAt = new Date();
         }
 
-        // 1. Insert Group Record
+        await client.query('BEGIN');
+
+        const groupId = crypto.randomUUID();
+
+        // 1. Insert Group Record with Tier and Payment Data
         const groupInsertQuery = `
             INSERT INTO groups (
                 id, name, destination, start_date, end_date, trip_type, 
-                currency, expense_split, description, cover_image, created_by, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+                currency, expense_split, description, cover_image, created_by,
+                member_tier, payment_status, payment_amount, payment_transaction_id, paid_at,
+                created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
             RETURNING *
         `;
         const groupResult = await client.query(groupInsertQuery, [
@@ -97,21 +138,31 @@ async function createGroup(req, res) {
             expenseSplit,
             description ? description.trim() : '',
             coverImage,
-            userId || null
+            userId || null,
+            memberTier,
+            paymentStatus,
+            paymentAmount,
+            paymentTransactionId,
+            paidAt
         ]);
 
         const createdGroup = groupResult.rows[0];
 
-        // 2. Insert Organizer as Group Member
+        // 2. Insert Organizer as Group Member with ACCEPTED status
         if (organizerEmail) {
             await client.query(`
-                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, upi_id, is_registered, joined_at)
-                VALUES ($1, $2, $3, $4, $5, 'Organizer', '#059669', $6, TRUE, NOW())
-                ON CONFLICT (group_id, email) DO NOTHING
-            `, [crypto.randomUUID(), groupId, userId, organizerName, organizerEmail.toLowerCase(), organizerUpiId]);
+                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, status, joined_at)
+                VALUES ($1, $2, $3, $4, $5, 'Organizer', '#059669', TRUE, 'ACCEPTED', NOW())
+                ON CONFLICT (group_id, email) DO UPDATE SET
+                    user_id = EXCLUDED.user_id,
+                    role = 'Organizer',
+                    status = 'ACCEPTED'
+            `, [crypto.randomUUID(), groupId, userId, organizerName, organizerEmail.toLowerCase()]);
         }
 
-        // 3. Process Initial Travelers
+        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+
+        // 3. Process Initial Travelers (All invited travelers start in PENDING status until approved)
         const membersList = [];
         if (organizerEmail) {
             membersList.push({
@@ -119,16 +170,19 @@ async function createGroup(req, res) {
                 email: organizerEmail,
                 role: 'Organizer',
                 isRegistered: true,
+                status: 'ACCEPTED',
                 avatarBg: '#059669'
             });
         }
 
-        for (const traveler of additionalTravelers) {
+        const inviteExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days valid
+        const pendingInviteEmails = [];
+
+        for (const traveler of travelers) {
             const email = (traveler.email || '').trim().toLowerCase();
             const name = (traveler.name || '').trim() || email.split('@')[0];
             const role = traveler.role || 'Traveler';
             const avatarBg = traveler.avatarBg || '#0284c7';
-            const upiId = (traveler.upiId || '').trim().toLowerCase();
 
             if (!email || email === organizerEmail.toLowerCase()) continue;
 
@@ -142,17 +196,27 @@ async function createGroup(req, res) {
             const travelerUserId = isRegistered ? regCheck.rows[0].id : null;
             const displayName = isRegistered ? regCheck.rows[0].username : name;
 
+            // Participant starts in PENDING status until their approval
             const memberId = crypto.randomUUID();
             await client.query(`
-                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, upi_id, is_registered, joined_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, status, joined_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', NOW())
                 ON CONFLICT (group_id, email) DO UPDATE SET
                     name = EXCLUDED.name,
                     role = EXCLUDED.role,
-                        avatar_bg = EXCLUDED.avatar_bg,
-                        upi_id = EXCLUDED.upi_id,
-                    is_registered = EXCLUDED.is_registered
-                    `, [memberId, groupId, travelerUserId, displayName, email, role, avatarBg, upiId, isRegistered]);
+                    avatar_bg = EXCLUDED.avatar_bg,
+                    is_registered = EXCLUDED.is_registered,
+                    status = 'PENDING'
+            `, [memberId, groupId, travelerUserId, displayName, email, role, avatarBg, isRegistered]);
+
+            // Create dedicated official invitation code for this traveler
+            const travelerInviteCode = 'TRIP-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+            await client.query(`
+                INSERT INTO group_invitations (id, group_id, invite_code, invited_by, invited_email, role, status, expires_at, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, NOW())
+            `, [crypto.randomUUID(), groupId, travelerInviteCode, userId || null, email, role, inviteExpiry]);
+
+            const travelerInviteUrl = `${baseUrl}/join/${travelerInviteCode}`;
 
             membersList.push({
                 id: memberId,
@@ -161,23 +225,48 @@ async function createGroup(req, res) {
                 role,
                 avatarBg,
                 isRegistered,
+                status: 'PENDING',
                 userId: travelerUserId,
-                upiId
+                inviteCode: travelerInviteCode,
+                inviteUrl: travelerInviteUrl
+            });
+
+            pendingInviteEmails.push({
+                email,
+                name: displayName,
+                inviteCode: travelerInviteCode,
+                inviteUrl: travelerInviteUrl
             });
         }
 
-        // 4. Create Shareable Group Invitation Code
-        const inviteCode = generateInviteCode();
-        const inviteExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days valid
+        // 4. Create General Shareable Group Invitation Code
+        const generalInviteCode = generateInviteCode();
         await client.query(`
             INSERT INTO group_invitations (id, group_id, invite_code, invited_by, role, status, expires_at, created_at)
             VALUES ($1, $2, $3, $4, 'Traveler', 'PENDING', $5, NOW())
-        `, [crypto.randomUUID(), groupId, inviteCode, userId || null, inviteExpiry]);
+        `, [crypto.randomUUID(), groupId, generalInviteCode, userId || null, inviteExpiry]);
 
         await client.query('COMMIT');
 
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
-        const inviteUrl = `${baseUrl}/join/${inviteCode}`;
+        const generalInviteUrl = `${baseUrl}/join/${generalInviteCode}`;
+
+        // Dispatch official branded invitation emails asynchronously to all invited participants
+        for (const item of pendingInviteEmails) {
+            sendOfficialInviteEmail({
+                recipientEmail: item.email,
+                recipientName: item.name,
+                inviterName: organizerName,
+                groupName: createdGroup.name,
+                destination: createdGroup.destination,
+                startDate: createdGroup.start_date,
+                endDate: createdGroup.end_date,
+                tripType: createdGroup.trip_type,
+                expenseSplit: createdGroup.expense_split,
+                currency: createdGroup.currency,
+                inviteUrl: item.inviteUrl,
+                inviteCode: item.inviteCode
+            }).catch(e => console.warn(`Async invite mail error for ${item.email}:`, e.message));
+        }
 
         return sendSuccess(res, "Group created successfully", {
             groupId: createdGroup.id,
@@ -189,13 +278,18 @@ async function createGroup(req, res) {
             currency: createdGroup.currency,
             expenseSplit: createdGroup.expense_split,
             description: createdGroup.description,
-            inviteCode,
-            inviteUrl,
+            memberTier: createdGroup.member_tier,
+            paymentStatus: createdGroup.payment_status,
+            paymentAmount: Number(createdGroup.payment_amount || 0),
+            paymentTransactionId: createdGroup.payment_transaction_id,
+            paidAt: createdGroup.paid_at,
+            inviteCode: generalInviteCode,
+            inviteUrl: generalInviteUrl,
             shareLinks: {
-                whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(`Join our trip "${createdGroup.name}" to ${createdGroup.destination} on Triptual: ${inviteUrl}`)}`,
-                telegram: `https://t.me/share/url?url=${encodeURIComponent(inviteUrl)}&text=${encodeURIComponent(`Join our group trip to ${createdGroup.destination}!`)}`,
-                sms: `sms:?body=${encodeURIComponent(`Join our trip "${createdGroup.name}" to ${createdGroup.destination}: ${inviteUrl}`)}`,
-                copyLink: inviteUrl
+                whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(`Join our trip "${createdGroup.name}" to ${createdGroup.destination} on Triptual: ${generalInviteUrl}`)}`,
+                telegram: `https://t.me/share/url?url=${encodeURIComponent(generalInviteUrl)}&text=${encodeURIComponent(`Join our group trip to ${createdGroup.destination}!`)}`,
+                sms: `sms:?body=${encodeURIComponent(`Join our trip "${createdGroup.name}" to ${createdGroup.destination}: ${generalInviteUrl}`)}`,
+                copyLink: generalInviteUrl
             },
             members: membersList,
             createdAt: createdGroup.created_at
@@ -220,23 +314,25 @@ async function getGroupById(req, res) {
             return sendError(res, "Group ID is required", null, 400);
         }
 
-        const groupQuery = await pool.query('SELECT * FROM groups WHERE id = $1', [groupId]);
+        const groupQuery = await pool.query(`
+            SELECT id, name, destination, start_date as "startDate", end_date as "endDate",
+                   trip_type as "tripType", currency, expense_split as "expenseSplit",
+                   description, cover_image as "coverImage", created_by as "createdBy",
+                   member_tier as "memberTier", payment_status as "paymentStatus",
+                   payment_amount as "paymentAmount", payment_transaction_id as "paymentTransactionId",
+                   paid_at as "paidAt", created_at as "createdAt", updated_at as "updatedAt"
+            FROM groups WHERE id = $1
+        `, [groupId]);
+
         if (groupQuery.rows.length === 0) {
             return sendError(res, "Group not found", null, 404);
         }
 
         const group = groupQuery.rows[0];
 
-        // Fetch members
-        const membersQuery = await pool.query(`
-            SELECT id, user_id as "userId", name, email, role, avatar_bg as "avatarBg", upi_id as "upiId", 
-                   is_registered as "isRegistered", joined_at as "joinedAt"
-            FROM group_members 
-            WHERE group_id = $1 
-            ORDER BY role DESC, joined_at ASC
-        `, [groupId]);
+        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
 
-        // Fetch latest active invite code
+        // Fetch latest active general invite code
         const inviteQuery = await pool.query(`
             SELECT invite_code as "inviteCode", expires_at as "expiresAt"
             FROM group_invitations 
@@ -246,21 +342,47 @@ async function getGroupById(req, res) {
         `, [groupId]);
 
         const inviteCode = inviteQuery.rows[0]?.inviteCode || null;
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
         const inviteUrl = inviteCode ? `${baseUrl}/join/${inviteCode}` : null;
+
+        // Fetch members with approval status and their personal invite link if pending
+        const membersQuery = await pool.query(`
+            SELECT gm.id, gm.user_id as "userId", gm.name, gm.email, gm.role, gm.avatar_bg as "avatarBg", 
+                   gm.is_registered as "isRegistered", COALESCE(gm.status, 'ACCEPTED') as status, gm.joined_at as "joinedAt",
+                   gi.invite_code as "inviteCode"
+            FROM group_members gm
+            LEFT JOIN LATERAL (
+                SELECT invite_code 
+                FROM group_invitations 
+                WHERE group_id = gm.group_id AND (LOWER(invited_email) = LOWER(gm.email) OR invited_email IS NULL)
+                ORDER BY (LOWER(invited_email) = LOWER(gm.email)) DESC, created_at DESC 
+                LIMIT 1
+            ) gi ON true
+            WHERE gm.group_id = $1 
+            ORDER BY gm.role DESC, gm.joined_at ASC
+        `, [groupId]);
+
+        const members = membersQuery.rows.map(m => ({
+            ...m,
+            inviteUrl: m.inviteCode ? `${baseUrl}/join/${m.inviteCode}` : (inviteUrl || null)
+        }));
 
         return sendSuccess(res, "Group fetched successfully", {
             groupId: group.id,
             name: group.name,
             destination: group.destination,
-            startDate: group.start_date,
-            endDate: group.end_date,
-            tripType: group.trip_type,
+            startDate: group.startDate,
+            endDate: group.endDate,
+            tripType: group.tripType,
             currency: group.currency,
-            expenseSplit: group.expense_split,
+            expenseSplit: group.expenseSplit,
             description: group.description,
-            coverImage: group.cover_image,
-            createdBy: group.created_by,
+            coverImage: group.coverImage,
+            createdBy: group.createdBy,
+            memberTier: group.memberTier,
+            paymentStatus: group.paymentStatus,
+            paymentAmount: Number(group.paymentAmount || 0),
+            paymentTransactionId: group.paymentTransactionId,
+            paidAt: group.paidAt,
             inviteCode,
             inviteUrl,
             shareLinks: inviteUrl ? {
@@ -269,9 +391,9 @@ async function getGroupById(req, res) {
                 sms: `sms:?body=${encodeURIComponent(`Join our trip "${group.name}" to ${group.destination}: ${inviteUrl}`)}`,
                 copyLink: inviteUrl
             } : null,
-            members: membersQuery.rows,
-            createdAt: group.created_at,
-            updatedAt: group.updated_at
+            members,
+            createdAt: group.createdAt,
+            updatedAt: group.updatedAt
         });
 
     } catch (error) {
@@ -296,8 +418,10 @@ async function getMyGroups(req, res) {
 
         const groupsQuery = await pool.query(`
             SELECT DISTINCT g.id, g.name, g.destination, g.start_date as "startDate", 
-                   g.end_date as "endDate", g.trip_type as "tripType", g.currency, g.status,
+                   g.end_date as "endDate", g.trip_type as "tripType", g.currency, 
                    g.expense_split as "expenseSplit", g.description, g.created_by as "createdBy", 
+                   g.member_tier as "memberTier", g.payment_status as "paymentStatus",
+                   g.payment_amount as "paymentAmount",
                    g.created_at as "createdAt",
                    COUNT(gm.id) as "memberCount"
             FROM groups g
@@ -390,7 +514,7 @@ async function deleteGroup(req, res) {
 async function addGroupMember(req, res) {
     try {
         const { groupId } = req.params;
-        const { name, email, role = 'Traveler', avatarBg = '#0284c7', upiId } = req.body;
+        const { name, email, role = 'Traveler', avatarBg = '#0284c7' } = req.body;
 
         if (!email || !email.trim()) {
             return sendError(res, "Member email is required", null, 400);
@@ -398,31 +522,86 @@ async function addGroupMember(req, res) {
 
         const cleanEmail = email.trim().toLowerCase();
         const cleanName = (name || '').trim() || cleanEmail.split('@')[0];
-        const cleanUpiId = (upiId || '').trim().toLowerCase();
-        if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(cleanUpiId)) return sendError(res, 'A valid UPI ID is required', null, 400);
+
+        // Check if group is on FREE tier and adding this member exceeds 6 members
+        const groupRes = await pool.query('SELECT member_tier, payment_status FROM groups WHERE id = $1', [groupId]);
+        if (groupRes.rows.length === 0) {
+            return sendError(res, "Group not found", null, 404);
+        }
+        const currentGroup = groupRes.rows[0];
+
+        if (currentGroup.member_tier === 'FREE' || currentGroup.payment_status !== 'PAID') {
+            const countRes = await pool.query('SELECT COUNT(*) as count FROM group_members WHERE group_id = $1', [groupId]);
+            const currentCount = parseInt(countRes.rows[0].count, 10);
+            const alreadyInGroup = await pool.query('SELECT id FROM group_members WHERE group_id = $1 AND LOWER(email) = $2', [groupId, cleanEmail]);
+            if (alreadyInGroup.rows.length === 0 && currentCount >= 6) {
+                return res.status(402).json({
+                    success: false,
+                    message: "Group has reached the 6-member free tier limit. Upgrade to 7+ members for ₹19 to add more travelers.",
+                    data: {
+                        requiresPayment: true,
+                        freeLimit: 6,
+                        memberCount: currentCount + 1,
+                        fee: 19,
+                        currency: 'INR'
+                    }
+                });
+            }
+        }
 
         // Check if user is on platform
-        const userRes = await pool.query('SELECT id, username, upi_id FROM users WHERE LOWER(email_id) = $1 AND is_temp = FALSE', [cleanEmail]);
+        const userRes = await pool.query('SELECT id, username FROM users WHERE LOWER(email_id) = $1 AND is_temp = FALSE', [cleanEmail]);
         const isRegistered = userRes.rows.length > 0;
         const travelerUserId = isRegistered ? userRes.rows[0].id : null;
         const displayName = isRegistered ? userRes.rows[0].username : cleanName;
-        const memberUpiId = isRegistered ? (userRes.rows[0].upi_id || cleanUpiId) : cleanUpiId;
-        if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(memberUpiId)) return sendError(res, 'This registered user has no UPI ID. Ask them to update their profile first.', null, 400);
 
         const memberId = crypto.randomUUID();
+        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        const inviteCode = 'TRIP-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+        const inviteExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
         const memberResult = await pool.query(`
-            INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, upi_id, is_registered, joined_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+            INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, status, joined_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', NOW())
             ON CONFLICT (group_id, email) DO UPDATE SET
                 name = EXCLUDED.name,
                 role = EXCLUDED.role,
                 avatar_bg = EXCLUDED.avatar_bg,
-                upi_id = EXCLUDED.upi_id,
-                is_registered = EXCLUDED.is_registered
-            RETURNING id, user_id as "userId", name, email, role, avatar_bg as "avatarBg", is_registered as "isRegistered", joined_at as "joinedAt"
-        `, [memberId, groupId, travelerUserId, displayName, cleanEmail, role, avatarBg, memberUpiId, isRegistered]);
+                is_registered = EXCLUDED.is_registered,
+                status = 'PENDING'
+            RETURNING id, user_id as "userId", name, email, role, avatar_bg as "avatarBg", is_registered as "isRegistered", status, joined_at as "joinedAt"
+        `, [memberId, groupId, travelerUserId, displayName, cleanEmail, role, avatarBg, isRegistered]);
 
-        return sendSuccess(res, "Member added successfully", memberResult.rows[0]);
+        // Create official invitation record
+        await pool.query(`
+            INSERT INTO group_invitations (id, group_id, invite_code, invited_by, invited_email, role, status, expires_at, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, NOW())
+        `, [crypto.randomUUID(), groupId, inviteCode, req.userKey || null, cleanEmail, role, inviteExpiry]);
+
+        const inviteUrl = `${baseUrl}/join/${inviteCode}`;
+
+        // Send official branded invitation email asynchronously
+        sendOfficialInviteEmail({
+            recipientEmail: cleanEmail,
+            recipientName: displayName,
+            inviterName: req.userKey ? 'Group Organizer' : 'A friend',
+            groupName: currentGroup.name || 'Trip Ledger',
+            destination: currentGroup.destination || 'Group Trip',
+            startDate: currentGroup.start_date,
+            endDate: currentGroup.end_date,
+            tripType: currentGroup.trip_type,
+            expenseSplit: currentGroup.expense_split,
+            currency: currentGroup.currency,
+            inviteUrl,
+            inviteCode
+        }).catch(err => console.warn(`Async invite mail error to ${cleanEmail}:`, err.message));
+
+        return sendSuccess(res, "Member invitation created successfully. Member will be added once approved.", {
+            ...memberResult.rows[0],
+            status: 'PENDING',
+            inviteCode,
+            inviteUrl
+        });
 
     } catch (error) {
         console.error("Add Member Error:", error);
@@ -438,6 +617,9 @@ async function removeGroupMember(req, res) {
         const { groupId, memberId } = req.params;
 
         await pool.query('DELETE FROM group_members WHERE group_id = $1 AND (id = $2 OR email = $2)', [groupId, memberId]);
+        // Also cancel/expire any pending invitations for this email/member if matching
+        await pool.query('UPDATE group_invitations SET status = $1 WHERE group_id = $2 AND (id = $3 OR invited_email = $3)', ['EXPIRED', groupId, memberId]);
+
         return sendSuccess(res, "Member removed successfully", { memberId });
 
     } catch (error) {
@@ -446,176 +628,73 @@ async function removeGroupMember(req, res) {
     }
 }
 
-async function ensureGroupMember(groupId, userId) {
-    const result = await pool.query(`
-        SELECT gm.id FROM group_members gm
-        LEFT JOIN groups g ON g.id = gm.group_id
-        WHERE gm.group_id = $1 AND (gm.user_id = $2 OR g.created_by = $2)
-        LIMIT 1
-    `, [groupId, userId]);
-    return result.rows.length > 0;
-}
+/**
+ * Resend Official Group Invitation Email
+ */
+async function resendInvite(req, res) {
+    try {
+        const { groupId } = req.params;
+        const { email } = req.body;
+        const userId = req.userKey;
 
-function parseAmountToCents(value) {
-    const text = String(value ?? '').trim();
-    if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
-    const [whole, fraction = ''] = text.split('.');
-    const cents = Number(`${whole}${fraction.padEnd(2, '0')}`);
-    return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
-}
-
-function calculateSettlement(expenses, members, settlementRecords = []) {
-    const balances = new Map(members.map((member) => [member.id, 0]));
-    for (const expense of expenses) {
-        const amountCents = parseAmountToCents(expense.amount);
-        if (!amountCents) continue;
-        balances.set(expense.paidBy, (balances.get(expense.paidBy) || 0) + amountCents);
-        for (const share of expense.shares || []) {
-            balances.set(share.memberId, (balances.get(share.memberId) || 0) - Number(share.amountCents));
+        if (!email || !email.trim()) {
+            return sendError(res, "Recipient email is required", null, 400);
         }
-    }
-    for (const record of settlementRecords) {
-        const amountCents = parseAmountToCents(record.amount);
-        if (!amountCents) continue;
-        balances.set(record.paidBy, (balances.get(record.paidBy) || 0) + amountCents);
-        balances.set(record.paidTo, (balances.get(record.paidTo) || 0) - amountCents);
-    }
-    const creditors = [...balances].filter(([, amount]) => amount > 0).map(([memberId, amountCents]) => ({ memberId, amountCents }));
-    const debtors = [...balances].filter(([, amount]) => amount < 0).map(([memberId, amountCents]) => ({ memberId, amountCents: -amountCents }));
-    const transfers = [];
-    let debtorIndex = 0;
-    let creditorIndex = 0;
-    while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
-        const debtor = debtors[debtorIndex];
-        const creditor = creditors[creditorIndex];
-        const amountCents = Math.min(debtor.amountCents, creditor.amountCents);
-        transfers.push({ from: debtor.memberId, to: creditor.memberId, amount: (amountCents / 100).toFixed(2) });
-        debtor.amountCents -= amountCents;
-        creditor.amountCents -= amountCents;
-        if (debtor.amountCents === 0) debtorIndex++;
-        if (creditor.amountCents === 0) creditorIndex++;
-    }
-    return transfers;
-}
+        const cleanEmail = email.trim().toLowerCase();
 
-async function addExpense(req, res) {
-    const { groupId } = req.params;
-    const { description, amount, participants, paymentMethod = 'CASH', paymentReference = null } = req.body;
-    try {
-        if (!(await ensureGroupMember(groupId, req.userKey))) return sendError(res, 'You are not a member of this group', null, 403);
-        const groupState = await pool.query('SELECT status FROM groups WHERE id = $1', [groupId]);
-        if (!groupState.rows.length) return sendError(res, 'Group not found', null, 404);
-        if (groupState.rows[0].status === 'SETTLED') return sendError(res, 'Settled groups cannot accept new expenses', null, 409);
-        const amountCents = parseAmountToCents(amount);
-        if (!description?.trim() || !amountCents) return sendError(res, 'Description and amount are required', null, 400);
-        if (!['CASH', 'UPI'].includes(paymentMethod)) return sendError(res, 'Unsupported payment method', null, 400);
-        const memberResult = await pool.query('SELECT id, user_id as "userId" FROM group_members WHERE group_id = $1 ORDER BY joined_at ASC', [groupId]);
-        const memberIds = memberResult.rows.map((member) => member.id);
-        const payer = memberResult.rows.find((member) => member.userId === req.userKey);
-        if (!payer) return sendError(res, 'Your account is not a member of this group', null, 403);
-        const selected = [...new Set((participants || memberIds).filter((id) => memberIds.includes(id)))];
-        if (!selected.length) return sendError(res, 'At least one participant is required', null, 400);
-        const base = Math.floor(amountCents / selected.length);
-        let remainder = amountCents % selected.length;
-        const shares = selected.map((memberId) => ({ memberId, amountCents: base + (remainder-- > 0 ? 1 : 0) }));
-        const result = await pool.query(`
-            INSERT INTO expenses (id, group_id, description, amount, paid_by, shares, created_by, payment_method, payment_reference)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, description, amount, paid_by as "paidBy", shares, payment_method as "paymentMethod", payment_reference as "paymentReference", created_at as "createdAt"
-        `, [crypto.randomUUID(), groupId, description.trim(), (amountCents / 100).toFixed(2), payer.id, JSON.stringify(shares), req.userKey, paymentMethod, paymentReference]);
-        return sendSuccess(res, 'Expense added successfully', result.rows[0], 201);
-    } catch (error) {
-        console.error('Add Expense Error:', error);
-        return sendError(res, 'Failed to add expense', error, 500);
-    }
-}
+        // Verify group exists
+        const groupRes = await pool.query('SELECT * FROM groups WHERE id = $1', [groupId]);
+        if (groupRes.rows.length === 0) {
+            return sendError(res, "Group not found", null, 404);
+        }
+        const group = groupRes.rows[0];
 
-async function getSettlement(req, res) {
-    const { groupId } = req.params;
-    try {
-        if (!(await ensureGroupMember(groupId, req.userKey))) return sendError(res, 'You are not a member of this group', null, 403);
-        const [memberResult, expenseResult, settlementResult] = await Promise.all([
-            pool.query('SELECT id, user_id as "userId", name, email, upi_id as "upiId" FROM group_members WHERE group_id = $1 ORDER BY joined_at ASC', [groupId]),
-            pool.query(`SELECT e.id, e.description, e.amount, e.paid_by as "paidBy", payer.name as "paidByName", e.created_by as "createdBy", creator.username as "createdByName", e.shares, e.payment_method as "paymentMethod", e.payment_reference as "paymentReference", e.created_at as "createdAt" FROM expenses e JOIN group_members payer ON payer.id = e.paid_by LEFT JOIN users creator ON creator.id = e.created_by WHERE e.group_id = $1 ORDER BY e.created_at DESC`, [groupId]),
-            pool.query('SELECT paid_by as "paidBy", paid_to as "paidTo", amount FROM settlement_records WHERE group_id = $1', [groupId])
-        ]);
-        const transfers = calculateSettlement(expenseResult.rows, memberResult.rows, settlementResult.rows);
-        const names = Object.fromEntries(memberResult.rows.map((member) => [member.id, member.name]));
-        const historyResult = await pool.query(`SELECT sr.id, sr.amount, sr.payment_method as "paymentMethod", sr.remarks, sr.created_at as "createdAt", payer.name as "paidByName", payee.name as "paidToName" FROM settlement_records sr JOIN group_members payer ON payer.id = sr.paid_by JOIN group_members payee ON payee.id = sr.paid_to WHERE sr.group_id = $1 ORDER BY sr.created_at DESC`, [groupId]);
-        return sendSuccess(res, 'Settlement calculated successfully', {
-            members: memberResult.rows,
-            expenses: expenseResult.rows,
-            transfers: transfers.map((transfer) => ({ ...transfer, fromName: names[transfer.from], toName: names[transfer.to] })),
-            settlementHistory: historyResult.rows
+        // Fetch organizer name
+        let inviterName = 'Group Organizer';
+        if (userId) {
+            const userRes = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
+            if (userRes.rows.length > 0) inviterName = userRes.rows[0].username;
+        }
+
+        // Fetch existing recipient name from group_members
+        const memberRes = await pool.query('SELECT name FROM group_members WHERE group_id = $1 AND LOWER(email) = $2', [groupId, cleanEmail]);
+        const recipientName = memberRes.rows[0]?.name || cleanEmail.split('@')[0];
+
+        // Generate fresh invitation code
+        const inviteCode = 'TRIP-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+        const inviteExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+        await pool.query(`
+            INSERT INTO group_invitations (id, group_id, invite_code, invited_by, invited_email, role, status, expires_at, created_at)
+            VALUES ($1, $2, $3, $4, $5, 'Traveler', 'PENDING', $6, NOW())
+        `, [crypto.randomUUID(), groupId, inviteCode, userId || null, cleanEmail, inviteExpiry]);
+
+        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        const inviteUrl = `${baseUrl}/join/${inviteCode}`;
+
+        // Send official email
+        await sendOfficialInviteEmail({
+            recipientEmail: cleanEmail,
+            recipientName,
+            inviterName,
+            groupName: group.name,
+            destination: group.destination,
+            startDate: group.start_date,
+            endDate: group.end_date,
+            tripType: group.trip_type,
+            expenseSplit: group.expense_split,
+            currency: group.currency,
+            inviteUrl,
+            inviteCode
+        });
+
+        return sendSuccess(res, `Official invitation sent to ${cleanEmail}`, {
+            inviteCode,
+            inviteUrl,
+            recipientEmail: cleanEmail
         });
     } catch (error) {
-        console.error('Settlement Error:', error);
-        return sendError(res, 'Failed to calculate settlement', error, 500);
-    }
-}
-
-async function settleGroup(req, res) {
-    const { groupId } = req.params;
-    try {
-        const groupResult = await pool.query('SELECT created_by FROM groups WHERE id = $1', [groupId]);
-        if (!groupResult.rows.length) return sendError(res, 'Group not found', null, 404);
-        if (groupResult.rows[0].created_by !== req.userKey) return sendError(res, 'Only the organizer can settle this group', null, 403);
-        const [memberResult, expenseResult, settlementResult] = await Promise.all([
-            pool.query('SELECT id, name FROM group_members WHERE group_id = $1 ORDER BY joined_at ASC', [groupId]),
-            pool.query('SELECT amount, paid_by as "paidBy", shares FROM expenses WHERE group_id = $1', [groupId]),
-            pool.query('SELECT paid_by as "paidBy", paid_to as "paidTo", amount FROM settlement_records WHERE group_id = $1', [groupId])
-        ]);
-        const transfers = calculateSettlement(expenseResult.rows, memberResult.rows, settlementResult.rows);
-        if (transfers.length > 0) return sendError(res, 'The group still has outstanding payments', { transfers }, 409);
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            for (const transfer of transfers) {
-                await client.query(`INSERT INTO settlement_records (id, group_id, paid_by, paid_to, amount, payment_method, remarks, created_by) VALUES ($1, $2, $3, $4, $5, 'CASH', $6, $7)`, [crypto.randomUUID(), groupId, transfer.from, transfer.to, transfer.amount, 'Settlement transfer', req.userKey]);
-            }
-            const result = await client.query(`UPDATE groups SET status = 'SETTLED', settled_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING id, status, settled_at as "settledAt"`, [groupId]);
-            await client.query('COMMIT');
-            return sendSuccess(res, 'Group marked as settled', { ...result.rows[0], transfers });
-        } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        } finally {
-            client.release();
-        }
-    } catch (error) {
-        console.error('Settle Group Error:', error);
-        return sendError(res, 'Failed to settle group', error, 500);
-    }
-}
-
-async function recordSettlement(req, res) {
-    const { groupId } = req.params;
-    const { paidTo, amount, remarks, paymentMethod = 'CASH', paymentReference = null } = req.body;
-    try {
-        if (!remarks?.trim() || !/^\d+(\.\d{1,2})?$/.test(String(amount || '')) || !paidTo) return sendError(res, 'Payee, amount, and remarks are required', null, 400);
-        if (!['CASH', 'UPI'].includes(paymentMethod)) return sendError(res, 'Unsupported payment method', null, 400);
-        const result = await pool.query(`
-            SELECT payer.id as "paidBy", payee.id as "paidTo"
-            FROM group_members payer
-            JOIN group_members payee ON payee.group_id = payer.group_id
-            WHERE payer.group_id = $1 AND payer.user_id = $2 AND payee.id = $3
-        `, [groupId, req.userKey, paidTo]);
-        if (!result.rows.length) return sendError(res, 'You can only settle payments from your own account', null, 403);
-        const [membersResult, expensesResult, recordsResult] = await Promise.all([
-            pool.query('SELECT id, name FROM group_members WHERE group_id = $1', [groupId]),
-            pool.query('SELECT amount, paid_by as "paidBy", shares FROM expenses WHERE group_id = $1', [groupId]),
-            pool.query('SELECT paid_by as "paidBy", paid_to as "paidTo", amount FROM settlement_records WHERE group_id = $1', [groupId])
-        ]);
-        const outstanding = calculateSettlement(expensesResult.rows, membersResult.rows, recordsResult.rows)
-            .find((transfer) => transfer.from === result.rows[0].paidBy && transfer.to === result.rows[0].paidTo);
-        if (!outstanding || Number(amount) > Number(outstanding.amount)) return sendError(res, 'Settlement amount exceeds the outstanding balance', null, 400);
-        const record = await pool.query(`
-            INSERT INTO settlement_records (id, group_id, paid_by, paid_to, amount, payment_method, remarks, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING id, amount, payment_method as "paymentMethod", remarks, created_at as "createdAt"
-        `, [crypto.randomUUID(), groupId, result.rows[0].paidBy, result.rows[0].paidTo, amount, paymentMethod, remarks.trim(), req.userKey]);
-        return sendSuccess(res, 'Settlement payment recorded', { ...record.rows[0], paymentReference });
-    } catch (error) {
-        console.error('Record Settlement Error:', error);
-        return sendError(res, 'Failed to record settlement payment', error, 500);
+        console.error("Resend Invite Error:", error);
+        return sendError(res, "Failed to resend invitation email", error, 500);
     }
 }

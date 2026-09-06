@@ -17,11 +17,7 @@ module.exports = {
   validateNewUser,
   validateUpdateUser,
   validateOtpReq,
-  validateNewTempUser,
-  validateForgotPassword,
-  validateVerifyResetOtp,
-  validateResetPassword,
-  validateChangePassword
+  validateNewTempUser
 }
 
 /**
@@ -45,11 +41,11 @@ function validateUserId(req, res, next) {
  * Validate new user data (with OTP verification)
  */
 async function validateNewUser(req, res, next) {
-  const { username, emailId, password, code, upiId } = req.body;
+  const { username, emailId, password, code } = req.body;
 
   // Check required fields
-  if (!username || !emailId || !password || !code || !upiId) {
-    return sendError(res, 'Username, Email, Password, UPI ID and OTP are required fields.', null, 400);
+  if (!username || !emailId || !password || !code) {
+    return sendError(res, 'Username, Email, Password and OTP are required fields.', null, 400);
   }
 
   // Validate email format
@@ -65,9 +61,6 @@ async function validateNewUser(req, res, next) {
   // Validate username
   if (!isValidUsername(username)) {
     return sendError(res, 'Username must be at least 3 characters long.', null, 400);
-  }
-  if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(upiId.trim())) {
-    return sendError(res, 'Invalid UPI ID format.', null, 400);
   }
 
   try {
@@ -86,10 +79,10 @@ async function validateNewUser(req, res, next) {
  * Validate temporary user data (initial registration)
  */
 async function validateNewTempUser(req, res, next) {
-  const { username, emailId, password, upiId } = req.body;
+  const { username, emailId, password } = req.body;
 
-  if (!username || !emailId || !password || !upiId) {
-    return sendError(res, 'Username, Email, Password and UPI ID are required fields.', null, 400);
+  if (!username || !emailId || !password) {
+    return sendError(res, 'Username, Email and Password are required fields.', null, 400);
   }
 
   if (!isValidEmail(emailId)) {
@@ -103,9 +96,6 @@ async function validateNewTempUser(req, res, next) {
   if (!isValidUsername(username)) {
     return sendError(res, 'Username must be at least 3 characters long.', null, 400);
   }
-  if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(upiId.trim())) {
-    return sendError(res, 'Invalid UPI ID format.', null, 400);
-  }
 
   next();
 }
@@ -114,14 +104,21 @@ async function validateNewTempUser(req, res, next) {
  * Validate user update data
  */
 async function validateUpdateUser(req, res, next) {
-  const { username, upiId } = req.body;
+  const { username, emailId } = req.body;
+
+  if (emailId) {
+    if (!isValidEmail(emailId)) {
+      return sendError(res, 'Invalid email format.', null, 400);
+    }
+
+    const existingUser = await User.findOne({ emailId });
+    if (existingUser && existingUser._id !== req.params.userId) {
+      return sendError(res, 'Email already exists.', null, 400);
+    }
+  }
 
   if (username && !isValidUsername(username)) {
     return sendError(res, 'Username must be at least 3 characters long.', null, 400);
-  }
-
-  if (upiId && !/^\w[\w.-]{1,}@[\w.-]+$/.test(upiId.trim())) {
-    return sendError(res, 'Invalid UPI ID format.', null, 400);
   }
 
   next();
@@ -162,91 +159,10 @@ function validateOtpReq(req, res, next) {
     return sendError(res, 'Purpose must be a string.', null, 400);
   }
 
-  const validPurposes = ["Sign Up", "Password Reset", "Verification"];
+  const validPurposes = ["Sign Up"];
   if (!validPurposes.includes(purpose)) {
-    return sendError(res, 'Invalid OTP purpose.', null, 400);
+    return sendError(res, 'Purpose must be "Sign Up".', null, 400);
   }
 
   next(); 
 }
-
-/**
- * Validate forgot password request
- */
-function validateForgotPassword(req, res, next) {
-  const { emailId } = req.body;
-
-  if (!emailId || !emailId.trim()) {
-    return sendError(res, 'Email address is required.', null, 400);
-  }
-
-  if (!isValidEmail(emailId.trim())) {
-    return sendError(res, 'Invalid email format. Please provide a valid email.', null, 400);
-  }
-
-  next();
-}
-
-/**
- * Validate reset OTP verification request
- */
-function validateVerifyResetOtp(req, res, next) {
-  const { emailId, code } = req.body;
-
-  if (!emailId || !emailId.trim()) {
-    return sendError(res, 'Email address is required.', null, 400);
-  }
-
-  if (!code || !code.toString().trim()) {
-    return sendError(res, 'Verification code (OTP) is required.', null, 400);
-  }
-
-  next();
-}
-
-/**
- * Validate reset password request
- */
-function validateResetPassword(req, res, next) {
-  const { emailId, code, newPassword } = req.body;
-
-  if (!emailId || !emailId.trim()) {
-    return sendError(res, 'Email address is required.', null, 400);
-  }
-
-  if (!code || !code.toString().trim()) {
-    return sendError(res, 'Verification code (OTP) is required.', null, 400);
-  }
-
-  if (!newPassword) {
-    return sendError(res, 'New password is required.', null, 400);
-  }
-
-  if (!isValidPassword(newPassword)) {
-    return sendError(res, 'New password must be at least 6 characters long.', null, 400);
-  }
-
-  next();
-}
-
-/**
- * Validate authenticated change password request
- */
-function validateChangePassword(req, res, next) {
-  const { currentPassword, newPassword } = req.body;
-
-  if (!currentPassword || !newPassword) {
-    return sendError(res, 'Both current password and new password are required.', null, 400);
-  }
-
-  if (!isValidPassword(newPassword)) {
-    return sendError(res, 'New password must be at least 6 characters long.', null, 400);
-  }
-
-  if (currentPassword === newPassword) {
-    return sendError(res, 'New password must be different from current password.', null, 400);
-  }
-
-  next();
-}
-

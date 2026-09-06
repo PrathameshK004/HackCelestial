@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Calendar, Users, Coins, Split, Eye } from 'lucide-react';
+import { MapPin, Calendar, Users, Coins, Split, Eye, Sparkles } from 'lucide-react';
 import { TripFormData } from '../types/group';
 import { CURRENCY_OPTIONS, EXPENSE_SPLIT_OPTIONS } from '../mock/mockData';
 
@@ -93,6 +93,24 @@ export const TripPreview: React.FC<TripPreviewProps> = ({
               )}
             </div>
           </div>
+        </div>
+
+        <div className="preview-item-row">
+          <span className="preview-item-label">
+            <Sparkles size={15} />
+            Group Tier
+          </span>
+          <span className="preview-item-value">
+            {formData.travelers.length > 6 ? (
+              <span style={{ color: '#d97706', fontWeight: 700 }}>
+                Large Squad (₹19 Fee)
+              </span>
+            ) : (
+              <span style={{ color: '#059669', fontWeight: 600 }}>
+                Free Tier ({formData.travelers.length}/6)
+              </span>
+            )}
+          </span>
         </div>
 
         <div className="preview-item-row">

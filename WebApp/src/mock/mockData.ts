@@ -1,16 +1,49 @@
 import { DestinationOption, Traveler, TripFormData } from '../types/group';
 
-export const INITIAL_TRAVELERS: Traveler[] = [];
+export const INITIAL_TRAVELERS: Traveler[] = [
+  {
+    id: '1',
+    name: 'Yogesh Dandawalkar',
+    email: 'yogesh@example.com',
+    role: 'Organizer',
+    avatarBg: '#059669',
+    status: 'ACCEPTED'
+  },
+  {
+    id: '2',
+    name: 'Rahul Sharma',
+    email: 'rahul@example.com',
+    role: 'Traveler',
+    avatarBg: '#0284c7',
+    status: 'PENDING'
+  },
+  {
+    id: '3',
+    name: 'Sneha Patil',
+    email: 'sneha@example.com',
+    role: 'Traveler',
+    avatarBg: '#7c3aed',
+    status: 'PENDING'
+  },
+  {
+    id: '4',
+    name: 'Aditya Kulkarni',
+    email: 'aditya@example.com',
+    role: 'Traveler',
+    avatarBg: '#ea580c',
+    status: 'PENDING'
+  }
+];
 
 export const INITIAL_MOCK_TRIP: TripFormData = {
-  groupName: '',
-  destination: '',
-  startDate: '',
-  endDate: '',
+  groupName: 'Goa Friends Trip',
+  destination: 'Goa, India',
+  startDate: '2026-08-12',
+  endDate: '2026-08-16',
   tripType: 'Friends',
   currency: 'INR',
   expenseSplit: 'equal',
-  description: '',
+  description: 'Annual friends trip to Goa with beaches, activities, food and sightseeing.',
   travelers: INITIAL_TRAVELERS
 };
 

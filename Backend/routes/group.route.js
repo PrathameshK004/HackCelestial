@@ -14,12 +14,10 @@ router.delete('/:groupId', verifyToken, groupController.deleteGroup);
 // Group Members Management
 router.post('/:groupId/members', verifyToken, groupController.addGroupMember);
 router.delete('/:groupId/members/:memberId', verifyToken, groupController.removeGroupMember);
-router.post('/:groupId/expenses', verifyToken, groupController.addExpense);
-router.get('/:groupId/settlement', verifyToken, groupController.getSettlement);
-router.post('/:groupId/settle', verifyToken, groupController.settleGroup);
-router.post('/:groupId/settlement-payments', verifyToken, groupController.recordSettlement);
 
 // Group Invitations
 router.post('/:groupId/invites', verifyToken, inviteController.createGroupInvite);
+router.post('/:groupId/invites/resend', verifyToken, groupController.resendInvite);
 
 module.exports = router;
+

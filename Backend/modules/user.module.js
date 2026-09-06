@@ -7,7 +7,6 @@ const toUser = (row) => row && new User({
     username: row.username,
     emailId: row.email_id,
     password: row.password_hash,
-    upiId: row.upi_id,
     isTemp: row.is_temp,
     code: row.code_hash,
     codeExpiry: row.code_expiry
@@ -41,19 +40,18 @@ class User {
         }
 
         const result = await pool.query(`
-            INSERT INTO users (id, username, email_id, password_hash, upi_id, is_temp, code_hash, code_expiry)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO users (id, username, email_id, password_hash, is_temp, code_hash, code_expiry)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (id) DO UPDATE SET
                 username = EXCLUDED.username,
                 email_id = EXCLUDED.email_id,
                 password_hash = EXCLUDED.password_hash,
-                upi_id = EXCLUDED.upi_id,
                 is_temp = EXCLUDED.is_temp,
                 code_hash = EXCLUDED.code_hash,
                 code_expiry = EXCLUDED.code_expiry,
                 updated_at = NOW()
             RETURNING *
-        `, [this._id, this.username, email, passwordHash, this.upiId || null, this.isTemp || false, codeHash, this.codeExpiry || null]);
+        `, [this._id, this.username, email, passwordHash, this.isTemp || false, codeHash, this.codeExpiry || null]);
 
         Object.assign(this, toUser(result.rows[0]));
         return this;

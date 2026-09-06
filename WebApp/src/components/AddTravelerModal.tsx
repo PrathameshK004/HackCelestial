@@ -29,7 +29,6 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [upiId, setUpiId] = useState('');
   const [nameError, setNameError] = useState('');
   const [emailError, setEmailError] = useState('');
 
@@ -39,7 +38,6 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
     checked: boolean;
     isRegistered: boolean;
     registeredUsername?: string;
-    registeredUpiId?: string;
   } | null>(null);
 
   const checkTimeoutRef = useRef<any>(null);
@@ -64,14 +62,10 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
             checked: true,
             isRegistered: true,
             registeredUsername: res.data.user.username,
-            registeredUpiId: res.data.user.upiId || undefined,
           });
           // Auto-fill name if user hasn't typed one
           if (!name.trim()) {
             setName(res.data.user.username);
-          }
-          if (res.data.user.upiId) {
-            setUpiId(res.data.user.upiId);
           }
         } else {
           setRegistrationStatus({
@@ -118,11 +112,6 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
       setEmailError('');
     }
 
-    if (!/^\w[\w.-]{1,}@[\w.-]+$/.test(upiId.trim())) {
-      setEmailError('A valid UPI ID is required, for example name@bank');
-      valid = false;
-    }
-
     if (valid) {
       const randomColor = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
       onAdd({
@@ -130,12 +119,11 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
         email: email.trim().toLowerCase(),
         role: 'Traveler',
         avatarBg: randomColor,
-        isRegistered: registrationStatus?.isRegistered || false
-        , upiId: upiId.trim().toLowerCase()
+        isRegistered: registrationStatus?.isRegistered || false,
+        status: 'PENDING'
       });
       setName('');
       setEmail('');
-      setUpiId('');
       setNameError('');
       setEmailError('');
       setRegistrationStatus(null);
@@ -151,14 +139,9 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
             <div className="modal-icon-badge">
               <UserPlus size={20} />
             </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="traveler-upi-input">UPI ID <span className="required-star">*</span></label>
-              <input id="traveler-upi-input" type="text" className="text-input" placeholder="name@bank" value={upiId} onChange={(e) => setUpiId(e.target.value)} required />
-            </div>
             <div>
               <h3 className="modal-title">Add Traveler</h3>
-              <p className="modal-subtitle">Add registered members or invite new friends</p>
+              <p className="modal-subtitle">Invite companions via official approval link</p>
             </div>
           </div>
           <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close modal">
@@ -204,17 +187,22 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
                   {registrationStatus.isRegistered ? (
                     <div className="user-status-banner banner-registered">
                       <CheckCircle2 size={16} className="text-emerald-600" />
-                      <span>
-                        <strong>Registered Platform Member:</strong> {registrationStatus.registeredUsername}
-                      </span>
+                      <div>
+                        <span><strong>Platform User:</strong> {registrationStatus.registeredUsername}</span>
+                        <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '0.95rem' }} role="img" aria-label="email">📩</span>
+                          <span>Official invite will be sent. Member joins group upon approval.</span>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <div className="user-status-banner banner-unregistered">
                       <UserX size={16} className="text-amber-600" />
                       <div>
                         <span><strong>Not registered on platform yet.</strong></span>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--slate-600)', marginTop: '2px' }}>
-                          An invitation link will be generated to share via WhatsApp, Telegram, or Email.
+                        <div style={{ fontSize: '0.8rem', color: '#92400e', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '0.95rem' }} role="img" aria-label="email">📧</span>
+                          <span>Official invitation link will be sent to join & approve.</span>
                         </div>
                       </div>
                     </div>
@@ -255,7 +243,7 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
             </button>
             <button type="submit" className="btn btn-primary">
               <UserPlus size={16} />
-              <span>{registrationStatus?.isRegistered ? 'Add Member' : 'Add & Prepare Invite'}</span>
+              <span>Add & Prepare Official Invite</span>
             </button>
           </div>
         </form>

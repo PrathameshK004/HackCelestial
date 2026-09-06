@@ -4,20 +4,51 @@
  */
 
 const axios = require('axios');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const emailServiceUrl = process.env.EMAIL_SERVICE_URL || 'https://email-service-delta-seven.vercel.app/api/send-email';
 
-const sendMail = async ({ to, subject, html}) => {
-    if (!process.env.EMAIL_SERVICE_API) {
-        throw new Error('EMAIL_SERVICE_API is required');
-    }
-    if (!process.env.EMAIL) {
-        throw new Error('EMAIL is required as the sender address');
+// Initialize Gmail SMTP transporter if credentials exist
+let smtpTransporter = null;
+if (process.env.EMAIL && process.env.EMAIL_PASSWORD) {
+    smtpTransporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL,
+            pass: process.env.EMAIL_PASSWORD.replace(/\s+/g, '')
+        }
+    });
+}
+
+const sendMail = async ({ to, subject, html, text }) => {
+    const sender = process.env.EMAIL || 'triptual.support@gmail.com';
+    const fromAddress = `"GroupTrip Ledger" <${sender}>`;
+
+    // 1. Prioritize Direct Gmail SMTP for guaranteed delivery to inbox
+    if (smtpTransporter) {
+        try {
+            const info = await smtpTransporter.sendMail({
+                from: fromAddress,
+                to,
+                subject,
+                html,
+                text: text || undefined
+            });
+            console.log(`[Mail SMTP Success] Delivered to ${to} (MessageId: ${info.messageId})`);
+            return { success: true, messageId: info.messageId };
+        } catch (smtpErr) {
+            console.warn(`[Mail SMTP Error] Failed via SMTP, attempting HTTP fallback: ${smtpErr.message}`);
+        }
     }
 
-    await axios.post(emailServiceUrl, {
-        from: process.env.EMAIL,
+    // 2. HTTP Fallback Service
+    if (!process.env.EMAIL_SERVICE_API) {
+        throw new Error('EMAIL_SERVICE_API or valid EMAIL/EMAIL_PASSWORD SMTP credentials required');
+    }
+
+    const response = await axios.post(emailServiceUrl, {
+        from: sender,
         to,
         subject,
         html
@@ -27,6 +58,8 @@ const sendMail = async ({ to, subject, html}) => {
             Authorization: `Bearer ${process.env.EMAIL_SERVICE_API}`
         }
     });
+    console.log(`[Mail HTTP Success] Delivered to ${to}`);
+    return { success: true, data: response.data };
 };
 
 /**
@@ -73,10 +106,166 @@ const sendOTPEmail = async (emailId, otp, username, purpose = "Verification") =>
 };
 
 /**
+ * Send Official Group Invitation Email (Unstop-style)
+ */
+/**
+ * Helper to format clean, compact date ranges for mobile emails
+ */
+function formatTripDates(startDate, endDate) {
+    if (!startDate && !endDate) return 'Dates to be decided';
+    const parseDate = (d) => {
+        if (!d) return null;
+        if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.trim())) {
+            const [y, m, day] = d.trim().split('-').map(Number);
+            return { month: m - 1, day, year: y };
+        }
+        const parsed = new Date(d);
+        if (isNaN(parsed.getTime())) return null;
+        return { month: parsed.getMonth(), day: parsed.getDate(), year: parsed.getFullYear() };
+    };
+
+    const s = parseDate(startDate);
+    const e = parseDate(endDate);
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (s && e) {
+        const sMonth = months[s.month];
+        const eMonth = months[e.month];
+        if (s.year === e.year && s.month === e.month) {
+            return s.day === e.day ? `${sMonth} ${s.day}, ${s.year}` : `${sMonth} ${s.day}–${e.day}, ${s.year}`;
+        }
+        if (s.year === e.year) {
+            return `${sMonth} ${s.day} – ${eMonth} ${e.day}, ${s.year}`;
+        }
+        return `${sMonth} ${s.day}, ${s.year} – ${eMonth} ${e.day}, ${e.year}`;
+    }
+    if (s) {
+        return `From ${months[s.month]} ${s.day}, ${s.year}`;
+    }
+    return 'Dates to be decided';
+}
+
+/**
+ * Send Official Group Invitation Email (Unstop-style, mobile-optimized)
+ */
+const sendOfficialInviteEmail = async ({
+    recipientEmail,
+    recipientName,
+    inviterName,
+    groupName,
+    destination,
+    startDate,
+    endDate,
+    tripType,
+    expenseSplit,
+    currency,
+    inviteUrl,
+    inviteCode
+}) => {
+    const formattedDates = formatTripDates(startDate, endDate);
+
+    const htmlContent = `
+        <div style="margin: 0; padding: 12px 6px; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+            <div style="max-width: 440px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);">
+                
+                <!-- Compact Brand Header -->
+                <div style="text-align: center; padding: 16px 14px; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #ffffff;">
+                    <div style="font-size: 20px; line-height: 1; margin-bottom: 4px;">✈️</div>
+                    <h1 style="margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; color: #ffffff;">Trip Team Invitation</h1>
+                    <p style="margin: 2px 0 0 0; font-size: 11px; color: #d1fae5; font-weight: 500;">GroupTrip Ledger & Expense Hub</p>
+                </div>
+
+                <!-- Body Content -->
+                <div style="padding: 18px 16px;">
+                    <p style="font-size: 13.5px; line-height: 1.4; margin: 0 0 8px 0; color: #0f172a;">
+                        Hi <strong>${recipientName || 'there'}</strong>,
+                    </p>
+                    <p style="font-size: 12.5px; line-height: 1.5; color: #334155; margin: 0 0 12px 0;">
+                        <strong>${inviterName || 'Your friend'}</strong> invited you to join <strong style="color: #059669;">"${groupName}"</strong>.
+                    </p>
+
+                    <!-- Status Pill (Centered) -->
+                    <div style="text-align: center; margin: 0 0 14px 0;">
+                        <div style="display: inline-block; padding: 4px 10px; background-color: #fff7ed; border: 1px solid #fed7aa; border-radius: 9999px; font-size: 11px; font-weight: 700; color: #c2410c;">
+                            📩 Invite Pending • Approval Required
+                        </div>
+                    </div>
+
+                    <!-- Clean Trip Overview Box (Mobile 2-Column Key-Value) -->
+                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px;">
+                        <div style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 6px;">
+                            TRIP OVERVIEW
+                        </div>
+                        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; font-size: 12px;">
+                            <tr>
+                                <td style="padding: 6px 0; color: #64748b; width: 88px; white-space: nowrap; vertical-align: middle;">📍 Destination</td>
+                                <td style="padding: 6px 0; color: #0f172a; font-weight: 600; text-align: right; vertical-align: middle;">${destination}</td>
+                            </tr>
+                            <tr><td colspan="2" style="border-bottom: 1px solid #f1f5f9; height: 1px; line-height: 1px; font-size: 1px;">&nbsp;</td></tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #64748b; width: 88px; white-space: nowrap; vertical-align: middle;">📅 Dates</td>
+                                <td style="padding: 6px 0; color: #0f172a; font-weight: 600; text-align: right; vertical-align: middle;">${formattedDates}</td>
+                            </tr>
+                            <tr><td colspan="2" style="border-bottom: 1px solid #f1f5f9; height: 1px; line-height: 1px; font-size: 1px;">&nbsp;</td></tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #64748b; width: 88px; white-space: nowrap; vertical-align: middle;">🏷️ Trip Type</td>
+                                <td style="padding: 6px 0; color: #0f172a; font-weight: 600; text-align: right; vertical-align: middle;">${tripType || 'Friends'}</td>
+                            </tr>
+                            <tr><td colspan="2" style="border-bottom: 1px solid #f1f5f9; height: 1px; line-height: 1px; font-size: 1px;">&nbsp;</td></tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #64748b; width: 88px; white-space: nowrap; vertical-align: middle;">💳 Split</td>
+                                <td style="padding: 6px 0; color: #059669; font-weight: 700; text-align: right; vertical-align: middle;">${expenseSplit || 'Equal'} (${currency || 'INR'})</td>
+                            </tr>
+                            <tr><td colspan="2" style="border-bottom: 1px solid #f1f5f9; height: 1px; line-height: 1px; font-size: 1px;">&nbsp;</td></tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #64748b; width: 88px; white-space: nowrap; vertical-align: middle;">🔑 Invite Code</td>
+                                <td style="padding: 6px 0; color: #0f172a; font-weight: 700; font-family: monospace; text-align: right; vertical-align: middle; font-size: 11.5px;">${inviteCode}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <!-- Call to Action Button -->
+                    <div style="text-align: center; margin: 16px 0 10px 0;">
+                        <a href="${inviteUrl}" style="background-color: #059669; color: #ffffff; padding: 10px 24px; text-decoration: none; border-radius: 9999px; font-weight: 700; font-size: 13px; display: inline-block; box-shadow: 0 3px 10px rgba(5, 150, 105, 0.3);">
+                            Review & Accept Invitation →
+                        </a>
+                    </div>
+
+                    <p style="font-size: 11px; color: #64748b; text-align: center; line-height: 1.4; margin: 0 0 12px 0;">
+                        <em>Note: You will join the group roster and shared ledger only after you click and approve.</em>
+                    </p>
+
+                    <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 12px 0;">
+
+                    <p style="font-size: 10.5px; color: #94a3b8; word-break: break-all; margin: 0; text-align: center; line-height: 1.4;">
+                        Or open this link directly in your browser:<br>
+                        <a href="${inviteUrl}" style="color: #059669; font-weight: 500; text-decoration: underline;">${inviteUrl}</a>
+                    </p>
+                </div>
+
+                <!-- Footer -->
+                <div style="text-align: center; padding: 10px 14px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #94a3b8;">
+                    <p style="margin: 0;">Official invite sent to ${recipientEmail}</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    try {
+        await sendMail({
+            to: recipientEmail,
+            subject: `Official Invitation: Join "${groupName}" on GroupTrip Ledger`,
+            html: htmlContent
+        });
+        return { success: true };
+    } catch (err) {
+        console.warn(`Could not dispatch invite email to ${recipientEmail}:`, err.message);
+        return { success: false, error: err.message };
+    }
+};
+
+/**
  * Send Generic Email
- * @param {string} emailId - Recipient email address
- * @param {string} subject - Email subject
- * @param {string} htmlContent - Email body in HTML format
  */
 const sendEmail = async (emailId, subject, htmlContent) => {
     try {
@@ -87,12 +276,13 @@ const sendEmail = async (emailId, subject, htmlContent) => {
         });
         return { success: true, message: "Email sent successfully" };
     } catch (error) {
-        console.error("Mail Error:", error.response?.data || error.message);
-        throw error;
+        console.warn("Mail Error:", error.response?.data || error.message);
+        return { success: false, message: error.message };
     }
 };
 
 module.exports = {
     sendOTPEmail,
-    sendEmail
+    sendEmail,
+    sendOfficialInviteEmail
 };

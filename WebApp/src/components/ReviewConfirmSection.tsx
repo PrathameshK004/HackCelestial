@@ -1,5 +1,5 @@
 import React from 'react';
-import { Compass, Calendar, Coins, Split, MapPin, CheckCircle2, ArrowLeft, Check, Loader2 } from 'lucide-react';
+import { Compass, Calendar, Coins, Split, MapPin, CheckCircle2, ArrowLeft, Check, Loader2, Mail } from 'lucide-react';
 import { TripFormData } from '../types/group';
 import { CURRENCY_OPTIONS, EXPENSE_SPLIT_OPTIONS } from '../mock/mockData';
 
@@ -110,17 +110,76 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
           </div>
         )}
 
-        {/* Row 4: Confirmed Travelers */}
+        {/* Row 4: Group Tier & Billing Summary */}
+        <div className={`confirm-field-box confirm-billing-card ${formData.travelers.length > 6 ? 'is-premium' : ''}`}>
+          <div className="confirm-billing-header">
+            <div className="confirm-billing-title-wrap">
+              <Coins size={18} className={formData.travelers.length > 6 ? 'text-amber-600' : 'text-emerald-600'} />
+              <div>
+                <span className="confirm-label" style={{ marginBottom: '2px' }}>Group Tier & Activation</span>
+                <span className="confirm-value-bold">
+                  {formData.travelers.length > 6 ? 'Large Squad Tier (7+ Members)' : 'Standard Free Tier (Up to 6 Members)'}
+                </span>
+              </div>
+            </div>
+            {formData.travelers.length > 6 ? (
+              formData.payment?.status === 'PAID' ? (
+                <span className="billing-status-pill paid">
+                  <CheckCircle2 size={13} />
+                  ₹19.00 Payment Verified
+                </span>
+              ) : (
+                <span className="billing-status-pill pending">
+                  ₹19.00 Fee Required
+                </span>
+              )
+            ) : (
+              <span className="billing-status-pill free">
+                <CheckCircle2 size={13} />
+                Free Tier (₹0)
+              </span>
+            )}
+          </div>
+
+          <div className="confirm-billing-breakdown">
+            <div className="confirm-billing-item">
+              <span>Free Tier Allowance (Up to 6 Travelers):</span>
+              <span>₹0.00</span>
+            </div>
+            {formData.travelers.length > 6 && (
+              <div className="confirm-billing-item">
+                <span>Large Squad Upgrade Fee (7th Member & Above):</span>
+                <span className="text-amber-600 font-semibold">+₹19.00</span>
+              </div>
+            )}
+            <div className="confirm-billing-item confirm-billing-total">
+              <span>Total Payable:</span>
+              <strong className="billing-total-val">
+                {formData.travelers.length > 6 ? '₹19.00' : '₹0.00 (FREE)'}
+              </strong>
+            </div>
+          </div>
+
+          {formData.payment?.transactionId && (
+            <div className="confirm-billing-receipt">
+              <span>Verified Payment Receipt:</span>
+              <code>{formData.payment.transactionId}</code>
+              <span className="receipt-method-tag">{formData.payment.paymentMethod || 'UPI'}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Row 5: Travelers & Official Invitations */}
         <div className="confirm-travelers-block">
           <div className="confirm-travelers-header">
-            <span className="confirm-label">Confirmed Travelers ({formData.travelers.length})</span>
+            <span className="confirm-label">Travelers & Invitations ({formData.travelers.length})</span>
             <span className="confirm-travelers-hint">
-              Registered members will join immediately; unregistered members receive shareable invite links.
+              Official invitation links will be dispatched. Travelers will join the shared group ledger once approved.
             </span>
           </div>
 
           <div className="confirm-travelers-grid">
-            {formData.travelers.map((traveler) => (
+            {formData.travelers.map((traveler, index) => (
               <div key={traveler.id} className="confirm-traveler-chip">
                 <div
                   className="confirm-traveler-avatar"
@@ -132,9 +191,27 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
                   <span className="confirm-traveler-name">{traveler.name}</span>
                   <span className="confirm-traveler-email">{traveler.email}</span>
                 </div>
-                <span className={`confirm-role-pill ${traveler.role === 'Organizer' ? 'role-org' : 'role-trav'}`}>
-                  {traveler.role}
-                </span>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  {index >= 6 && (
+                    <span className="confirm-role-pill paid-slot-tag">
+                      +₹19
+                    </span>
+                  )}
+                  {traveler.role === 'Organizer' ? (
+                    <span className="confirm-role-pill role-org">
+                      Organizer
+                    </span>
+                  ) : traveler.status === 'ACCEPTED' ? (
+                    <span className="confirm-role-pill role-trav">
+                      Joined
+                    </span>
+                  ) : (
+                    <span className="traveler-role-tag invite-tag" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                      <Mail size={11} />
+                      <span>Invite Pending</span>
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -145,7 +222,7 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
       <div className="confirm-notice-banner">
         <CheckCircle2 size={18} className="confirm-notice-icon" />
         <span>
-          Once confirmed, all travelers will be added to the shared expense ledger. You can adjust split shares anytime.
+          Official invitation emails with approval links will be delivered immediately upon creation. Invited participants join the ledger upon accepting.
         </span>
       </div>
 
@@ -163,7 +240,7 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
 
         <button
           type="button"
-          className="btn btn-primary confirm-submit-btn"
+          className={`btn btn-primary confirm-submit-btn ${formData.travelers.length > 6 && formData.payment?.status !== 'PAID' ? 'btn-pay-action' : ''}`}
           onClick={onConfirm}
           disabled={isSubmitting}
         >
@@ -171,6 +248,11 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
             <>
               <Loader2 size={18} className="spin-animation" />
               <span>Creating Group Workspace...</span>
+            </>
+          ) : formData.travelers.length > 6 && formData.payment?.status !== 'PAID' ? (
+            <>
+              <Coins size={18} />
+              <span>Pay ₹19 & Create Group</span>
             </>
           ) : (
             <>

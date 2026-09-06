@@ -1,0 +1,15 @@
+{
+  "name": "hackcelestial-monorepo",
+  "version": "1.0.0",
+  "description": "GroupTrip Ledger - Full Stack Application",
+  "main": "Backend/index.js",
+  "scripts": {
+    "start": "node Backend/index.js",
+    "dev:backend": "cd Backend && npm run dev",
+    "dev:frontend": "cd WebApp && npm run dev",
+    "build:frontend": "cd WebApp && npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

@@ -1,5 +1,11 @@
 # Environment variables
 Backend/.env
+.env
+**/.env
+
+# OS metadata
+.DS_Store
+**/.DS_Store
 
 # Node dependencies
 **/node_modules/

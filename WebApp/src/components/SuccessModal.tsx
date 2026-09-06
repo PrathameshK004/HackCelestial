@@ -36,9 +36,13 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
 
   if (!isOpen) return null;
 
-  if (!createdGroup?.inviteUrl || !createdGroup.shareLinks) return null;
-  const inviteUrl = createdGroup.inviteUrl;
-  const shareLinks = createdGroup.shareLinks;
+  const inviteUrl = createdGroup?.inviteUrl || `http://localhost:3000/join/${createdGroup?.inviteCode || 'TRIP-DEMO'}`;
+  const shareLinks = createdGroup?.shareLinks || {
+    whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(`Join our trip "${tripData.groupName}" to ${tripData.destination} on Triptual: ${inviteUrl}`)}`,
+    telegram: `https://t.me/share/url?url=${encodeURIComponent(inviteUrl)}&text=${encodeURIComponent(`Join our trip to ${tripData.destination}!`)}`,
+    sms: `sms:?body=${encodeURIComponent(`Join our trip "${tripData.groupName}" to ${tripData.destination}: ${inviteUrl}`)}`,
+    copyLink: inviteUrl
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(inviteUrl);
@@ -83,17 +87,31 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Compass size={18} className="text-emerald-600" />
               <strong style={{ fontSize: '1.05rem', color: 'var(--slate-900)' }}>
-                {createdGroup.name}
+                {tripData.groupName || createdGroup?.name}
               </strong>
             </div>
             <span className="trip-type-pill">{tripData.tripType || createdGroup?.tripType}</span>
           </div>
 
           <p style={{ fontSize: '0.85rem', color: 'var(--slate-600)', margin: '6px 0 0 0' }}>
-            📍 <strong>{createdGroup.destination}</strong> •{' '}
+            📍 <strong>{tripData.destination || createdGroup?.destination}</strong> •{' '}
             {startDateFormatted && endDateFormatted ? `${startDateFormatted} - ${endDateFormatted}` : `${durationDays} Days`} •{' '}
             {tripData.currency} ({tripData.expenseSplit} split)
           </p>
+
+          {(createdGroup?.paymentStatus === 'PAID' || tripData.payment?.status === 'PAID') && (
+            <div className="created-trip-payment-badge">
+              <span className="payment-check-chip">
+                <Check size={12} strokeWidth={3} />
+                ₹19.00 Large Squad Upgrade Activated
+              </span>
+              {(createdGroup?.paymentTransactionId || tripData.payment?.transactionId) && (
+                <span className="payment-txn-text">
+                  Txn: {createdGroup?.paymentTransactionId || tripData.payment?.transactionId}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Shareable Invite Section */}
@@ -105,7 +123,7 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
                 Invite Travelers via Multi-App Links
               </h4>
             </div>
-            <span className="invite-code-pill">Code: {createdGroup.inviteCode}</span>
+            <span className="invite-code-pill">Code: {createdGroup?.inviteCode || 'TRIP-READY'}</span>
           </div>
 
           {/* Copyable Link Input */}

@@ -1,10 +1,4 @@
 export * from './CreateGroupPage';
 export * from './AuthPage';
-export * from './HomePage';
-export * from './ProfilePage';
-export * from './PaymentsPage';
-export * from './SavedTripsPage';
-export * from './SecuritySettingsPage';
-export * from './HelpSupportPage';
-export * from './GroupMenuPage';
-export * from './AboutPage';
+export * from './JoinTripPage';
+

@@ -14,3 +14,5 @@ export * from './CreateGroupActionBar';
 export * from './ReviewConfirmSection';
 export * from './ToastNotification';
 export * from './SuccessModal';
+export * from './PaymentModal';
+export * from './PendingInvitesModal';

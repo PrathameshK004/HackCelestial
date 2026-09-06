@@ -1,18 +1,37 @@
-import React, { useState } from 'react';
-import { HelpCircle, ShieldCheck, LogOut, Pencil, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Compass, HelpCircle, ShieldCheck, LogOut, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { groupService } from '../services/group.service';
+import { PendingInvitation } from '../types/group';
+import { PendingInvitesModal } from './PendingInvitesModal';
 
 interface CreateGroupHeaderProps {
   onHelpClick?: () => void;
 }
 
 export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClick }) => {
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
-  const [profileName, setProfileName] = useState(user?.username || '');
-  const [profileUpi, setProfileUpi] = useState(user?.upiId || '');
-  const [profileError, setProfileError] = useState('');
+  const [pendingInvites, setPendingInvites] = useState<PendingInvitation[]>([]);
+  const [isInvitesModalOpen, setIsInvitesModalOpen] = useState(false);
+
+  const fetchPendingInvites = async () => {
+    if (!isAuthenticated) return;
+    try {
+      const res = await groupService.getMyPendingInvitations();
+      if (res.data && Array.isArray(res.data)) {
+        setPendingInvites(res.data);
+      }
+    } catch (e) {
+      console.warn("Could not load pending invites:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchPendingInvites();
+    const interval = setInterval(fetchPendingInvites, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   // Generate initials from username or fallback
   const getInitials = (name?: string) => {
@@ -30,19 +49,35 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
   return (
     <header className="header-wrapper">
       <div className="header-inner">
-        <a href="#home" className="brand-logo" title="Triptual Home">
-          <img
-            src="/triptual-logo.png"
-            alt="Triptual"
-            style={{ width: '36px', height: '36px', borderRadius: '9999px', objectFit: 'cover' }}
-          />
+        <a href="#home" className="brand-logo" title="GroupTrip Ledger Home">
+          <div className="brand-icon-box">
+            <Compass size={22} strokeWidth={2.4} />
+          </div>
           <div>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 600 }}>Triptual</div>
-            <div className="brand-tagline">Group Travel & Smart Ledger</div>
+            <div>GroupTrip Ledger</div>
+            <div className="brand-tagline">Travel & Expense Hub</div>
           </div>
         </a>
 
         <div className="header-right">
+          {/* Pending Invitations Tray Button */}
+          {isAuthenticated && (
+            <button 
+              type="button" 
+              className={`header-invites-btn ${pendingInvites.length > 0 ? 'has-invites' : ''}`}
+              onClick={() => setIsInvitesModalOpen(true)} 
+              title={pendingInvites.length > 0 
+                ? `${pendingInvites.length} pending trip invitation${pendingInvites.length === 1 ? '' : 's'} waiting for approval`
+                : "View pending invitations"}
+            >
+              <Mail size={16} />
+              <span>Invites</span>
+              {pendingInvites.length > 0 && (
+                <span className="header-invites-badge">{pendingInvites.length}</span>
+              )}
+            </button>
+          )}
+
           <button 
             type="button" 
             className="help-btn" 
@@ -78,7 +113,6 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
                   {user?.emailId && <div className="dropdown-user-email">{user.emailId}</div>}
                 </div>
                 <div className="user-dropdown-divider"></div>
-                <button type="button" className="user-dropdown-item" onClick={() => { setProfileName(user?.username || ''); setProfileUpi(user?.upiId || ''); setProfileError(''); setShowDropdown(false); setShowProfile(true); }}><Pencil size={15} /><span>Edit Profile</span></button>
                 <button
                   type="button"
                   className="user-dropdown-item text-rose"
@@ -95,7 +129,14 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
           </div>
         </div>
       </div>
-      {showProfile && <div className="modal-overlay" onClick={() => setShowProfile(false)}><div className="profile-dialog" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true"><button className="modal-close-btn" onClick={() => setShowProfile(false)} aria-label="Close profile editor"><X size={18} /></button><h2>Edit Profile</h2><p className="profile-dialog-copy">Update the name and UPI ID used for group settlements.</p><form onSubmit={async (event) => { event.preventDefault(); if (!profileName.trim() || !/^\w[\w.-]{1,}@[\w.-]+$/.test(profileUpi.trim())) { setProfileError('Enter a valid name and UPI ID, for example name@bank.'); return; } const result = await updateProfile({ username: profileName, upiId: profileUpi }); if (result.success) setShowProfile(false); else setProfileError(result.message || 'Could not update profile'); }}><label className="profile-field">Name<input value={profileName} onChange={(event) => setProfileName(event.target.value)} required /></label><label className="profile-field">UPI ID<input value={profileUpi} onChange={(event) => setProfileUpi(event.target.value)} placeholder="name@bank" required /></label>{profileError && <div className="field-error-msg">{profileError}</div>}<button className="primary-action" type="submit">Save profile</button></form></div></div>}
+
+      {/* Pending Invitations Tray Modal */}
+      <PendingInvitesModal
+        isOpen={isInvitesModalOpen}
+        onClose={() => setIsInvitesModalOpen(false)}
+        invitations={pendingInvites}
+        onInviteHandled={fetchPendingInvites}
+      />
     </header>
   );
 };

@@ -6,7 +6,9 @@ const { sendEmail } = require('../utils/mail.util');
 module.exports = {
     createGroupInvite,
     getInviteDetails,
-    acceptInvite
+    acceptInvite,
+    rejectInvite,
+    getMyPendingInvitations
 };
 
 /**
@@ -112,19 +114,15 @@ async function getInviteDetails(req, res) {
             return sendError(res, "Invite code is required", null, 400);
         }
 
-        const rawCode = (inviteCode || '').trim().replace(/^.*\/join\//, '');
-        const normalizedCode = rawCode.toUpperCase();
-        const shortCode = normalizedCode.replace(/^TRIP-/, '');
-
         const inviteQuery = await pool.query(
             `SELECT gi.*, g.name as "groupName", g.destination, g.start_date as "startDate", 
                     g.end_date as "endDate", g.trip_type as "tripType", g.currency, 
-                    g.description, u.username as "organizerName"
+                    g.expense_split as "expenseSplit", g.description, u.username as "organizerName"
              FROM group_invitations gi
              JOIN groups g ON gi.group_id = g.id
              LEFT JOIN users u ON gi.invited_by = u.id
-             WHERE UPPER(gi.invite_code) = $1 OR UPPER(REPLACE(gi.invite_code, 'TRIP-', '')) = $2 LIMIT 1`,
-            [normalizedCode, shortCode]
+             WHERE UPPER(gi.invite_code) = UPPER($1) LIMIT 1`,
+            [inviteCode]
         );
 
         if (inviteQuery.rows.length === 0) {
@@ -138,8 +136,15 @@ async function getInviteDetails(req, res) {
             return sendError(res, "This invitation link has expired", null, 410);
         }
 
-        // Count current members
-        const countRes = await pool.query('SELECT COUNT(*) as count FROM group_members WHERE group_id = $1', [invite.group_id]);
+        // Fetch members of group
+        const membersRes = await pool.query(`
+            SELECT id, name, role, avatar_bg as "avatarBg", is_registered as "isRegistered", COALESCE(status, 'ACCEPTED') as status
+            FROM group_members 
+            WHERE group_id = $1 
+            ORDER BY role DESC, joined_at ASC
+        `, [invite.group_id]);
+
+        const confirmedCount = membersRes.rows.filter(m => m.status === 'ACCEPTED').length;
 
         return sendSuccess(res, "Invite details retrieved", {
             inviteCode: invite.invite_code,
@@ -150,9 +155,14 @@ async function getInviteDetails(req, res) {
             endDate: invite.endDate,
             tripType: invite.tripType,
             currency: invite.currency,
+            expenseSplit: invite.expenseSplit,
             description: invite.description,
             organizerName: invite.organizerName || 'Group Organizer',
-            memberCount: parseInt(countRes.rows[0]?.count || 1),
+            invitedEmail: invite.invited_email,
+            role: invite.role || 'Traveler',
+            status: invite.status,
+            memberCount: confirmedCount,
+            members: membersRes.rows,
             expiresAt: invite.expires_at
         });
 
@@ -164,6 +174,7 @@ async function getInviteDetails(req, res) {
 
 /**
  * Accept Invitation and Join Group (requires auth)
+ * Unstop-style approval: updates member status from PENDING to ACCEPTED
  */
 async function acceptInvite(req, res) {
     const client = await pool.connect();
@@ -175,16 +186,12 @@ async function acceptInvite(req, res) {
             return sendError(res, "Please log in or sign up to accept this invitation", null, 401);
         }
 
-        const rawCode = (inviteCode || '').trim().replace(/^.*\/join\//, '');
-        const normalizedCode = rawCode.toUpperCase();
-        const shortCode = normalizedCode.replace(/^TRIP-/, '');
-
         const inviteQuery = await client.query(
             `SELECT gi.*, g.name as "groupName" 
              FROM group_invitations gi
              JOIN groups g ON gi.group_id = g.id
-             WHERE UPPER(gi.invite_code) = $1 OR UPPER(REPLACE(gi.invite_code, 'TRIP-', '')) = $2 LIMIT 1`,
-            [normalizedCode, shortCode]
+             WHERE UPPER(gi.invite_code) = UPPER($1) LIMIT 1`,
+            [inviteCode]
         );
 
         if (inviteQuery.rows.length === 0) {
@@ -207,26 +214,35 @@ async function acceptInvite(req, res) {
 
         await client.query('BEGIN');
 
-        // Add to group members
+        // Approve and activate group membership (updates status to ACCEPTED)
         const memberId = crypto.randomUUID();
         await client.query(`
-            INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, joined_at)
-            VALUES ($1, $2, $3, $4, $5, $6, '#059669', TRUE, NOW())
+            INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, status, joined_at)
+            VALUES ($1, $2, $3, $4, $5, $6, '#059669', TRUE, 'ACCEPTED', NOW())
             ON CONFLICT (group_id, email) DO UPDATE SET
                 user_id = EXCLUDED.user_id,
                 name = EXCLUDED.name,
-                is_registered = TRUE
+                is_registered = TRUE,
+                status = 'ACCEPTED',
+                joined_at = NOW()
         `, [memberId, invite.group_id, userId, userName, userEmail, invite.role || 'Traveler']);
 
-        // Update invite status
+        // Update invite status to ACCEPTED
         await client.query('UPDATE group_invitations SET status = $1 WHERE id = $2', ['ACCEPTED', invite.id]);
+
+        // Also if this user had another pending invitation for this group by email, mark accepted
+        await client.query(`
+            UPDATE group_invitations SET status = 'ACCEPTED' 
+            WHERE group_id = $1 AND LOWER(invited_email) = LOWER($2)
+        `, [invite.group_id, userEmail]);
 
         await client.query('COMMIT');
 
         return sendSuccess(res, `Successfully joined "${invite.groupName}"!`, {
             groupId: invite.group_id,
             groupName: invite.groupName,
-            role: invite.role || 'Traveler'
+            role: invite.role || 'Traveler',
+            status: 'ACCEPTED'
         });
 
     } catch (error) {
@@ -235,5 +251,108 @@ async function acceptInvite(req, res) {
         return sendError(res, "Failed to accept invitation", error, 500);
     } finally {
         client.release();
+    }
+}
+
+/**
+ * Reject / Decline Invitation (requires auth)
+ */
+async function rejectInvite(req, res) {
+    const client = await pool.connect();
+    try {
+        const { inviteCode } = req.params;
+        const userId = req.userKey;
+
+        if (!userId) {
+            return sendError(res, "Please log in to decline this invitation", null, 401);
+        }
+
+        const inviteQuery = await client.query(
+            `SELECT gi.*, g.name as "groupName" 
+             FROM group_invitations gi
+             JOIN groups g ON gi.group_id = g.id
+             WHERE UPPER(gi.invite_code) = UPPER($1) LIMIT 1`,
+            [inviteCode]
+        );
+
+        if (inviteQuery.rows.length === 0) {
+            return sendError(res, "Invalid invitation code", null, 404);
+        }
+
+        const invite = inviteQuery.rows[0];
+
+        // Fetch user email
+        const userRes = await client.query('SELECT email_id FROM users WHERE id = $1', [userId]);
+        const userEmail = userRes.rows[0]?.email_id?.toLowerCase() || '';
+
+        await client.query('BEGIN');
+
+        // Update invitation status
+        await client.query('UPDATE group_invitations SET status = $1 WHERE id = $2', ['REJECTED', invite.id]);
+
+        // Remove or mark REJECTED in group_members
+        if (userEmail) {
+            await client.query(`
+                UPDATE group_members 
+                SET status = 'REJECTED' 
+                WHERE group_id = $1 AND (LOWER(email) = LOWER($2) OR user_id = $3)
+            `, [invite.group_id, userEmail, userId]);
+        }
+
+        await client.query('COMMIT');
+
+        return sendSuccess(res, `Declined invitation for "${invite.groupName}"`, {
+            groupId: invite.group_id,
+            groupName: invite.groupName,
+            status: 'REJECTED'
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error("Reject Invite Error:", error);
+        return sendError(res, "Failed to decline invitation", error, 500);
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Get all pending invitations for the logged-in user
+ */
+async function getMyPendingInvitations(req, res) {
+    try {
+        const userId = req.userKey;
+        if (!userId) {
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        const userRes = await pool.query('SELECT email_id FROM users WHERE id = $1', [userId]);
+        if (userRes.rows.length === 0) {
+            return sendError(res, "User not found", null, 404);
+        }
+        const userEmail = userRes.rows[0].email_id.toLowerCase();
+
+        const pendingInvites = await pool.query(`
+            SELECT DISTINCT gi.id, gi.invite_code as "inviteCode", gi.role, gi.created_at as "createdAt",
+                   gi.expires_at as "expiresAt", g.id as "groupId", g.name as "groupName",
+                   g.destination, g.start_date as "startDate", g.end_date as "endDate",
+                   g.trip_type as "tripType", g.currency, g.expense_split as "expenseSplit",
+                   u.username as "organizerName"
+            FROM group_invitations gi
+            JOIN groups g ON gi.group_id = g.id
+            LEFT JOIN users u ON gi.invited_by = u.id
+            WHERE (LOWER(gi.invited_email) = LOWER($1) OR gi.group_id IN (
+                SELECT group_id FROM group_members WHERE LOWER(email) = LOWER($1) AND status = 'PENDING'
+            ))
+            AND gi.status = 'PENDING'
+            AND gi.expires_at > NOW()
+            ORDER BY gi.created_at DESC
+        `, [userEmail]);
+
+        return sendSuccess(res, "Pending invitations fetched successfully", pendingInvites.rows);
+
+    } catch (error) {
+        console.error("Get My Pending Invites Error:", error);
+        return sendError(res, "Failed to fetch pending invitations", error, 500);
     }
 }

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ArrowLeft, Compass, Sparkles } from 'lucide-react';
+import { Plane, Compass, Sparkles } from 'lucide-react';
+import { CreateGroupHeader } from '../components/CreateGroupHeader';
 
 import { StepProgress } from '../components/StepProgress';
 import { DestinationInput } from '../components/DestinationInput';
@@ -14,18 +15,20 @@ import { CreateGroupActionBar } from '../components/CreateGroupActionBar';
 import { ReviewConfirmSection } from '../components/ReviewConfirmSection';
 import { ToastNotification, ToastMessage } from '../components/ToastNotification';
 import { SuccessModal } from '../components/SuccessModal';
+import { PaymentModal } from '../components/PaymentModal';
 import { INITIAL_MOCK_TRIP } from '../mock/mockData';
-import { TripFormData, Traveler, TripType, Currency, ExpenseSplit, CreatedGroupData } from '../types/group';
+import { TripFormData, Traveler, TripType, Currency, ExpenseSplit, CreatedGroupData, PaymentDetails } from '../types/group';
 import { groupService } from '../services/group.service';
 import { useAuth } from '../context/AuthContext';
 
-export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
+export const CreateGroupPage: React.FC = () => {
   const { user } = useAuth();
   const [formData, setFormData] = useState<TripFormData>(INITIAL_MOCK_TRIP);
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdGroup, setCreatedGroup] = useState<CreatedGroupData | null>(null);
 
@@ -194,6 +197,11 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
     addToast('Form reset to default sample values', 'info');
   };
 
+  const handleSaveDraft = () => {
+    localStorage.setItem('triptual_trip_draft', JSON.stringify(formData));
+    addToast('Trip draft saved securely in browser!', 'success');
+  };
+
   const handleContinueToReview = () => {
     const newErrors: Record<string, string> = {};
 
@@ -208,17 +216,13 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
     }
     if (!formData.endDate) {
       newErrors.endDate = 'End date is required';
-    } else if (formData.endDate < new Date().toISOString().slice(0, 10)) {
-      newErrors.endDate = 'End date must be today or later';
     } else if (formData.startDate && new Date(formData.endDate) < new Date(formData.startDate)) {
       newErrors.endDate = 'End date cannot be earlier than start date';
     }
-    if (formData.startDate && formData.startDate < new Date().toISOString().slice(0, 10)) {
-      newErrors.startDate = 'Start date must be today or later';
+    if (formData.travelers.length === 0) {
+      newErrors.travelers = 'At least one traveler is required';
     }
-    if (formData.travelers.length < 2) {
-      newErrors.travelers = 'At least two members are required';
-    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       addToast('Please complete all required fields', 'error');
@@ -235,10 +239,10 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
     window.scrollTo({ top: 120, behavior: 'smooth' });
   };
 
-  const handleConfirmAndSubmit = async () => {
+  const submitWithData = async (dataToSubmit: TripFormData) => {
     setIsSubmitting(true);
     try {
-      const response = await groupService.createGroup(formData);
+      const response = await groupService.createGroup(dataToSubmit);
       if (response.data) {
         setCreatedGroup(response.data);
         setIsSuccessModalOpen(true);
@@ -248,64 +252,57 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
       }
     } catch (err: any) {
       console.error('Submit group error:', err);
-      addToast(err.message || 'Error creating group trip', 'error');
+      if (err.status === 402 || err.data?.data?.requiresPayment) {
+        setIsPaymentModalOpen(true);
+        addToast('Large groups (7+ members) require a ₹19 upgrade fee. Please complete payment.', 'info');
+      } else {
+        addToast(err.message || 'Error creating group trip', 'error');
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  return (
-    <div className="profile-page-root animate-fade-in" style={{ paddingBottom: '90px' }}>
-      <div className="profile-page-container" style={{ maxWidth: '680px', padding: '12px 14px 40px' }}>
-        {/* Clean Header: Back Button + Title */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '16px',
-            paddingBottom: '12px',
-            borderBottom: '1px solid var(--border-light)'
-          }}
-        >
-          <button
-            type="button"
-            className="btn-icon-circle"
-            onClick={onBack || (() => window.history.back())}
-            title="Back"
-            style={{
-              width: '38px',
-              height: '38px',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-card)',
-              borderRadius: '50%',
-              cursor: 'pointer'
-            }}
-          >
-            <ArrowLeft size={18} color="var(--text-primary)" />
-          </button>
+  const handleConfirmAndSubmit = async () => {
+    // If more than 6 members and not yet paid, open payment modal
+    if (formData.travelers.length > 6 && formData.payment?.status !== 'PAID') {
+      setIsPaymentModalOpen(true);
+      return;
+    }
+    await submitWithData(formData);
+  };
 
-          <div>
-            <h1
-              style={{
-                fontFamily: 'var(--font-serif)',
-                fontSize: '1.35rem',
-                color: 'var(--text-primary)',
-                margin: 0,
-                lineHeight: 1.2
-              }}
-            >
-              {currentStep === 4 ? 'Review & Confirm Group' : 'Create a New Group'}
-            </h1>
-            <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
-              Set up your trip, invite companions, and track shared balances.
-            </p>
+  const handlePaymentSuccess = async (paymentRecord: PaymentDetails) => {
+    setIsPaymentModalOpen(false);
+    const updatedFormData: TripFormData = {
+      ...formData,
+      payment: paymentRecord
+    };
+    setFormData(updatedFormData);
+    addToast('Payment of ₹19 verified! Creating your trip...', 'success');
+    await submitWithData(updatedFormData);
+  };
+
+  return (
+    <div className="app-container">
+      <CreateGroupHeader onHelpClick={() => addToast('GroupTrip Ledger: Create trip, invite companions, track splits & settle debts.', 'info')} />
+
+      <main className="main-content">
+        {/* Page Heading */}
+        <section className="page-header-section">
+          <div className="page-badge">
+            <Plane size={13} />
+            <span>Group Travel & Expense Coordinator</span>
           </div>
-        </div>
+          <h1 className="page-title">
+            {currentStep === 4 ? 'Review & Confirm Group' : 'Create a New Group'}
+          </h1>
+          <p className="page-subtitle">
+            {currentStep === 4
+              ? 'Review your travel group setup and confirm details to generate the expense ledger.'
+              : 'Set up your trip, invite your travelers, and keep every booking and expense organized from day one.'}
+          </p>
+        </section>
 
         {/* Step Progress Indicator */}
         <StepProgress currentStep={currentStep} />
@@ -423,11 +420,13 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
             </aside>
           </div>
         )}
+      </main>
 
       {/* Fixed Bottom Action Bar (in Step 1) */}
       {currentStep === 1 && (
         <CreateGroupActionBar
           onCancel={handleReset}
+          onSaveDraft={handleSaveDraft}
           onContinue={handleContinueToReview}
         />
       )}
@@ -448,7 +447,15 @@ export const CreateGroupPage: React.FC<{ onBack?: () => void }> = ({ onBack }) =
         startDateFormatted={startDateFormatted}
         endDateFormatted={endDateFormatted}
       />
-      </div>
+
+      {/* Group Tier Upgrade Payment Modal for 7+ members */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        onPaymentSuccess={handlePaymentSuccess}
+        groupName={formData.groupName}
+        memberCount={formData.travelers.length}
+      />
     </div>
   );
 };

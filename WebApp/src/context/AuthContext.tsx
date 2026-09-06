@@ -8,12 +8,10 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
-  loginWithGoogle: (credential: string) => Promise<{ success: boolean; message?: string; user?: User }>;
   registerTemp: (data: RegisterTempPayload) => Promise<{ success: boolean; message?: string }>;
   verifyAndRegister: (data: RegisterUserPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
   resendOtp: (emailId: string, purpose?: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
-  updateProfile: (payload: { username: string; upiId: string }) => Promise<{ success: boolean; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -83,15 +81,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     checkSession();
-
-    const handleSessionExpired = () => {
-      clearAuthSession();
-    };
-
-    window.addEventListener('auth:session-expired', handleSessionExpired);
-    return () => {
-      window.removeEventListener('auth:session-expired', handleSessionExpired);
-    };
   }, []);
 
   const saveAuthSession = (userData: User, accessToken?: string, refreshToken?: string) => {
@@ -126,7 +115,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           userId: response.data.userId,
           username: response.data.username,
           emailId: credentials.emailId,
-          upiId: response.data.upiId || '',
         };
 
         saveAuthSession(loggedUser, response.data.accessToken, response.data.refreshToken);
@@ -135,29 +123,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: response.message || 'Login failed' };
     } catch (err: any) {
       return { success: false, message: err.message || 'Invalid email or password' };
-    }
-  };
-
-  /**
-   * Handle Google Sign-In authentication
-   */
-  const loginWithGoogle = async (credential: string) => {
-    try {
-      const response = await authService.googleAuth(credential);
-      if (response.data) {
-        const loggedUser: User = {
-          userId: response.data.userId,
-          username: response.data.username,
-          emailId: response.data.emailId || '',
-          upiId: response.data.upiId || '',
-        };
-
-        saveAuthSession(loggedUser, response.data.accessToken, response.data.refreshToken);
-        return { success: true, message: response.message || 'Google Sign-In successful', user: loggedUser };
-      }
-      return { success: false, message: response.message || 'Google Sign-In failed' };
-    } catch (err: any) {
-      return { success: false, message: err.message || 'Google authentication error. Please try again.' };
     }
   };
 
@@ -239,19 +204,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const updateProfile = async (payload: { username: string; upiId: string }) => {
-    if (!user || !token) return { success: false, message: 'Authentication required' };
-    try {
-      const response = await authService.updateProfile(user.userId, payload, token);
-      const updatedUser = { ...user, username: payload.username.trim(), upiId: payload.upiId.trim().toLowerCase() };
-      setUser(updatedUser);
-      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
-      return { success: true, message: response.message };
-    } catch (err: any) {
-      return { success: false, message: err.message || 'Could not update profile' };
-    }
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -260,12 +212,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!user,
         isLoading,
         login,
-        loginWithGoogle,
         registerTemp,
         verifyAndRegister,
         resendOtp,
         logout,
-        updateProfile,
       }}
     >
       {children}

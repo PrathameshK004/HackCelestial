@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, UserPlus, Trash2, CheckCircle2, Mail, Crown } from 'lucide-react';
+import { Users, UserPlus, Trash2, CheckCircle2, Mail, Crown, Copy, Check } from 'lucide-react';
 import { Traveler } from '../types/group';
 import { AddTravelerModal } from './AddTravelerModal';
 
@@ -26,6 +26,15 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
     return name.slice(0, 2).toUpperCase();
   };
 
+  const [copiedId, setCopiedId] = useState<string | number | null>(null);
+
+  const handleCopyInviteLink = (traveler: Traveler) => {
+    const inviteUrl = traveler.inviteUrl || (window.location.origin + '/join/' + (traveler.inviteCode || 'TRIP-PENDING'));
+    navigator.clipboard.writeText(inviteUrl);
+    setCopiedId(traveler.id);
+    setTimeout(() => setCopiedId(null), 2500);
+  };
+
   return (
     <div className="form-section-card">
       <div className="section-header">
@@ -38,7 +47,9 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
                 {travelers.length} {travelers.length === 1 ? 'Traveler' : 'Travelers'}
               </span>
             </h3>
-            <p className="section-subtitle">You can create this group with yourself only, or add friends and invite members.</p>
+            <p className="section-subtitle">
+              Add registered friends or invite new members. Official links are sent and members join upon approval.
+            </p>
           </div>
 
           <button
@@ -52,15 +63,45 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
         </div>
       </div>
 
+      {/* Tier Indicator Banner */}
+      {travelers.length <= 6 ? (
+        <div className="traveler-tier-banner free-tier">
+          <div className="tier-banner-left">
+            <CheckCircle2 size={16} className="text-emerald-600" />
+            <span>
+              <strong>Free Tier Active:</strong> {travelers.length} of 6 free slots used (₹0 fee)
+            </span>
+          </div>
+          <span className="tier-pill-free">Up to 6 Free</span>
+        </div>
+      ) : (
+        <div className="traveler-tier-banner premium-tier">
+          <div className="tier-banner-left">
+            <Crown size={16} className="text-amber-600" />
+            <div>
+              <div className="tier-banner-headline">
+                <strong>Large Squad Tier:</strong> {travelers.length} Travelers
+              </div>
+              <div className="tier-banner-subtext">
+                Only up to 6 members are free. Adding 7+ members requires a ₹19 one-time activation fee during review.
+              </div>
+            </div>
+          </div>
+          <span className="tier-pill-paid">₹19 Upgrade Fee</span>
+        </div>
+      )}
+
       {error && <div className="field-error-msg" style={{ marginBottom: '12px' }}>{error}</div>}
 
       <div className="travelers-list-flat">
-        {travelers.map((traveler) => {
+        {travelers.map((traveler, index) => {
           const isOrganizer = traveler.role === 'Organizer';
-          const isRegistered = traveler.isRegistered !== false;
+          const isAccepted = traveler.status === 'ACCEPTED';
+          const isPending = !isOrganizer && (!traveler.status || traveler.status === 'PENDING');
+          const isPaidSlot = index >= 6;
 
           return (
-            <div key={traveler.id} className="traveler-flat-row">
+            <div key={traveler.id} className={`traveler-flat-row ${isPaidSlot ? 'paid-slot-row' : ''}`}>
               <div className="traveler-row-left">
                 <div
                   className="traveler-avatar-circle"
@@ -76,15 +117,20 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
                         <Crown size={12} />
                         <span>Organizer</span>
                       </span>
-                    ) : isRegistered ? (
-                      <span className="traveler-role-tag registered-tag" title="Registered platform member">
+                    ) : isAccepted ? (
+                      <span className="traveler-role-tag registered-tag" title="Confirmed group member">
                         <CheckCircle2 size={12} />
-                        <span>Platform User</span>
+                        <span>Joined</span>
                       </span>
                     ) : (
-                      <span className="traveler-role-tag invite-tag" title="Invitation link will be created">
+                      <span className="traveler-role-tag invite-tag" title="Official invitation sent. Participant will be added upon approval.">
                         <Mail size={12} />
                         <span>Invite Pending</span>
+                      </span>
+                    )}
+                    {isPaidSlot && (
+                      <span className="traveler-role-tag paid-slot-tag" title="7th+ member slot covered by ₹19 upgrade">
+                        7th+ Member (+₹19)
                       </span>
                     )}
                   </div>
@@ -92,17 +138,55 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
                 </div>
               </div>
 
-              {!isOrganizer && (
-                <button
-                  type="button"
-                  className="btn-remove-traveler"
-                  onClick={() => onRemoveTraveler(traveler.id)}
-                  title={`Remove ${traveler.name}`}
-                  aria-label={`Remove ${traveler.name}`}
-                >
-                  <Trash2 size={16} />
-                </button>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {isPending && (
+                  <button
+                    type="button"
+                    className="btn-copy-traveler-link"
+                    onClick={() => handleCopyInviteLink(traveler)}
+                    title="Copy official invite link for this participant"
+                    aria-label={`Copy invite link for ${traveler.name}`}
+                    style={{
+                      background: copiedId === traveler.id ? '#ecfdf5' : '#f8fafc',
+                      border: copiedId === traveler.id ? '1px solid #10b981' : '1px solid var(--border-subtle)',
+                      color: copiedId === traveler.id ? '#059669' : 'var(--slate-600)',
+                      borderRadius: '6px',
+                      padding: '5px 8px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {copiedId === traveler.id ? (
+                      <>
+                        <Check size={13} style={{ color: '#059669' }} />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={13} />
+                        <span>Copy Link</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {!isOrganizer && (
+                  <button
+                    type="button"
+                    className="btn-remove-traveler"
+                    onClick={() => onRemoveTraveler(traveler.id)}
+                    title={`Remove ${traveler.name}`}
+                    aria-label={`Remove ${traveler.name}`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

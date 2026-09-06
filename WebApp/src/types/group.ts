@@ -4,6 +4,8 @@ export type Currency = 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED';
 
 export type ExpenseSplit = 'equal' | 'participant' | 'organizer' | 'custom';
 
+export type TravelerStatus = 'ACCEPTED' | 'PENDING' | 'REJECTED';
+
 export interface Traveler {
   id: string | number;
   name: string;
@@ -12,7 +14,55 @@ export interface Traveler {
   avatarBg?: string;
   isRegistered?: boolean;
   userId?: string | null;
-  upiId?: string;
+  status?: TravelerStatus;
+  inviteCode?: string;
+  inviteUrl?: string;
+}
+
+export interface PendingInvitation {
+  id: string;
+  inviteCode: string;
+  role: string;
+  createdAt: string;
+  expiresAt: string;
+  groupId: string;
+  groupName: string;
+  destination: string;
+  startDate: string | null;
+  endDate: string | null;
+  tripType: TripType;
+  currency: Currency;
+  expenseSplit: ExpenseSplit;
+  organizerName: string;
+}
+
+export interface InviteDetails {
+  inviteCode: string;
+  groupId: string;
+  groupName: string;
+  destination: string;
+  startDate: string | null;
+  endDate: string | null;
+  tripType: TripType;
+  currency: Currency;
+  expenseSplit: ExpenseSplit;
+  description?: string;
+  organizerName: string;
+  invitedEmail?: string;
+  role: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+  memberCount: number;
+  members?: Traveler[];
+  expiresAt: string;
+}
+
+export interface PaymentDetails {
+  status: 'PAID' | 'FREE' | 'PENDING';
+  amount: number;
+  currency: string;
+  transactionId?: string;
+  paymentMethod?: 'UPI' | 'CARD' | 'NET_BANKING';
+  paidAt?: string;
 }
 
 export interface TripFormData {
@@ -25,6 +75,7 @@ export interface TripFormData {
   expenseSplit: ExpenseSplit;
   description: string;
   travelers: Traveler[];
+  payment?: PaymentDetails;
 }
 
 export interface DestinationOption {
@@ -52,38 +103,16 @@ export interface CreatedGroupData {
   currency: Currency;
   expenseSplit: ExpenseSplit;
   description: string;
+  memberTier?: 'FREE' | 'PREMIUM';
+  paymentStatus?: string;
+  paymentAmount?: number;
+  paymentTransactionId?: string;
+  paidAt?: string;
   inviteCode: string;
   inviteUrl: string;
   shareLinks: ShareLinks;
   members: Traveler[];
   createdAt: string;
-}
-
-export interface GroupSummary {
-  id: string;
-  name: string;
-  destination: string;
-  startDate: string | null;
-  endDate: string | null;
-  currency: Currency;
-  status?: 'ACTIVE' | 'SETTLED';
-  memberCount: string | number;
-  createdAt: string;
-}
-
-export interface SettlementTransfer {
-  from: string;
-  to: string;
-  fromName: string;
-  toName: string;
-  amount: string;
-}
-
-export interface SettlementData {
-  members: Traveler[];
-  expenses: Array<{ id: string; description: string; amount: string; paidBy: string; paidByName?: string; createdBy?: string; createdByName?: string; shares: Array<{ memberId: string; amountCents: number }>; paymentMethod?: 'CASH' | 'UPI'; paymentReference?: string; createdAt: string }>;
-  transfers: SettlementTransfer[];
-  settlementHistory?: Array<{ id: string; amount: string; paymentMethod: 'CASH' | 'UPI'; remarks: string; createdAt: string; paidByName: string; paidToName: string }>;
 }
 
 export interface CheckRegisteredUserResponse {
@@ -96,7 +125,6 @@ export interface CheckRegisteredUserResponse {
       id: string;
       username: string;
       email: string;
-      upiId?: string | null;
     } | null;
   };
   statusCode: number;
