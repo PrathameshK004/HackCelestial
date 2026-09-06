@@ -1,5 +1,19 @@
 import React from 'react';
-import { Compass, Calendar, Coins, Split, MapPin, CheckCircle2, ArrowLeft, Check, Loader2, Mail } from 'lucide-react';
+import { 
+  Compass, 
+  Calendar, 
+  Coins, 
+  Split, 
+  MapPin, 
+  CheckCircle2, 
+  ArrowLeft, 
+  Check, 
+  Loader2, 
+  Mail, 
+  ShieldCheck, 
+  Users, 
+  FileText
+} from 'lucide-react';
 import { TripFormData } from '../types/group';
 import { CURRENCY_OPTIONS, EXPENSE_SPLIT_OPTIONS } from '../mock/mockData';
 
@@ -35,89 +49,84 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
 
   return (
     <div className="confirm-section-container">
-      {/* Header with uniform typography */}
-      <div className="confirm-header">
-        <h2 className="confirm-main-title">Confirm Group Application</h2>
-        <p className="confirm-subtitle">
-          Please review your trip details and traveler list before creating the group ledger.
-        </p>
-      </div>
 
-      {/* Flat, Unified Details Grid - No Card in Card */}
-      <div className="confirm-details-flat">
-        {/* Row 1: Trip Identity */}
-        <div className="confirm-grid-2col">
-          <div className="confirm-field-box">
-            <span className="confirm-label">Trip Name</span>
-            <div className="confirm-val-row">
-              <Compass size={18} className="confirm-icon-emerald" />
-              <span className="confirm-value-bold">{formData.groupName || 'Untitled Group Trip'}</span>
-              <span className="confirm-badge-type">{formData.tripType}</span>
+      {/* Hero Summary Card: Group Banner & Quick Highlights */}
+      <div className="confirm-hero-card">
+        <div className="confirm-hero-top">
+          <div className="confirm-hero-identity">
+            <div className="confirm-hero-icon-box">
+              <Compass size={24} className="confirm-hero-icon" />
             </div>
-          </div>
-
-          <div className="confirm-field-box">
-            <span className="confirm-label">Destination</span>
-            <div className="confirm-val-row">
-              <MapPin size={18} className="confirm-icon-emerald" />
-              <span className="confirm-value-bold">{formData.destination || 'Not selected'}</span>
+            <div className="confirm-hero-text">
+              <div className="confirm-hero-title-row">
+                <h3 className="confirm-trip-name">{formData.groupName || 'Untitled Group Trip'}</h3>
+                {formData.tripType && (
+                  <span className="confirm-badge-type">{formData.tripType}</span>
+                )}
+              </div>
+              <div className="confirm-destination-row">
+                <MapPin size={15} className="confirm-dest-icon" />
+                <span className="confirm-dest-text">{formData.destination || 'Destination not set'}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Row 2: Schedule & Financials */}
-        <div className="confirm-grid-3col">
-          <div className="confirm-field-box">
-            <span className="confirm-label">Duration & Dates</span>
-            <div className="confirm-val-row">
-              <Calendar size={18} className="confirm-icon-emerald" />
-              <span className="confirm-value">
-                {startDateFormatted && endDateFormatted
-                  ? `${startDateFormatted} - ${endDateFormatted}`
-                  : 'Dates pending'}
-              </span>
-            </div>
+        {/* Quick Highlights Bar (Mobile-first responsive pills) */}
+        <div className="confirm-quick-stats">
+          <div className="confirm-stat-pill">
+            <Calendar size={14} className="stat-pill-icon" />
+            <span className="stat-pill-val">
+              {startDateFormatted && endDateFormatted
+                ? `${startDateFormatted} – ${endDateFormatted}`
+                : 'Dates pending'}
+            </span>
             {durationDays > 0 && (
-              <span className="confirm-subtag">{durationDays} Days Expedition</span>
+              <span className="stat-pill-tag">{durationDays} Days</span>
             )}
           </div>
 
-          <div className="confirm-field-box">
-            <span className="confirm-label">Ledger Currency</span>
-            <div className="confirm-val-row">
-              <Coins size={18} className="confirm-icon-emerald" />
-              <span className="confirm-value-bold">{currencyObj?.symbol} {formData.currency}</span>
-            </div>
-            <span className="confirm-subtag">{currencyObj?.label}</span>
+          <div className="confirm-stat-pill">
+            <Coins size={14} className="stat-pill-icon" />
+            <span className="stat-pill-val">{currencyObj?.symbol} {formData.currency}</span>
+            <span className="stat-pill-tag">{currencyObj?.label || 'Currency'}</span>
           </div>
 
-          <div className="confirm-field-box">
-            <span className="confirm-label">Expense Split Strategy</span>
-            <div className="confirm-val-row">
-              <Split size={18} className="confirm-icon-emerald" />
-              <span className="confirm-value-bold">{splitObj?.title || 'Equal Split'}</span>
-            </div>
-            <span className="confirm-subtag">{splitObj?.description || 'Everyone pays equally.'}</span>
+          <div className="confirm-stat-pill">
+            <Split size={14} className="stat-pill-icon" />
+            <span className="stat-pill-val">{splitObj?.title || 'Equal Split'}</span>
           </div>
 
+          <div className="confirm-stat-pill">
+            <Users size={14} className="stat-pill-icon" />
+            <span className="stat-pill-val">{formData.travelers.length} {formData.travelers.length === 1 ? 'Traveler' : 'Travelers'}</span>
+          </div>
         </div>
+      </div>
 
-        {/* Row 3: Description (if provided) */}
+      {/* Detailed Content Grid */}
+      <div className="confirm-details-grid">
+        {/* Row: Trip Description (if provided) */}
         {formData.description && (
-          <div className="confirm-field-box">
-            <span className="confirm-label">Trip Notes & Description</span>
-            <p className="confirm-description-text">{formData.description}</p>
+          <div className="confirm-detail-card confirm-desc-card">
+            <div className="confirm-card-label-row">
+              <FileText size={14} className="confirm-card-icon" />
+              <span className="confirm-card-label">Trip Notes & Description</span>
+            </div>
+            <p className="confirm-desc-content">{formData.description}</p>
           </div>
         )}
 
-        {/* Row 4: Group Tier & Billing Summary */}
-        <div className={`confirm-field-box confirm-billing-card ${formData.travelers.length > 6 ? 'is-premium' : ''}`}>
+        {/* Row: Group Tier & Billing Summary */}
+        <div className={`confirm-detail-card confirm-billing-card ${formData.travelers.length > 6 ? 'is-premium' : ''}`}>
           <div className="confirm-billing-header">
             <div className="confirm-billing-title-wrap">
-              <Coins size={18} className={formData.travelers.length > 6 ? 'text-amber-600' : 'text-emerald-600'} />
+              <div className={`billing-icon-wrap ${formData.travelers.length > 6 ? 'icon-amber' : 'icon-emerald'}`}>
+                <Coins size={18} />
+              </div>
               <div>
-                <span className="confirm-label" style={{ marginBottom: '2px' }}>Group Tier & Activation</span>
-                <span className="confirm-value-bold">
+                <span className="confirm-card-label">Group Tier & Activation</span>
+                <span className="confirm-billing-tier-name">
                   {formData.travelers.length > 6 ? 'Large Squad Tier (7+ Members)' : 'Standard Free Tier (Up to 6 Members)'}
                 </span>
               </div>
@@ -126,7 +135,7 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
               formData.payment?.status === 'PAID' ? (
                 <span className="billing-status-pill paid">
                   <CheckCircle2 size={13} />
-                  ₹19.00 Payment Verified
+                  ₹19.00 Verified
                 </span>
               ) : (
                 <span className="billing-status-pill pending">
@@ -149,11 +158,11 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
             {formData.travelers.length > 6 && (
               <div className="confirm-billing-item">
                 <span>Large Squad Upgrade Fee (7th Member & Above):</span>
-                <span className="text-amber-600 font-semibold">+₹19.00</span>
+                <span className="billing-addon-fee">+₹19.00</span>
               </div>
             )}
             <div className="confirm-billing-item confirm-billing-total">
-              <span>Total Payable:</span>
+              <span>Total Ledger Activation:</span>
               <strong className="billing-total-val">
                 {formData.travelers.length > 6 ? '₹19.00' : '₹0.00 (FREE)'}
               </strong>
@@ -162,20 +171,28 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
 
           {formData.payment?.transactionId && (
             <div className="confirm-billing-receipt">
-              <span>Verified Payment Receipt:</span>
-              <code>{formData.payment.transactionId}</code>
+              <div className="receipt-left">
+                <span className="receipt-label">Payment Receipt:</span>
+                <code className="receipt-code">{formData.payment.transactionId}</code>
+              </div>
               <span className="receipt-method-tag">{formData.payment.paymentMethod || 'UPI'}</span>
             </div>
           )}
         </div>
 
-        {/* Row 5: Travelers & Official Invitations */}
-        <div className="confirm-travelers-block">
+        {/* Row: Travelers & Invitations Roster */}
+        <div className="confirm-detail-card confirm-travelers-card">
           <div className="confirm-travelers-header">
-            <span className="confirm-label">Travelers & Invitations ({formData.travelers.length})</span>
-            <span className="confirm-travelers-hint">
-              Official invitation links will be dispatched. Travelers will join the shared group ledger once approved.
-            </span>
+            <div className="confirm-travelers-title-wrap">
+              <div className="confirm-card-label-row">
+                <Users size={15} className="confirm-card-icon" />
+                <span className="confirm-card-label">Travelers & Squad Members</span>
+                <span className="confirm-count-chip">{formData.travelers.length}</span>
+              </div>
+              <p className="confirm-travelers-hint">
+                Official invitation links will be dispatched automatically upon confirmation.
+              </p>
+            </div>
           </div>
 
           <div className="confirm-travelers-grid">
@@ -189,26 +206,28 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
                 </div>
                 <div className="confirm-traveler-info">
                   <span className="confirm-traveler-name">{traveler.name}</span>
-                  <span className="confirm-traveler-email">{traveler.email}</span>
+                  <span className="confirm-traveler-email" title={traveler.email}>{traveler.email}</span>
                 </div>
-                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <div className="confirm-traveler-badges">
                   {index >= 6 && (
-                    <span className="confirm-role-pill paid-slot-tag">
+                    <span className="confirm-role-pill paid-slot-tag" title="Paid squad slot">
                       +₹19
                     </span>
                   )}
                   {traveler.role === 'Organizer' ? (
                     <span className="confirm-role-pill role-org">
+                      <ShieldCheck size={11} />
                       Organizer
                     </span>
                   ) : traveler.status === 'ACCEPTED' ? (
                     <span className="confirm-role-pill role-trav">
+                      <Check size={11} />
                       Joined
                     </span>
                   ) : (
-                    <span className="traveler-role-tag invite-tag" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                    <span className="confirm-role-pill role-pending">
                       <Mail size={11} />
-                      <span>Invite Pending</span>
+                      Pending
                     </span>
                   )}
                 </div>
@@ -220,17 +239,20 @@ export const ReviewConfirmSection: React.FC<ReviewConfirmSectionProps> = ({
 
       {/* Assurance Notice */}
       <div className="confirm-notice-banner">
-        <CheckCircle2 size={18} className="confirm-notice-icon" />
-        <span>
-          Official invitation emails with approval links will be delivered immediately upon creation. Invited participants join the ledger upon accepting.
-        </span>
+        <ShieldCheck size={18} className="confirm-notice-icon" />
+        <div className="confirm-notice-text">
+          <strong className="confirm-notice-headline">Instant Dispatch & Ledger Protection</strong>
+          <span className="confirm-notice-body">
+            Invitations and split settings are activated immediately. All group members can access the shared dashboard securely.
+          </span>
+        </div>
       </div>
 
-      {/* Navigation Actions */}
+      {/* Navigation & Action Buttons (Mobile-first responsive dock) */}
       <div className="confirm-action-buttons">
         <button
           type="button"
-          className="btn btn-secondary"
+          className="btn btn-secondary confirm-back-btn"
           onClick={onBackToEdit}
           disabled={isSubmitting}
         >

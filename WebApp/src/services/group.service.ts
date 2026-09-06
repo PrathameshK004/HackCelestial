@@ -1,3 +1,4 @@
+import { apiRequest } from './apiClient';
 import { 
   TripFormData, 
   CreatedGroupData, 
@@ -6,60 +7,13 @@ import {
   SettlementData
 } from '../types/group';
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://hackcelestial-api.onrender.com/api';
-
 interface RequestOptions extends RequestInit {
   token?: string | null;
+  skipAuthRefresh?: boolean;
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { token, headers = {}, ...restOptions } = options;
-
-  const authToken = token || localStorage.getItem('triptual_auth_token');
-
-  const requestHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    ...(headers as Record<string, string>),
-  };
-
-  if (authToken) {
-    requestHeaders['Authorization'] = `Bearer ${authToken}`;
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}${endpoint}`, {
-      ...restOptions,
-      headers: requestHeaders,
-      credentials: 'include',
-    });
-  } catch (netErr: any) {
-    console.error('Group API network error:', netErr);
-    throw new Error('Cannot connect to backend server. Please verify port 4000.');
-  }
-
-  let data: any;
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    data = await response.json();
-  } else {
-    const text = await response.text();
-    data = { message: text || response.statusText };
-  }
-
-  if (!response.ok) {
-    const errorMessage =
-      data?.err?.message ||
-      data?.message ||
-      `Request failed with status ${response.status}`;
-    const error = new Error(errorMessage);
-    (error as any).status = response.status;
-    (error as any).data = data;
-    throw error;
-  }
-
-  return data as T;
+  return apiRequest<T>(endpoint, options);
 }
 
 export const groupService = {
@@ -229,6 +183,24 @@ export const groupService = {
   async settleGroup(groupId: string): Promise<{ message: string; data: any }> {
     return request<{ message: string; data: any }>(`/groups/${groupId}/settle`, {
       method: 'POST',
+    });
+  },
+
+  async addGroupMember(groupId: string, member: {
+    name: string;
+    email: string;
+    role?: string;
+    avatarBg?: string;
+  }): Promise<{ err?: any; message: string; data: any }> {
+    return request<{ err?: any; message: string; data: any }>(`/groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify(member),
+    });
+  },
+
+  async removeGroupMember(groupId: string, memberId: string): Promise<{ err?: any; message: string; data: any }> {
+    return request<{ err?: any; message: string; data: any }>(`/groups/${groupId}/members/${memberId}`, {
+      method: 'DELETE',
     });
   },
 };

@@ -1,51 +1,81 @@
 import React from 'react';
-import { ArrowRight, Bookmark, RotateCcw } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Bookmark, RotateCcw } from 'lucide-react';
 
 interface CreateGroupActionBarProps {
-  onCancel: () => void;
+  currentStep: number;
+  onPrev: () => void;
+  onNext: () => void;
   onSaveDraft: () => void;
-  onContinue: () => void;
+  onReset: () => void;
   isSubmitting?: boolean;
 }
 
 export const CreateGroupActionBar: React.FC<CreateGroupActionBarProps> = ({
-  onCancel,
+  currentStep,
+  onPrev,
+  onNext,
   onSaveDraft,
-  onContinue,
+  onReset,
   isSubmitting = false
 }) => {
+  const getNextLabel = () => {
+    switch (currentStep) {
+      case 1:
+        return 'Next: Add Travelers';
+      case 2:
+        return 'Next: Preferences';
+      case 3:
+        return 'Review & Confirm';
+      default:
+        return 'Continue';
+    }
+  };
+
   return (
     <footer className="fixed-action-bar" aria-label="Group Creation Actions">
       <div className="action-bar-inner">
-        <div className="action-bar-left">
+        {/* Primary Next Action */}
+        <div className="action-bar-primary-mobile">
           <button
             type="button"
-            className="btn btn-secondary"
-            onClick={onCancel}
+            className="btn btn-primary action-btn-continue"
+            onClick={onNext}
+            disabled={isSubmitting}
           >
-            <RotateCcw size={15} />
-            <span>Reset / Cancel</span>
+            <span>{getNextLabel()}</span>
+            <ArrowRight size={16} />
           </button>
         </div>
 
-        <div className="action-bar-right">
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={onSaveDraft}
-          >
-            <Bookmark size={15} />
-            <span>Save Draft</span>
-          </button>
+        {/* Secondary Back / Draft / Reset Action */}
+        <div className="action-bar-secondary-mobile">
+          {currentStep > 1 ? (
+            <button
+              type="button"
+              className="btn btn-secondary action-btn-reset"
+              onClick={onPrev}
+            >
+              <ArrowLeft size={14} />
+              <span>Back</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary action-btn-reset"
+              onClick={onReset}
+            >
+              <RotateCcw size={14} />
+              <span>Reset</span>
+            </button>
+          )}
 
           <button
             type="button"
-            className="btn btn-primary"
-            onClick={onContinue}
-            disabled={isSubmitting}
+            className="btn btn-outline action-btn-draft"
+            onClick={onSaveDraft}
           >
-            <span>Continue to Review</span>
-            <ArrowRight size={16} />
+            <Bookmark size={14} />
+            <span>Save Draft</span>
           </button>
         </div>
       </div>

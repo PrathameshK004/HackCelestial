@@ -50,6 +50,7 @@ import { RoundtableGroupsIcon } from '../components/common/RoundtableGroupsIcon'
 
 interface HomePageProps {
   onCreateGroup: () => void;
+  initialSelectedGroupId?: string;
 }
 
 type DockTab = 'explore' | 'trips' | 'expenses' | 'profile' | 'saved';
@@ -89,8 +90,8 @@ const CURATED_STAYS: CuratedStay[] = [
   {
     id: 'stay-cozy-den',
     name: 'Cozy Den',
-    type: 'House',
-    category: 'house',
+    type: 'Hotel',
+    category: 'hotel',
     destination: 'Barcelona',
     dateRange: 'Jun 15-22',
     guests: 2,
@@ -129,8 +130,8 @@ const CURATED_STAYS: CuratedStay[] = [
   {
     id: 'stay-oasis',
     name: 'Oasis',
-    type: 'House',
-    category: 'house',
+    type: 'Villa',
+    category: 'villa',
     destination: 'San Francisco',
     dateRange: 'Jun 15-22',
     guests: 5,
@@ -203,8 +204,8 @@ const CURATED_STAYS: CuratedStay[] = [
   {
     id: 'stay-coastal-villa',
     name: 'Coastal Villa',
-    type: 'Villa',
-    category: 'villa',
+    type: 'Resort',
+    category: 'resort',
     destination: 'Santorini',
     dateRange: 'Jun 15-22',
     guests: 4,
@@ -272,7 +273,7 @@ const CURATED_STAYS: CuratedStay[] = [
   }
 ];
 
-export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup }) => {
+export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelectedGroupId }) => {
   const { user, logout } = useAuth();
 
   // Navigation States
@@ -318,41 +319,23 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup }) => {
     };
   }, []);
 
-  // Load Groups from API (or fallback smoothly to mock data)
+  // Load Groups from API (real-time from PostgreSQL database)
   const loadGroups = async () => {
     setIsLoadingGroups(true);
     try {
       const response = await groupService.getMyGroups();
-      if (response.data && response.data.length > 0) {
+      if (response.data && Array.isArray(response.data)) {
         setGroups(response.data);
+        if (initialSelectedGroupId) {
+          const matched = response.data.find((g: any) => g.id === initialSelectedGroupId);
+          if (matched) setSelectedGroup(matched);
+        }
       } else {
-        const mappedMock: GroupSummary[] = MOCK_DASHBOARD_GROUPS.map((g) => ({
-          id: g.id,
-          name: g.name,
-          destination: g.destination,
-          currency: (g.currency as any) || 'USD',
-          startDate: g.startDate,
-          endDate: g.endDate,
-          memberCount: g.members.length,
-          status: g.status === 'completed' ? 'SETTLED' : 'ACTIVE',
-          createdAt: g.startDate
-        }));
-        setGroups(mappedMock);
+        setGroups([]);
       }
     } catch (err: any) {
-      console.warn('API error, using fallback:', err.message);
-      const mappedMock: GroupSummary[] = MOCK_DASHBOARD_GROUPS.map((g) => ({
-        id: g.id,
-        name: g.name,
-        destination: g.destination,
-        currency: (g.currency as any) || 'USD',
-        startDate: g.startDate,
-        endDate: g.endDate,
-        memberCount: g.members.length,
-        status: g.status === 'completed' ? 'SETTLED' : 'ACTIVE',
-        createdAt: g.startDate
-      }));
-      setGroups(mappedMock);
+      console.warn('Could not load user groups:', err.message);
+      setGroups([]);
     } finally {
       setIsLoadingGroups(false);
     }

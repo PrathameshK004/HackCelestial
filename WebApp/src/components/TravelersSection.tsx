@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, UserPlus, Trash2, CheckCircle2, Mail, Crown, Copy, Check } from 'lucide-react';
+import { Users, UserPlus, Trash2, CheckCircle2, Mail, Crown, Send, Check } from 'lucide-react';
 import { Traveler } from '../types/group';
 import { AddTravelerModal } from './AddTravelerModal';
 
@@ -68,9 +68,20 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
         <div className="traveler-tier-banner free-tier">
           <div className="tier-banner-left">
             <CheckCircle2 size={16} className="text-emerald-600" />
-            <span>
-              <strong>Free Tier Active:</strong> {travelers.length} of 6 free slots used (₹0 fee)
-            </span>
+            <div className="tier-banner-text-wrap">
+              <span className="tier-banner-main">
+                <strong>Free Tier Active:</strong> {travelers.length} of 6 slots used (₹0 fee)
+              </span>
+              <div className="tier-slots-track" aria-label={`${travelers.length} of 6 slots filled`}>
+                {[1, 2, 3, 4, 5, 6].map((slotNum) => (
+                  <span
+                    key={slotNum}
+                    className={`tier-slot-dot ${slotNum <= travelers.length ? 'filled' : ''}`}
+                    title={`Slot ${slotNum}: ${slotNum <= travelers.length ? 'Filled' : 'Free slot'}`}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
           <span className="tier-pill-free">Up to 6 Free</span>
         </div>
@@ -125,7 +136,7 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
                     ) : (
                       <span className="traveler-role-tag invite-tag" title="Official invitation sent. Participant will be added upon approval.">
                         <Mail size={12} />
-                        <span>Invite Pending</span>
+                        <span>Pending</span>
                       </span>
                     )}
                     {isPaidSlot && (
@@ -142,35 +153,15 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
                 {isPending && (
                   <button
                     type="button"
-                    className="btn-copy-traveler-link"
+                    className={`btn-send-invite ${copiedId === traveler.id ? 'copied' : ''}`}
                     onClick={() => handleCopyInviteLink(traveler)}
-                    title="Copy official invite link for this participant"
-                    aria-label={`Copy invite link for ${traveler.name}`}
-                    style={{
-                      background: copiedId === traveler.id ? '#ecfdf5' : '#f8fafc',
-                      border: copiedId === traveler.id ? '1px solid #10b981' : '1px solid var(--border-subtle)',
-                      color: copiedId === traveler.id ? '#059669' : 'var(--slate-600)',
-                      borderRadius: '6px',
-                      padding: '5px 8px',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      transition: 'all 0.15s ease'
-                    }}
+                    title={copiedId === traveler.id ? 'Invite link copied!' : `Send invite link for ${traveler.name}`}
+                    aria-label={`Send invite link for ${traveler.name}`}
                   >
                     {copiedId === traveler.id ? (
-                      <>
-                        <Check size={13} style={{ color: '#059669' }} />
-                        <span>Copied</span>
-                      </>
+                      <Check size={16} />
                     ) : (
-                      <>
-                        <Copy size={13} />
-                        <span>Copy Link</span>
-                      </>
+                      <Send size={16} />
                     )}
                   </button>
                 )}

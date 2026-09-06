@@ -1,23 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MapPin, Search, Sparkles } from 'lucide-react';
+import { Search, Sparkles } from 'lucide-react';
 import { MOCK_DESTINATIONS } from '../mock/mockData';
 import { DestinationOption } from '../types/group';
 
 interface DestinationInputProps {
   value: string;
   onChange: (val: string) => void;
-  startDateFormatted: string;
-  endDateFormatted: string;
-  durationDays: number;
+  startDateFormatted?: string;
+  endDateFormatted?: string;
+  durationDays?: number;
   error?: string;
 }
 
 export const DestinationInput: React.FC<DestinationInputProps> = ({
   value,
   onChange,
-  startDateFormatted,
-  endDateFormatted,
-  durationDays,
   error
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -97,22 +94,6 @@ export const DestinationInput: React.FC<DestinationInputProps> = ({
         </div>
       )}
 
-      {/* Clean, Non-Card Inline Destination Info */}
-      {value && (
-        <div className="destination-inline-status">
-          <div className="dest-status-left">
-            <MapPin size={14} className="dest-pin-accent" />
-            <span className="dest-name-text">{value}</span>
-            <span className="dest-separator">•</span>
-            <span className="dest-dates-text">
-              {startDateFormatted && endDateFormatted ? `${startDateFormatted} – ${endDateFormatted}` : 'Dates selected'}
-            </span>
-          </div>
-          {durationDays > 0 && (
-            <span className="dest-days-badge">{durationDays} {durationDays === 1 ? 'Day' : 'Days'}</span>
-          )}
-        </div>
-      )}
     </div>
   );
 };

@@ -66,7 +66,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       {startDate && endDate && durationDays > 0 && (
         <div className="duration-indicator-pill">
           <Clock size={13} />
-          <span>Calculated Trip Duration: <strong>{durationDays} {durationDays === 1 ? 'Day' : 'Days'}</strong></span>
+          <span>Trip Duration: <strong>{durationDays} {durationDays === 1 ? 'day' : 'days'}</strong></span>
         </div>
       )}
     </div>

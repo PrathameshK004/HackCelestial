@@ -237,13 +237,14 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
 
           </div>
 
-          <div className="modal-footer" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary modal-cancel-btn" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-primary modal-submit-btn">
               <UserPlus size={16} />
-              <span>Add & Prepare Official Invite</span>
+              <span className="btn-text-desktop">Add & Prepare Official Invite</span>
+              <span className="btn-text-mobile">Add Traveler</span>
             </button>
           </div>
         </form>

@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { CreateGroupPage, AuthPage, JoinTripPage } from './pages';
+import { CreateGroupPage, AuthPage, JoinTripPage, HomePage } from './pages';
 import { Compass, Loader2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [isAuthModeForInvite, setIsAuthModeForInvite] = useState(false);
+  const [activeView, setActiveView] = useState<'create-group' | 'dashboard'>('create-group');
+  const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(undefined);
 
   // Helper to extract invite code from pathname, query or hash
   const extractInviteCode = (): string | null => {
@@ -83,7 +85,27 @@ const AppContent: React.FC = () => {
   }
 
   // 3. Standard Platform Flow
-  return isAuthenticated ? <CreateGroupPage /> : <AuthPage />;
+  if (!isAuthenticated) {
+    return <AuthPage />;
+  }
+
+  if (activeView === 'dashboard') {
+    return (
+      <HomePage 
+        onCreateGroup={() => setActiveView('create-group')} 
+        initialSelectedGroupId={selectedGroupId}
+      />
+    );
+  }
+
+  return (
+    <CreateGroupPage 
+      onNavigateDashboard={(newGroupId) => {
+        if (newGroupId) setSelectedGroupId(newGroupId);
+        setActiveView('dashboard');
+      }} 
+    />
+  );
 };
 
 export const App: React.FC = () => {

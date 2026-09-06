@@ -7,9 +7,10 @@ import { PendingInvitesModal } from './PendingInvitesModal';
 
 interface CreateGroupHeaderProps {
   onHelpClick?: () => void;
+  onDashboardClick?: () => void;
 }
 
-export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClick }) => {
+export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClick, onDashboardClick }) => {
   const { user, logout, isAuthenticated } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<PendingInvitation[]>([]);
@@ -49,17 +50,35 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
   return (
     <header className="header-wrapper">
       <div className="header-inner">
-        <a href="#home" className="brand-logo" title="GroupTrip Ledger Home">
+        <div 
+          className="brand-logo" 
+          title="GroupTrip Ledger Home" 
+          style={{ cursor: onDashboardClick ? 'pointer' : 'default' }}
+          onClick={() => onDashboardClick && onDashboardClick()}
+        >
           <div className="brand-icon-box">
             <Compass size={22} strokeWidth={2.4} />
           </div>
-          <div>
-            <div>GroupTrip Ledger</div>
+          <div className="brand-text-wrap">
+            <div className="brand-name">GroupTrip Ledger</div>
             <div className="brand-tagline">Travel & Expense Hub</div>
           </div>
-        </a>
+        </div>
 
         <div className="header-right">
+          {/* My Trips Dashboard Button */}
+          {isAuthenticated && onDashboardClick && (
+            <button 
+              type="button" 
+              className="help-btn header-nav-btn"
+              onClick={onDashboardClick}
+              title="View all your trips and ledgers"
+              style={{ fontWeight: 600 }}
+            >
+              <Compass size={16} />
+              <span className="header-btn-label">My Trips</span>
+            </button>
+          )}
           {/* Pending Invitations Tray Button */}
           {isAuthenticated && (
             <button 
@@ -71,7 +90,7 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
                 : "View pending invitations"}
             >
               <Mail size={16} />
-              <span>Invites</span>
+              <span className="header-btn-label">Invites</span>
               {pendingInvites.length > 0 && (
                 <span className="header-invites-badge">{pendingInvites.length}</span>
               )}
@@ -80,12 +99,12 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
 
           <button 
             type="button" 
-            className="help-btn" 
+            className="help-btn header-help-btn" 
             onClick={onHelpClick} 
             title="Need help setting up your group?"
           >
             <HelpCircle size={16} />
-            <span>Help & FAQ</span>
+            <span className="header-btn-label">Help</span>
           </button>
 
           {/* User Profile Chip with Dropdown */}
@@ -113,6 +132,19 @@ export const CreateGroupHeader: React.FC<CreateGroupHeaderProps> = ({ onHelpClic
                   {user?.emailId && <div className="dropdown-user-email">{user.emailId}</div>}
                 </div>
                 <div className="user-dropdown-divider"></div>
+                {onDashboardClick && (
+                  <button
+                    type="button"
+                    className="user-dropdown-item"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      onDashboardClick();
+                    }}
+                  >
+                    <Compass size={15} />
+                    <span>My Trips</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   className="user-dropdown-item text-rose"

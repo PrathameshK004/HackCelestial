@@ -16,14 +16,43 @@ import { ReviewConfirmSection } from '../components/ReviewConfirmSection';
 import { ToastNotification, ToastMessage } from '../components/ToastNotification';
 import { SuccessModal } from '../components/SuccessModal';
 import { PaymentModal } from '../components/PaymentModal';
-import { INITIAL_MOCK_TRIP } from '../mock/mockData';
 import { TripFormData, Traveler, TripType, Currency, ExpenseSplit, CreatedGroupData, PaymentDetails } from '../types/group';
 import { groupService } from '../services/group.service';
 import { useAuth } from '../context/AuthContext';
 
-export const CreateGroupPage: React.FC = () => {
+const getInitialTripForm = (user?: any): TripFormData => {
+  const travelers: Traveler[] = [];
+  if (user?.emailId) {
+    travelers.push({
+      id: 'organizer-me',
+      name: user.username || 'Organizer',
+      email: user.emailId,
+      role: 'Organizer',
+      avatarBg: '#059669',
+      isRegistered: true,
+      status: 'ACCEPTED'
+    });
+  }
+  return {
+    groupName: '',
+    destination: '',
+    startDate: '',
+    endDate: '',
+    tripType: 'Friends',
+    currency: 'INR',
+    expenseSplit: 'equal',
+    description: '',
+    travelers
+  };
+};
+
+interface CreateGroupPageProps {
+  onNavigateDashboard?: (newGroupId?: string) => void;
+}
+
+export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDashboard }) => {
   const { user } = useAuth();
-  const [formData, setFormData] = useState<TripFormData>(INITIAL_MOCK_TRIP);
+  const [formData, setFormData] = useState<TripFormData>(() => getInitialTripForm(user));
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -32,34 +61,34 @@ export const CreateGroupPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdGroup, setCreatedGroup] = useState<CreatedGroupData | null>(null);
 
-  // Set logged-in user as the first organizer if present
+  // Synchronize logged-in user as the group organizer when user data is ready
   useEffect(() => {
-    if (user) {
+    if (user?.emailId) {
       setFormData((prev) => {
-        const hasUser = prev.travelers.some(
-          (t) => t.email.toLowerCase() === user.emailId?.toLowerCase()
+        const hasOrganizer = prev.travelers.some(
+          (t) => t.role === 'Organizer' && t.email.toLowerCase() === user.emailId?.toLowerCase()
         );
-        if (!hasUser && user.emailId) {
-          const organizerTraveler: Traveler = {
-            id: 'organizer-me',
-            name: user.username,
-            email: user.emailId,
-            role: 'Organizer',
-            avatarBg: '#059669',
-            isRegistered: true
-          };
-          return {
-            ...prev,
-            travelers: [
-              organizerTraveler,
-              ...prev.travelers.filter((t) => t.role !== 'Organizer')
-            ]
-          };
-        }
-        return prev;
+        if (hasOrganizer) return prev;
+
+        const organizerTraveler: Traveler = {
+          id: 'organizer-me',
+          name: user.username || 'Organizer',
+          email: user.emailId,
+          role: 'Organizer',
+          avatarBg: '#059669',
+          isRegistered: true,
+          status: 'ACCEPTED'
+        };
+        return {
+          ...prev,
+          travelers: [
+            organizerTraveler,
+            ...prev.travelers.filter((t) => t.role !== 'Organizer')
+          ]
+        };
       });
     }
-  }, [user]);
+  }, [user?.emailId, user?.username]);
 
   // Helper for adding toast notifications
   const addToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -166,11 +195,20 @@ export const CreateGroupPage: React.FC = () => {
   };
 
   const handleAddTraveler = (newTraveler: Omit<Traveler, 'id'>) => {
-    const id = Date.now().toString();
-    setFormData((prev) => ({
-      ...prev,
-      travelers: [...prev.travelers, { ...newTraveler, id }]
-    }));
+    const id = 'traveler-' + Date.now().toString() + '-' + Math.random().toString(36).substring(2, 6);
+    setFormData((prev) => {
+      const emailExists = prev.travelers.some(
+        (t) => t.email.toLowerCase() === newTraveler.email.toLowerCase()
+      );
+      if (emailExists) {
+        addToast(`${newTraveler.email} is already in the traveler list`, 'info');
+        return prev;
+      }
+      return {
+        ...prev,
+        travelers: [...prev.travelers, { ...newTraveler, id }]
+      };
+    });
     if (errors.travelers) {
       setErrors((prev) => {
         const copy = { ...prev };
@@ -191,10 +229,10 @@ export const CreateGroupPage: React.FC = () => {
 
   // Form actions
   const handleReset = () => {
-    setFormData(INITIAL_MOCK_TRIP);
+    setFormData(getInitialTripForm(user));
     setErrors({});
     setCurrentStep(1);
-    addToast('Form reset to default sample values', 'info');
+    addToast('Form reset to clean trip state', 'info');
   };
 
   const handleSaveDraft = () => {
@@ -202,41 +240,66 @@ export const CreateGroupPage: React.FC = () => {
     addToast('Trip draft saved securely in browser!', 'success');
   };
 
-  const handleContinueToReview = () => {
+  const handleNextStep = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.groupName.trim()) {
-      newErrors.groupName = 'Group name is required';
-    }
-    if (!formData.destination.trim()) {
-      newErrors.destination = 'Destination is required';
-    }
-    if (!formData.startDate) {
-      newErrors.startDate = 'Start date is required';
-    }
-    if (!formData.endDate) {
-      newErrors.endDate = 'End date is required';
-    } else if (formData.startDate && new Date(formData.endDate) < new Date(formData.startDate)) {
-      newErrors.endDate = 'End date cannot be earlier than start date';
-    }
-    if (formData.travelers.length === 0) {
-      newErrors.travelers = 'At least one traveler is required';
-    }
+    if (currentStep === 1) {
+      if (!formData.groupName.trim()) {
+        newErrors.groupName = 'Group name is required';
+      }
+      if (!formData.destination.trim()) {
+        newErrors.destination = 'Destination is required';
+      }
+      if (!formData.startDate) {
+        newErrors.startDate = 'Start date is required';
+      }
+      if (!formData.endDate) {
+        newErrors.endDate = 'End date is required';
+      } else if (formData.startDate && new Date(formData.endDate) < new Date(formData.startDate)) {
+        newErrors.endDate = 'End date cannot be earlier than start date';
+      }
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      addToast('Please complete all required fields', 'error');
-      window.scrollTo({ top: 180, behavior: 'smooth' });
-    } else {
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        addToast('Please complete all required trip details', 'error');
+        return;
+      }
       setErrors({});
+      setCurrentStep(2);
+      window.scrollTo({ top: 40, behavior: 'smooth' });
+    } else if (currentStep === 2) {
+      if (formData.travelers.length === 0) {
+        newErrors.travelers = 'At least one traveler is required';
+        setErrors(newErrors);
+        addToast('At least one traveler is required', 'error');
+        return;
+      }
+      setErrors({});
+      setCurrentStep(3);
+      window.scrollTo({ top: 40, behavior: 'smooth' });
+    } else if (currentStep === 3) {
       setCurrentStep(4);
-      window.scrollTo({ top: 120, behavior: 'smooth' });
+      window.scrollTo({ top: 40, behavior: 'smooth' });
+    }
+  };
+
+  const handlePrevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep((prev) => prev - 1);
+      window.scrollTo({ top: 40, behavior: 'smooth' });
+    }
+  };
+
+  const handleStepClick = (stepNumber: number) => {
+    if (stepNumber < currentStep) {
+      setCurrentStep(stepNumber);
+      window.scrollTo({ top: 40, behavior: 'smooth' });
     }
   };
 
   const handleBackToEdit = () => {
-    setCurrentStep(1);
-    window.scrollTo({ top: 120, behavior: 'smooth' });
+    setCurrentStep(3);
+    window.scrollTo({ top: 40, behavior: 'smooth' });
   };
 
   const submitWithData = async (dataToSubmit: TripFormData) => {
@@ -283,31 +346,58 @@ export const CreateGroupPage: React.FC = () => {
     await submitWithData(updatedFormData);
   };
 
+  const getPageTitle = () => {
+    switch (currentStep) {
+      case 1:
+        return 'Trip Details';
+      case 2:
+        return 'Who’s Going?';
+      case 3:
+        return 'Trip Preferences';
+      case 4:
+        return 'Confirm Group Application';
+      default:
+        return 'Create a New Group';
+    }
+  };
+
+  const getPageSubtitle = () => {
+    switch (currentStep) {
+      case 1:
+        return 'Set your trip name, destination, and travel dates.';
+      case 2:
+        return 'Manage travelers and send official invitations to your shared ledger.';
+      case 3:
+        return 'Choose your ledger currency and default expense sharing formula.';
+      case 4:
+        return 'Review your trip details, ledger configuration, and member roster before activation.';
+      default:
+        return 'Organize bookings and split expenses effortlessly.';
+    }
+  };
+
   return (
     <div className="app-container">
-      <CreateGroupHeader onHelpClick={() => addToast('GroupTrip Ledger: Create trip, invite companions, track splits & settle debts.', 'info')} />
+      <CreateGroupHeader 
+        onHelpClick={() => addToast('GroupTrip Ledger: Create trip, invite companions, track splits & settle debts.', 'info')} 
+        onDashboardClick={onNavigateDashboard}
+      />
 
       <main className="main-content">
-        {/* Page Heading */}
+        {/* Dynamic Step Header */}
         <section className="page-header-section">
           <div className="page-badge">
             <Plane size={13} />
             <span>Group Travel & Expense Coordinator</span>
           </div>
-          <h1 className="page-title">
-            {currentStep === 4 ? 'Review & Confirm Group' : 'Create a New Group'}
-          </h1>
-          <p className="page-subtitle">
-            {currentStep === 4
-              ? 'Review your travel group setup and confirm details to generate the expense ledger.'
-              : 'Set up your trip, invite your travelers, and keep every booking and expense organized from day one.'}
-          </p>
+          <h1 className="page-title">{getPageTitle()}</h1>
+          <p className="page-subtitle">{getPageSubtitle()}</p>
         </section>
 
-        {/* Step Progress Indicator */}
-        <StepProgress currentStep={currentStep} />
+        {/* Step Progress Indicator (Clickable on visited steps) */}
+        <StepProgress currentStep={currentStep} onStepClick={handleStepClick} />
 
-        {/* Step 4: Confirm Application Section */}
+        {/* Step-by-Step Clean Card Presentation */}
         {currentStep === 4 ? (
           <ReviewConfirmSection
             formData={formData}
@@ -319,95 +409,98 @@ export const CreateGroupPage: React.FC = () => {
             isSubmitting={isSubmitting}
           />
         ) : (
-          /* Step 1: Main Form & Sticky Live Preview */
           <div className="page-grid">
-            {/* Left Column: Form Fields */}
+            {/* Main Form Column: Displays ONLY the active step */}
             <div className="form-column">
-              {/* Section 1: Trip Details */}
-              <div className="form-section-card">
-                <div className="section-header">
-                  <div className="section-title-row">
-                    <h2 className="section-title">
-                      <Compass size={20} className="section-title-icon" />
-                      Trip Details
-                    </h2>
-                  </div>
-                  <p className="section-subtitle">Tell us a little about your upcoming trip.</p>
-                </div>
-
-                {/* Group Name */}
-                <div className="form-group">
-                  <label className="form-label" htmlFor="group-name-input">
-                    Group Name <span className="required-star">*</span>
-                  </label>
-                  <div className="input-with-icon">
-                    <div className="input-icon">
-                      <Sparkles size={18} />
+              {/* Step 1: Trip Details */}
+              {currentStep === 1 && (
+                <div className="form-section-card">
+                  <div className="section-header">
+                    <div className="section-title-row">
+                      <h2 className="section-title">
+                        <Compass size={20} className="section-title-icon" />
+                        Trip Information
+                      </h2>
                     </div>
-                    <input
-                      id="group-name-input"
-                      type="text"
-                      className={`text-input ${errors.groupName ? 'has-error' : ''}`}
-                      placeholder="e.g. Goa Friends Trip"
-                      value={formData.groupName}
-                      onChange={(e) => handleGroupNameChange(e.target.value)}
-                    />
+                    <p className="section-subtitle">Give your trip a memorable name and choose where you're heading.</p>
                   </div>
-                  {errors.groupName && <div className="field-error-msg">{errors.groupName}</div>}
+
+                  {/* Group Name */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="group-name-input">
+                      Group Name <span className="required-star">*</span>
+                    </label>
+                    <div className="input-with-icon">
+                      <div className="input-icon">
+                        <Sparkles size={18} />
+                      </div>
+                      <input
+                        id="group-name-input"
+                        type="text"
+                        className={`text-input ${errors.groupName ? 'has-error' : ''}`}
+                        placeholder="e.g. Goa Friends Trip"
+                        value={formData.groupName}
+                        onChange={(e) => handleGroupNameChange(e.target.value)}
+                      />
+                    </div>
+                    {errors.groupName && <div className="field-error-msg">{errors.groupName}</div>}
+                  </div>
+
+                  {/* Destination */}
+                  <DestinationInput
+                    value={formData.destination}
+                    onChange={handleDestinationChange}
+                    error={errors.destination}
+                  />
+
+                  {/* Date Range Picker */}
+                  <DateRangePicker
+                    startDate={formData.startDate}
+                    endDate={formData.endDate}
+                    onStartDateChange={handleStartDateChange}
+                    onEndDateChange={handleEndDateChange}
+                    durationDays={durationDays}
+                    startDateError={errors.startDate}
+                    endDateError={errors.endDate}
+                  />
+
+                  {/* Trip Type Selector */}
+                  <TripTypeSelector
+                    selected={formData.tripType}
+                    onChange={handleTripTypeChange}
+                  />
                 </div>
+              )}
 
-                {/* Destination */}
-                <DestinationInput
-                  value={formData.destination}
-                  onChange={handleDestinationChange}
-                  startDateFormatted={startDateFormatted}
-                  endDateFormatted={endDateFormatted}
-                  durationDays={durationDays}
-                  error={errors.destination}
+              {/* Step 2: Travelers Section */}
+              {currentStep === 2 && (
+                <TravelersSection
+                  travelers={formData.travelers}
+                  onAddTraveler={handleAddTraveler}
+                  onRemoveTraveler={handleRemoveTraveler}
+                  error={errors.travelers}
                 />
+              )}
 
-                {/* Date Range Picker */}
-                <DateRangePicker
-                  startDate={formData.startDate}
-                  endDate={formData.endDate}
-                  onStartDateChange={handleStartDateChange}
-                  onEndDateChange={handleEndDateChange}
-                  durationDays={durationDays}
-                  startDateError={errors.startDate}
-                  endDateError={errors.endDate}
-                />
+              {/* Step 3: Trip Preferences & Notes */}
+              {currentStep === 3 && (
+                <>
+                  <TripPreferences
+                    currency={formData.currency}
+                    onCurrencyChange={handleCurrencyChange}
+                    expenseSplit={formData.expenseSplit}
+                    onExpenseSplitChange={handleExpenseSplitChange}
+                  />
 
-                {/* Trip Type Selector */}
-                <TripTypeSelector
-                  selected={formData.tripType}
-                  onChange={handleTripTypeChange}
-                />
-              </div>
-
-              {/* Section 2: Travelers ("Who's Going?") */}
-              <TravelersSection
-                travelers={formData.travelers}
-                onAddTraveler={handleAddTraveler}
-                onRemoveTraveler={handleRemoveTraveler}
-                error={errors.travelers}
-              />
-
-              {/* Section 3: Trip Preferences */}
-              <TripPreferences
-                currency={formData.currency}
-                onCurrencyChange={handleCurrencyChange}
-                expenseSplit={formData.expenseSplit}
-                onExpenseSplitChange={handleExpenseSplitChange}
-              />
-
-              {/* Section 4: Trip Description */}
-              <TripDescription
-                description={formData.description}
-                onChange={handleDescriptionChange}
-              />
+                  <TripDescription
+                    description={formData.description}
+                    onChange={handleDescriptionChange}
+                  />
+                </>
+              )}
             </div>
 
-            {/* Right Column: Sticky Trip Preview */}
+            {/* Right Column: Sticky Trip Preview (Active on Desktop) */}
             <aside className="preview-column-sticky">
               <TripPreview
                 formData={formData}
@@ -422,12 +515,15 @@ export const CreateGroupPage: React.FC = () => {
         )}
       </main>
 
-      {/* Fixed Bottom Action Bar (in Step 1) */}
-      {currentStep === 1 && (
+      {/* Fixed Bottom Action Bar for Steps 1, 2, and 3 */}
+      {currentStep < 4 && (
         <CreateGroupActionBar
-          onCancel={handleReset}
+          currentStep={currentStep}
+          onPrev={handlePrevStep}
+          onNext={handleNextStep}
           onSaveDraft={handleSaveDraft}
-          onContinue={handleContinueToReview}
+          onReset={handleReset}
+          isSubmitting={isSubmitting}
         />
       )}
 
@@ -439,7 +535,12 @@ export const CreateGroupPage: React.FC = () => {
         isOpen={isSuccessModalOpen}
         onClose={() => {
           setIsSuccessModalOpen(false);
+          const newGroupId = createdGroup?.groupId;
+          setFormData(getInitialTripForm(user));
           setCurrentStep(1);
+          if (onNavigateDashboard) {
+            onNavigateDashboard(newGroupId);
+          }
         }}
         tripData={formData}
         createdGroup={createdGroup}
