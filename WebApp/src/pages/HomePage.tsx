@@ -26,7 +26,9 @@ import {
   Check,
   Wallet,
   Split,
-  Info
+  Info,
+  Menu,
+  X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { groupService } from '../services/group.service';
@@ -769,7 +771,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
         </div>
 
         {/* Bottom Floating Navigation Dock */}
-        <nav className="yondr-bottom-dock">
+        <nav className={`yondr-bottom-dock ${isProfileMenuOpen ? 'dock-behind-drawer' : ''}`}>
           <div className="yondr-bottom-dock-inner">
             <button
               type="button"
@@ -820,7 +822,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     <div className="app-wrapper">
       <div className="app-content-container">
         {/* Top Header */}
-        <header className="yondr-top-header">
+        <header className={`yondr-top-header ${isProfileMenuOpen ? 'drawer-open' : ''}`}>
           <div className="yondr-top-header-inner">
             {/* Left: Brand Logo */}
             <div className="yondr-header-left">
@@ -870,18 +872,65 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
             {/* Right: Action Icons & Profile Dropdown */}
             <div className="yondr-header-right">
               <div className="profile-menu-anchor" ref={profileMenuRef}>
+                {/* Mobile Hamburger Menu Button */}
                 <button
                   type="button"
-                  className={`btn-icon-circle ${isProfileMenuOpen ? 'active' : ''}`}
+                  className={`btn-icon-circle mobile-hamburger-btn ${isProfileMenuOpen ? 'active' : ''}`}
+                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                  title="Toggle Navigation Menu"
+                  aria-label="Toggle navigation menu"
+                >
+                  <Menu size={18} />
+                </button>
+
+                {/* Desktop Profile Button */}
+                <button
+                  type="button"
+                  className={`btn-icon-circle desktop-profile-btn ${isProfileMenuOpen ? 'active' : ''}`}
                   onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                   title="Account Menu"
+                  aria-label="Toggle account menu"
                 >
                   <User size={18} />
                 </button>
 
                 {isProfileMenuOpen && (
-                  <div className="luxury-profile-dropdown-menu">
-                    {/* User Mini Card */}
+                  <>
+                    <div
+                      className="mobile-drawer-backdrop"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                    />
+
+                    <div className="luxury-profile-dropdown-menu">
+                      {/* Mobile Drawer Header with Close Button */}
+                      <div className="mobile-drawer-header">
+                        <div
+                          className="mobile-drawer-title"
+                          onClick={() => {
+                            setDockTab('explore');
+                            setIsProfileMenuOpen(false);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <img
+                            src="/triptual-logo.png"
+                            alt="Triptual"
+                            className="triptual-header-logo-icon"
+                            style={{ width: '28px', height: '28px' }}
+                          />
+                          <span className="triptual-logo-text" style={{ fontSize: '1.3rem' }}>Triptual</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="mobile-drawer-close"
+                          onClick={() => setIsProfileMenuOpen(false)}
+                          aria-label="Close menu"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+
+                      {/* User Mini Card */}
                     <div className="profile-menu-user-header">
                       <div className="profile-menu-avatar">
                         {displayInitials}
@@ -1025,7 +1074,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                       </div>
                     </button>
                   </div>
-                )}
+                </>
+              )}
               </div>
             </div>
           </div>
@@ -1753,7 +1803,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
       </div>
 
       {/* Bottom Floating Navigation Dock (Mobile-First) */}
-      <nav className="yondr-bottom-dock">
+      <nav className={`yondr-bottom-dock ${isProfileMenuOpen ? 'dock-behind-drawer' : ''}`}>
         <div className="yondr-bottom-dock-inner">
           <button
             type="button"
