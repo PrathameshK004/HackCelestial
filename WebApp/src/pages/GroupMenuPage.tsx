@@ -11,7 +11,8 @@ import {
   MapPin,
   Users,
   ShieldCheck,
-  Receipt
+  Receipt,
+  Trash2
 } from 'lucide-react';
 import QrScanner from 'qr-scanner';
 import { groupService } from '../services/group.service';
@@ -263,6 +264,17 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
       setMessage('Settlement payment recorded successfully.');
     } catch (err: any) {
       setMessage(err.message || 'Failed to record settlement.');
+    }
+  };
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    if (!window.confirm('Delete this expense? The ledger balances will automatically rebalance.')) return;
+    try {
+      await groupService.deleteExpense(group.id, expenseId);
+      await onRefresh();
+      setMessage('Expense deleted and ledger updated.');
+    } catch (err: any) {
+      setMessage(err.message || 'Failed to delete expense.');
     }
   };
 
@@ -553,23 +565,63 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                             >
                               {record.paymentMethod || 'CASH'}
                             </span>
+                            {record.splitModel && record.splitModel !== 'EQUAL' && (
+                              <span
+                                style={{
+                                  fontSize: '0.62rem',
+                                  fontWeight: 600,
+                                  padding: '1px 6px',
+                                  borderRadius: '9999px',
+                                  background: 'rgba(16, 185, 129, 0.15)',
+                                  color: '#10b981'
+                                }}
+                              >
+                                {record.splitModel.replace('_', ' ')}
+                              </span>
+                            )}
                           </div>
 
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span>Paid by {payerName}</span>
                             <span>·</span>
-                            <span>Split with {record.shares.length} members</span>
+                            <span>Split with {record.splits?.length || (Array.isArray(record.shares) ? record.shares.length : settlement.members.length)} members</span>
                           </div>
                         </div>
                       </div>
 
-                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                          {group.currency} {Number(record.amount).toFixed(2)}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {group.currency} {Number(record.amount).toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                            {new Date(record.createdAt).toLocaleDateString()}
+                          </div>
                         </div>
-                        <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>
-                          {new Date(record.createdAt).toLocaleDateString()}
-                        </div>
+
+                        {!isSettled && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExpense(record.id)}
+                            title="Delete expense"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'color 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

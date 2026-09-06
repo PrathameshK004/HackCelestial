@@ -144,29 +144,96 @@ export interface GroupSummary {
 
 export interface SettlementMember extends Traveler {
   upiId?: string;
+  netBalance?: number;
+}
+
+export interface ExpenseSplitDetail {
+  id: string;
+  memberId: string;
+  memberName: string;
+  memberAvatar?: string;
+  shareType: string;
+  shareValue: number;
+  computedAmount: number;
 }
 
 export interface SettlementExpense {
   id: string;
   description: string;
-  amount: number | string;
-  paidBy: string;
+  amount: number;
+  category?: string;
+  currency?: string;
+  splitModel?: string;
+  paidBy: {
+    id: string;
+    name: string;
+    role?: string;
+    avatarBg?: string;
+  };
   paidByName?: string;
   paymentMethod?: string;
-  shares: string[];
+  paymentReference?: string;
+  splits?: ExpenseSplitDetail[];
+  shares?: string[];
   createdAt: string;
 }
 
 export interface SettlementTransfer {
-  from: string;
-  to: string;
+  id?: string;
+  fromMemberId?: string;
+  toMemberId?: string;
+  from: string | {
+    id: string;
+    name: string;
+    avatarBg?: string;
+    email?: string;
+  };
+  to: string | {
+    id: string;
+    name: string;
+    avatarBg?: string;
+    email?: string;
+    upiId?: string;
+  };
+  fromName?: string;
+  toName?: string;
+  amount: number;
+  currency?: string;
+  currencySymbol?: string;
+}
+
+export interface SettlementRecord {
+  id: string;
+  fromMemberId: string;
+  toMemberId: string;
   fromName: string;
   toName: string;
-  amount: number | string;
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+  paymentReference?: string;
+  remarks?: string;
+  settledAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  eventType: string;
+  actorName: string;
+  description: string;
+  changeDiff?: any;
+  createdAt: string;
 }
 
 export interface SettlementData {
+  groupId?: string;
+  groupName?: string;
+  groupStatus?: 'ACTIVE' | 'SETTLED';
+  currency?: Currency;
+  totalSpend?: number;
   members: SettlementMember[];
   expenses: SettlementExpense[];
   transfers: SettlementTransfer[];
+  settlements?: SettlementRecord[];
 }
+

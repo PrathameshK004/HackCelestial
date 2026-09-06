@@ -4,7 +4,8 @@ import {
   CreatedGroupData, 
   CheckRegisteredUserResponse,
   ShareLinks,
-  SettlementData
+  SettlementData,
+  SettlementExpense
 } from '../types/group';
 
 interface RequestOptions extends RequestInit {
@@ -150,14 +151,35 @@ export const groupService = {
 
   async addExpense(groupId: string, payload: {
     description: string;
-    amount: string;
-    participants: string[];
-    paymentMethod: string;
+    amount: string | number;
+    category?: string;
+    currency?: string;
+    splitModel?: 'EQUAL' | 'PARTICIPANT_BASED' | 'ROOM_SHARE' | 'ACTIVITY_BASED' | 'ORGANIZER_PAID';
+    paidByMemberId?: string;
+    participants?: (string | {
+      memberId: string;
+      shareType?: string;
+      shareValue?: number;
+      isOptedIn?: boolean;
+    })[];
+    paymentMethod?: string;
     paymentReference?: string;
-  }): Promise<{ message: string; data: any }> {
-    return request<{ message: string; data: any }>(`/groups/${groupId}/expenses`, {
+  }): Promise<{ message: string; data: SettlementExpense }> {
+    return request<{ message: string; data: SettlementExpense }>(`/groups/${groupId}/expenses`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  async getExpenses(groupId: string): Promise<{ message: string; data: SettlementExpense[] }> {
+    return request<{ message: string; data: SettlementExpense[] }>(`/groups/${groupId}/expenses`, {
+      method: 'GET',
+    });
+  },
+
+  async deleteExpense(groupId: string, expenseId: string): Promise<{ message: string; data: any }> {
+    return request<{ message: string; data: any }>(`/groups/${groupId}/expenses/${expenseId}`, {
+      method: 'DELETE',
     });
   },
 
@@ -168,10 +190,12 @@ export const groupService = {
   },
 
   async recordSettlement(groupId: string, payload: {
+    fromMemberId?: string;
     paidTo: string;
-    amount: string;
-    remarks: string;
-    paymentMethod: string;
+    amount: string | number;
+    currency?: string;
+    remarks?: string;
+    paymentMethod?: string;
     paymentReference?: string;
   }): Promise<{ message: string; data: any }> {
     return request<{ message: string; data: any }>(`/groups/${groupId}/settlements`, {
@@ -183,6 +207,12 @@ export const groupService = {
   async settleGroup(groupId: string): Promise<{ message: string; data: any }> {
     return request<{ message: string; data: any }>(`/groups/${groupId}/settle`, {
       method: 'POST',
+    });
+  },
+
+  async getAuditLog(groupId: string): Promise<{ message: string; data: any[] }> {
+    return request<{ message: string; data: any[] }>(`/groups/${groupId}/audit-log`, {
+      method: 'GET',
     });
   },
 
@@ -204,4 +234,5 @@ export const groupService = {
     });
   },
 };
+
 

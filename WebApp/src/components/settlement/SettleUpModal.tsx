@@ -35,6 +35,7 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
     try {
       if (groupId && !groupId.startsWith('mock-') && !groupId.startsWith('grp-')) {
         await groupService.recordSettlement(groupId, {
+          fromMemberId: transfer.from.id,
           paidTo: transfer.to.id,
           amount: Number(transfer.amount).toFixed(2),
           remarks: notes.trim(),
