@@ -10,6 +10,7 @@ export interface UpiPaymentDetails {
   note?: string;
   txnRef?: string;
   app?: UpiAppType;
+  isNative?: boolean;
 }
 
 /**
@@ -41,7 +42,8 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
     currency = 'INR',
     note = 'Trip Shared Expense',
     txnRef,
-    app = 'generic'
+    app = 'generic',
+    isNative = false
   } = details;
 
   const numAmount = Number(amount).toFixed(2);
@@ -59,10 +61,10 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 30);
-  // Clean alphanumeric transaction tracking reference (max 35 chars)
-  const cleanTr = (txnRef || `TXN${Date.now().toString().slice(-8)}`)
-    .replace(/[^a-zA-Z0-9]/g, '')
-    .slice(0, 35);
+
+  // CRITICAL: Do NOT include 'tr' (transaction reference) parameter.
+  // PhonePe and Paytm treat 'tr' as a signal of an automated merchant payment,
+  // which requires PSP registration. Without it, the payment is treated as standard P2P.
 
   const queryParams = new URLSearchParams();
   queryParams.set('pa', cleanUpiId);
@@ -70,9 +72,13 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
   queryParams.set('am', numAmount);
   queryParams.set('cu', currency);
   if (cleanNote) queryParams.set('tn', cleanNote);
-  if (cleanTr) queryParams.set('tr', cleanTr);
 
   const queryString = queryParams.toString();
+
+  // Native mobile apps require clean standard upi://pay URIs (target package is handled by Intent)
+  if (isNative) {
+    return `upi://pay?${queryString}`;
+  }
 
   const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent || '');
   const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent || '');

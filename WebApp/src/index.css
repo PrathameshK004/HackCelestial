@@ -4454,16 +4454,16 @@ button, input, select, textarea {
    (100% Native Mobile Experience on 320px - 640px viewports)
    ========================================================= */
 
-/* Prevent any horizontal screen blowout on mobile */
+/* Prevent any horizontal screen blowout on mobile without breaking position: sticky */
 html, body {
-  overflow-x: hidden;
+  overflow-x: clip;
   width: 100%;
   -webkit-overflow-scrolling: touch;
 }
 
 .app-container {
   width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 @media (max-width: 640px) {

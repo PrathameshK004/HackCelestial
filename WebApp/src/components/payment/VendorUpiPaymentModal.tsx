@@ -23,6 +23,11 @@ import {
   getDirectAppLaunchUrl,
   UpiAppType
 } from '../../utils/upi.util';
+import {
+  NativeUpi,
+  isNativeMobileApp,
+  getAppPackageName
+} from '../../utils/nativeUpi';
 
 interface VendorUpiPaymentModalProps {
   isOpen: boolean;
@@ -68,7 +73,7 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
 
   // Step 3 & 4: Payment Launch & Verification (Flipkart Multi-Tier Structure)
   const [selectedApp, setSelectedApp] = useState<UpiAppType>('phonepe');
-  const [payMethodTab, setPayMethodTab] = useState<'apps' | 'qr' | 'manual'>('apps');
+  const [payMethodTab, setPayMethodTab] = useState<'apps' | 'qr' | 'manual'>('qr');
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [qrTimeRemaining, setQrTimeRemaining] = useState<number>(300); // 5 mins
   const [txnRef, setTxnRef] = useState('');
@@ -212,31 +217,9 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
   };
 
   // -------------------------------------------------------------
-  // Official Return Callback Listener (Flipkart / Swiggy Pattern)
-  // -------------------------------------------------------------
-  useEffect(() => {
-    if (step !== 'verifying') return;
-
-    // Detect when user returns from PhonePe / Google Pay back to browser
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // User switched back to this tab from PhonePe / GPay
-        verifyPaymentOnReturn();
-      }
-    };
-
-    const handleWindowFocus = () => {
-      verifyPaymentOnReturn();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleWindowFocus);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleWindowFocus);
-    };
-  }, [step, txnRef, selectedGroupId, amount, description, category, selectedApp, utrNumber]);
+  // Note: We intentionally do NOT auto-commit on visibilitychange/focus
+  // because the user may have tapped 'Cancel' inside PhonePe or Google Pay.
+  // Instead, the user explicitly confirms whether the payment was completed or canceled.
 
   // Verify and record to PostgreSQL
   const verifyPaymentOnReturn = async (overrideUtr?: string) => {
@@ -304,11 +287,12 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
   };
 
   // Launch PhonePe / GPay / Paytm
-  const handleLaunchApp = (app: UpiAppType) => {
+  const handleLaunchApp = async (app: UpiAppType) => {
     setSelectedApp(app);
     const trackingRef = `TRIP-TXN-${Date.now().toString().slice(-8)}`;
     setTxnRef(trackingRef);
 
+    const isNative = isNativeMobileApp();
     const deepLink = buildUpiDeepLink({
       upiId: vendorUpi.trim(),
       payeeName: vendorName.trim() || 'Vendor',
@@ -316,13 +300,42 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
       note: description.trim() || 'Trip Shared Expense',
       currency: 'INR',
       txnRef: trackingRef,
-      app
+      app,
+      isNative
     });
 
-    // Transition to official callback verification listener
-    setStep('verifying');
+    // 1. Native Mobile App (Capacitor Android) - Real-time free callback via startActivityForResult
+    if (isNative) {
+      try {
+        setIsVerifying(true);
+        setErrorMessage(null);
+        const result = await NativeUpi.startPayment({
+          url: deepLink,
+          packageName: getAppPackageName(app)
+        });
 
-    // Launch app directly on phone without unauthorized url= param that causes PhonePe security decline
+        if (result.status === 'SUCCESS') {
+          // Received real bank approval and UTR directly from PhonePe / Google Pay!
+          await verifyPaymentOnReturn(result.utr || undefined);
+        } else if (result.status === 'CANCELLED') {
+          // User pressed Cancel: Zero fake records created!
+          setIsVerifying(false);
+          setErrorMessage(`Payment was canceled in ${app.toUpperCase()}. No expense was recorded.`);
+          setStep('select_app');
+        } else {
+          setIsVerifying(false);
+          setErrorMessage(`Payment was declined or failed in ${app.toUpperCase()}.`);
+          setStep('select_app');
+        }
+      } catch (err: any) {
+        setIsVerifying(false);
+        setErrorMessage(err.message || 'Failed to launch UPI App');
+      }
+      return;
+    }
+
+    // 2. Mobile Web Browser - Interactive Confirmation Flow (No blind auto-commits)
+    setStep('verifying');
     launchUpiApp(deepLink);
   };
 
@@ -889,6 +902,32 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                 marginBottom: '16px'
               }}
             >
+              {/* Scan QR - RECOMMENDED first tab */}
+              <button
+                type="button"
+                onClick={() => setPayMethodTab('qr')}
+                style={{
+                  padding: '8px 4px',
+                  borderRadius: '10px',
+                  border: payMethodTab === 'qr' ? '1.5px solid #10B981' : 'none',
+                  background: payMethodTab === 'qr' ? '#ECFDF5' : 'transparent',
+                  color: payMethodTab === 'qr' ? '#065F46' : 'var(--text-secondary)',
+                  fontWeight: payMethodTab === 'qr' ? 700 : 600,
+                  fontSize: '0.74rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  boxShadow: payMethodTab === 'qr' ? '0 2px 6px rgba(16, 185, 129, 0.2)' : 'none',
+                  transition: 'all 0.15s ease',
+                  position: 'relative'
+                }}
+              >
+                <QrCode size={13} />
+                <span>Scan QR ✓</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setPayMethodTab('apps')}
@@ -911,30 +950,6 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
               >
                 <Smartphone size={13} />
                 <span>UPI Apps</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPayMethodTab('qr')}
-                style={{
-                  padding: '8px 4px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: payMethodTab === 'qr' ? '#FFFFFF' : 'transparent',
-                  color: payMethodTab === 'qr' ? '#14241F' : 'var(--text-secondary)',
-                  fontWeight: payMethodTab === 'qr' ? 700 : 600,
-                  fontSize: '0.74rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
-                  boxShadow: payMethodTab === 'qr' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <QrCode size={13} />
-                <span>Scan QR</span>
               </button>
 
               <button
@@ -969,10 +984,10 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                   <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    Tap App to Pay Directly:
+                    Scan QR code below with any UPI app:
                   </span>
                   <span style={{ fontSize: '0.66rem', color: '#059669', fontWeight: 700 }}>
-                    Fastest (No typing required)
+                    ✓ 100% Works · No bank blocks
                   </span>
                 </div>
 
@@ -1135,98 +1150,131 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                   </button>
                 </div>
 
-                {/* Security Advice for Bank Browser Filters */}
+                {/* Security note */}
                 <div
                   style={{
                     padding: '10px 12px',
                     borderRadius: '12px',
-                    background: '#F0FDF4',
-                    border: '1px solid #BBF7D0',
+                    background: '#FEF9EC',
+                    border: '1px solid #FDE68A',
                     fontSize: '0.72rem',
-                    color: '#166534',
+                    color: '#92400E',
                     lineHeight: 1.4,
                     display: 'flex',
                     alignItems: 'flex-start',
                     gap: '8px'
                   }}
                 >
-                  <ShieldCheck size={16} color="#15803D" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <AlertCircle size={16} color="#D97706" style={{ flexShrink: 0, marginTop: '2px' }} />
                   <div>
-                    <strong>Zero-Failure Guarantee:</strong> If your bank's security policy flags browser links, switch to the <strong>Scan QR</strong> tab above to scan with PhonePe/GPay camera directly.
+                    <strong>Note:</strong> Some banks (Paytm, PhonePe) block deep links from third-party apps as a security measure. If payment fails with "declined for security reasons", switch to the <strong>Scan QR</strong> tab — that method always works.
                   </div>
                 </div>
               </div>
             )}
 
             {/* ------------------------------------------------------------- */}
-            {/* OPTION 2: FLIPKART DYNAMIC QR CODE (Scan to Pay)               */}
+            {/* OPTION 2: QR CODE SCAN-TO-PAY (Most Reliable, No Bank Blocks) */}
             {/* ------------------------------------------------------------- */}
             {payMethodTab === 'qr' && (
-              <div style={{ textAlign: 'center' }}>
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '3px 10px',
-                    borderRadius: '9999px',
-                    background: '#FEF3C7',
-                    color: '#92400E',
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    marginBottom: '10px'
-                  }}
-                >
-                  <Clock size={12} />
-                  <span>QR Expires in {formatTimer(qrTimeRemaining)}</span>
+              <div>
+                {/* How it works banner */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '12px',
+                  background: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                  marginBottom: '14px'
+                }}>
+                  <ShieldCheck size={16} color="#15803D" style={{ flexShrink: 0 }} />
+                  <div style={{ fontSize: '0.72rem', color: '#166534', lineHeight: 1.4 }}>
+                    <strong>Recommended:</strong> Open PhonePe/GPay/Paytm → tap <strong>Scan QR</strong> inside the app → scan this code → pay. This bypasses all bank security restrictions.
+                  </div>
                 </div>
 
-                {qrCodeDataUrl ? (
+                {/* Step numbers */}
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', justifyContent: 'center' }}>
+                  {['1. Open UPI App', '2. Scan QR', '3. Confirm below'].map((step, i) => (
+                    <div key={i} style={{
+                      flex: 1,
+                      textAlign: 'center',
+                      padding: '6px 4px',
+                      borderRadius: '8px',
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      fontSize: '0.62rem',
+                      fontWeight: 700,
+                      color: '#065F46'
+                    }}>{step}</div>
+                  ))}
+                </div>
+
+                {/* QR Code */}
+                <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                   <div
                     style={{
-                      background: '#FFFFFF',
-                      padding: '12px',
-                      borderRadius: '18px',
-                      border: '2px solid #E2E8F0',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
-                      display: 'inline-block',
-                      margin: '0 auto 12px'
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '3px 10px',
+                      borderRadius: '9999px',
+                      background: '#FEF3C7',
+                      color: '#92400E',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      marginBottom: '10px'
                     }}
                   >
-                    <img
-                      src={qrCodeDataUrl}
-                      alt="UPI Dynamic QR Code"
+                    <Clock size={12} />
+                    <span>QR Expires in {formatTimer(qrTimeRemaining)}</span>
+                  </div>
+
+                  {qrCodeDataUrl ? (
+                    <div
                       style={{
-                        width: '190px',
-                        height: '190px',
-                        display: 'block',
-                        borderRadius: '8px'
+                        background: '#FFFFFF',
+                        padding: '14px',
+                        borderRadius: '20px',
+                        border: '3px solid #10B981',
+                        boxShadow: '0 8px 24px rgba(16, 185, 129, 0.15)',
+                        display: 'inline-block',
+                        margin: '0 auto'
                       }}
-                    />
-                  </div>
-                ) : (
-                  <div style={{ height: '190px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>
-                    Generating Secure NPCI QR...
-                  </div>
-                )}
+                    >
+                      <img
+                        src={qrCodeDataUrl}
+                        alt="UPI Payment QR Code"
+                        style={{
+                          width: '200px',
+                          height: '200px',
+                          display: 'block',
+                          borderRadius: '8px'
+                        }}
+                      />
+                      <div style={{ marginTop: '8px', fontSize: '0.72rem', fontWeight: 700, color: '#065F46' }}>
+                        Pay ₹{Number(amount).toFixed(2)} to {vendorName || vendorUpi}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>
+                      Generating QR code...
+                    </div>
+                  )}
+                </div>
 
-                <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.4 }}>
-                  Open <strong>PhonePe, Google Pay, or Paytm</strong> on any device and scan this QR code with the in-app camera.
-                </p>
-
+                {/* Confirm button - goes to verifying step */}
                 <button
                   type="button"
                   className="btn-primary"
-                  onClick={() => {
-                    setStep('verifying');
-                    verifyPaymentOnReturn();
-                  }}
+                  onClick={() => setStep('verifying')}
                   style={{
                     width: '100%',
-                    padding: '12px',
+                    padding: '13px',
                     borderRadius: '9999px',
                     fontWeight: 700,
-                    fontSize: '0.86rem',
+                    fontSize: '0.9rem',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1234,8 +1282,8 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                     cursor: 'pointer'
                   }}
                 >
-                  <CheckCircle2 size={16} />
-                  <span>I have Scanned & Completed Payment</span>
+                  <CheckCircle2 size={18} />
+                  <span>I Scanned & Paid — Confirm ₹{Number(amount).toFixed(2)}</span>
                 </button>
               </div>
             )}
@@ -1466,7 +1514,7 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
         )}
 
         {/* ------------------------------------------------------------------ */}
-        {/* STEP 4: VERIFYING RETURN CALLBACK (Flipkart / Swiggy Pattern)      */}
+        {/* STEP 4: CONFIRM PAYMENT STATUS (Web Browser Interactive Guard)     */}
         {/* ------------------------------------------------------------------ */}
         {step === 'verifying' && (
           <div style={{ textAlign: 'center', padding: '10px 0' }}>
@@ -1487,12 +1535,12 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
               <Zap size={28} color="#243E36" />
             </div>
 
-            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 6px' }}>
-              Waiting for UPI Confirmation
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 6px' }}>
+              Did your payment go through?
             </h3>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 18px', lineHeight: 1.4 }}>
-              Complete the payment of <strong>₹{Number(amount).toFixed(2)}</strong> in your selected UPI app.
-              When you switch back to this tab, the payment will automatically be verified and split across your trip!
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 16px', lineHeight: 1.4 }}>
+              Payment of <strong>₹{Number(amount).toFixed(2)}</strong> was initiated for <strong>{vendorName || vendorUpi}</strong>.
+              Please confirm the outcome from your UPI app screen.
             </p>
 
             {/* Tracking Reference */}
@@ -1500,16 +1548,16 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
               style={{
                 padding: '10px 14px',
                 borderRadius: '12px',
-                background: '#F8FAFC',
-                border: '1px solid #E2E8F0',
+                background: 'var(--bg-main)',
+                border: '1px solid var(--border-light)',
                 marginBottom: '16px',
                 textAlign: 'left'
               }}
             >
-              <span style={{ fontSize: '0.66rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700 }}>
-                Transaction Reference Token
+              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                Transaction Tracking Ref
               </span>
-              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', marginTop: '2px' }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
                 {txnRef}
               </div>
             </div>
@@ -1523,7 +1571,8 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                 type="text"
                 placeholder="e.g. 428190382910 (12 digits)"
                 value={utrNumber}
-                onChange={(e) => setUtrNumber(e.target.value)}
+                onChange={(e) => setUtrNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                maxLength={18}
                 style={{
                   width: '100%',
                   padding: '10px 14px',
@@ -1536,32 +1585,65 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                   boxSizing: 'border-box'
                 }}
               />
+              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '3px', display: 'block' }}>
+                Found on your transaction receipt screen if you want to attach proof.
+              </span>
             </div>
 
-            <button
-              type="button"
-              disabled={isVerifying}
-              className="btn-primary"
-              onClick={() => verifyPaymentOnReturn()}
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '9999px',
-                fontWeight: 700,
-                fontSize: '0.88rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                cursor: isVerifying ? 'not-allowed' : 'pointer',
-                opacity: isVerifying ? 0.7 : 1
-              }}
-            >
-              <CheckCircle2 size={16} />
-              <span>{isVerifying ? 'Verifying with Ledger...' : 'I have Paid ₹' + Number(amount).toFixed(2)}</span>
-            </button>
+            {/* Action Buttons: Yes Paid vs No Canceled */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                type="button"
+                disabled={isVerifying}
+                className="btn-primary"
+                onClick={() => verifyPaymentOnReturn()}
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  borderRadius: '9999px',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  cursor: isVerifying ? 'not-allowed' : 'pointer',
+                  opacity: isVerifying ? 0.7 : 1
+                }}
+              >
+                <CheckCircle2 size={18} />
+                <span>{isVerifying ? 'Recording & Splitting...' : `Yes, I Paid ₹${Number(amount).toFixed(2)}`}</span>
+              </button>
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+              <button
+                type="button"
+                disabled={isVerifying}
+                onClick={() => {
+                  setErrorMessage('Payment was canceled or not completed. No expense was added.');
+                  setStep('select_app');
+                }}
+                style={{
+                  width: '100%',
+                  padding: '11px',
+                  borderRadius: '9999px',
+                  border: '1px solid #FCA5A5',
+                  background: '#FEF2F2',
+                  color: '#DC2626',
+                  fontSize: '0.84rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: isVerifying ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <X size={16} />
+                <span>No, Payment was Canceled / Failed</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
               <button
                 type="button"
                 onClick={() => handleLaunchApp(selectedApp)}
@@ -1577,7 +1659,7 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                   cursor: 'pointer'
                 }}
               >
-                Reopen App
+                Retry Launching App
               </button>
 
               <button

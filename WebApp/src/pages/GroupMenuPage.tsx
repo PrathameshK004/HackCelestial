@@ -357,15 +357,22 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
     <div className="profile-page-root animate-fade-in" style={{ minHeight: '100vh', paddingBottom: '90px' }}>
       <div className="profile-page-container" style={{ maxWidth: '680px', padding: '12px 14px 40px' }}>
         {/* ================= 1. HEADER & ACTIONS ================= */}
-        <div
+        <header
           style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 50,
+            backgroundColor: 'rgba(253, 251, 247, 0.95)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '12px',
-            marginBottom: '16px',
-            paddingBottom: '12px',
-            borderBottom: '1px solid var(--border-light)'
+            margin: '-12px -14px 16px',
+            padding: '12px 14px',
+            borderBottom: '1px solid var(--border-light)',
+            boxShadow: '0 2px 8px -2px rgba(15, 23, 42, 0.04)'
           }}
         >
           {/* Left: Zero-Background Back Button */}
@@ -452,7 +459,7 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
           >
             <RefreshCw size={16} className={isSyncing ? 'animate-spin' : ''} />
           </button>
-        </div>
+        </header>
 
         {/* Toast Alert Message */}
         {toastMessage && (
