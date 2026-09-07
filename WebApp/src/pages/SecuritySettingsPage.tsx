@@ -133,7 +133,7 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
           <h1
             style={{
               fontFamily: 'var(--font-serif)',
-              fontSize: '1.35rem',
+              fontSize: '1.2rem',
               color: 'var(--text-primary)',
               margin: 0,
               lineHeight: 1.2

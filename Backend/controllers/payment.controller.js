@@ -56,8 +56,8 @@ async function getMyPayments(req, res) {
                 gm.id as "paidByMemberId"
             FROM expenses e
             JOIN groups g ON e.group_id = g.id
-            JOIN group_members gm ON e.paid_by_member_id = gm.id
-            WHERE e.paid_by = $1 OR gm.user_id = $1
+            JOIN group_members gm ON COALESCE(e.paid_by_member_id, e.paid_by) = gm.id
+            WHERE gm.user_id = $1 OR e.created_by = $1
             ORDER BY e.created_at DESC
         `, [userId]);
 
@@ -372,12 +372,12 @@ async function recordUnifiedPayment(req, res) {
 
             await client.query(`
                 INSERT INTO expenses (
-                    id, group_id, paid_by, paid_by_member_id, description,
+                    id, group_id, paid_by, paid_by_member_id, created_by, description,
                     amount, category, currency, split_model, payment_method, payment_reference,
                     created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
             `, [
-                expenseId, groupId, userId || null, payer.id, desc,
+                expenseId, groupId, payer.id, payer.id, userId || null, desc,
                 numAmount, category, currency || group.currency, effectiveSplitModel, paymentMethod, ref
             ]);
 
@@ -539,11 +539,11 @@ async function verifyPaymentStatus(req, res) {
 
         await client.query(`
             INSERT INTO expenses (
-                id, group_id, paid_by, paid_by_member_id, description,
-                amount, category, currency, split_model, payment_method, payment_reference, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+                id, group_id, paid_by, paid_by_member_id, created_by, description,
+                amount, category, currency, split_model, payment_method, payment_reference, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
         `, [
-            expenseId, groupId, userId || null, payer.id, desc,
+            expenseId, groupId, payer.id, payer.id, userId || null, desc,
             numAmount, category, group.currency, effectiveSplitModel, paymentMethod, finalRef
         ]);
 

@@ -62,10 +62,23 @@
   padding: 0;
 }
 
+html {
+  font-size: 14px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (min-width: 1024px) {
+  html {
+    font-size: 14.5px;
+  }
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-app);
   color: var(--slate-800);
+  font-size: 1rem;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -2401,7 +2414,7 @@ button, input, select, textarea {
 }
 
 .auth-modern-title {
-  font-size: 2.35rem;
+  font-size: 1.65rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--slate-900);
@@ -3016,7 +3029,7 @@ button, input, select, textarea {
   }
 
   .auth-modern-title {
-    font-size: 1.65rem;
+    font-size: 1.35rem;
   }
 
   .auth-modern-subtitle {
@@ -3054,7 +3067,7 @@ button, input, select, textarea {
   }
 
   .auth-modern-title {
-    font-size: 1.45rem;
+    font-size: 1.22rem;
   }
 
   .auth-modern-input {

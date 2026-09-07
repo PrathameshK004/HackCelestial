@@ -136,8 +136,9 @@ const initializeDatabase = async () => {
         CREATE TABLE IF NOT EXISTS expenses (
             id UUID PRIMARY KEY,
             group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-            paid_by UUID REFERENCES users(id) ON DELETE SET NULL,
+            paid_by UUID REFERENCES group_members(id) ON DELETE SET NULL,
             paid_by_member_id UUID REFERENCES group_members(id) ON DELETE SET NULL,
+            created_by UUID REFERENCES users(id) ON DELETE SET NULL,
             description VARCHAR(255) NOT NULL,
             amount NUMERIC(12, 2) NOT NULL,
             category VARCHAR(50) NOT NULL DEFAULT 'Other',
@@ -153,6 +154,7 @@ const initializeDatabase = async () => {
     // Ensure all columns exist on pre-existing expenses tables
     await pool.query(`
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_by_member_id UUID REFERENCES group_members(id) ON DELETE SET NULL;
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS category VARCHAR(50) NOT NULL DEFAULT 'Other';
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS currency VARCHAR(10) NOT NULL DEFAULT 'INR';
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS split_model VARCHAR(50) NOT NULL DEFAULT 'EQUAL';

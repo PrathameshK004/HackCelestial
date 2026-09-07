@@ -89,7 +89,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             <h1
               style={{
                 fontFamily: 'var(--font-serif)',
-                fontSize: '1.35rem',
+                fontSize: '1.2rem',
                 color: 'var(--text-primary)',
                 margin: 0,
                 lineHeight: 1.2

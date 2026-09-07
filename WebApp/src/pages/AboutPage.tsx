@@ -127,7 +127,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
           <h2
             style={{
               fontFamily: 'var(--font-serif)',
-              fontSize: '1.65rem',
+              fontSize: '1.4rem',
               lineHeight: 1.25,
               fontWeight: 600,
               margin: '0 0 12px 0',
@@ -221,7 +221,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
               boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
             }}
           >
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.45rem', fontWeight: 700, color: 'var(--brand-olive)' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 700, color: 'var(--brand-olive)' }}>
               45,000+
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: 500 }}>
@@ -239,7 +239,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
               boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
             }}
           >
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.45rem', fontWeight: 700, color: 'var(--emerald)' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 700, color: 'var(--emerald)' }}>
               73%
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: 500 }}>
@@ -257,7 +257,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
               boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
             }}
           >
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.45rem', fontWeight: 700, color: 'var(--brand-olive)' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 700, color: 'var(--brand-olive)' }}>
               ₹14.2 Cr+
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: 500 }}>
@@ -275,7 +275,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
               boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
             }}
           >
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.45rem', fontWeight: 700, color: 'var(--brand-olive)' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 700, color: 'var(--brand-olive)' }}>
               99.98%
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: 500 }}>
@@ -347,7 +347,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
                 boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
               }}
             >
-              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: 'var(--text-primary)', margin: '0 0 10px 0' }}>
+              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', color: 'var(--text-primary)', margin: '0 0 10px 0' }}>
                 Why We Built Triptual
               </h3>
               <p style={{ fontSize: '0.82rem', lineHeight: 1.6, color: 'var(--text-secondary)', margin: '0 0 14px 0' }}>
@@ -540,7 +540,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                 <Zap size={18} color="var(--emerald)" />
-                <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: 'var(--text-primary)', margin: 0 }}>
+                <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', color: 'var(--text-primary)', margin: 0 }}>
                   Directed Graph Debt Optimization
                 </h3>
               </div>
@@ -608,7 +608,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                 <ShieldCheck size={20} color="var(--emerald)" />
-                <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: 'var(--text-primary)', margin: 0 }}>
+                <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', color: 'var(--text-primary)', margin: 0 }}>
                   Zero-Knowledge & Bank-Grade Security
                 </h3>
               </div>
@@ -669,7 +669,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({
                 padding: '20px'
               }}
             >
-              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: 'var(--text-primary)', margin: '0 0 14px 0' }}>
+              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', color: 'var(--text-primary)', margin: '0 0 14px 0' }}>
                 Our 4 Guiding Commitments
               </h3>
 

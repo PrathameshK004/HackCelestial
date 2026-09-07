@@ -5,11 +5,24 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
-  Zap
+  Zap,
+  QrCode,
+  Smartphone,
+  ShieldCheck,
+  Copy,
+  Check,
+  Clock,
+  ExternalLink
 } from 'lucide-react';
 import QrScanner from 'qr-scanner';
 import { groupService } from '../../services/group.service';
-import { buildUpiDeepLink, launchUpiApp, UpiAppType } from '../../utils/upi.util';
+import {
+  buildUpiDeepLink,
+  launchUpiApp,
+  generateUpiQrCode,
+  getDirectAppLaunchUrl,
+  UpiAppType
+} from '../../utils/upi.util';
 
 interface VendorUpiPaymentModalProps {
   isOpen: boolean;
@@ -53,20 +66,65 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Food');
 
-  // Step 3 & 4: Payment Launch & Verification
+  // Step 3 & 4: Payment Launch & Verification (Flipkart Multi-Tier Structure)
   const [selectedApp, setSelectedApp] = useState<UpiAppType>('phonepe');
+  const [payMethodTab, setPayMethodTab] = useState<'apps' | 'qr' | 'manual'>('apps');
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [qrTimeRemaining, setQrTimeRemaining] = useState<number>(300); // 5 mins
   const [txnRef, setTxnRef] = useState('');
   const [utrNumber, setUtrNumber] = useState('');
+  const [manualUtrInput, setManualUtrInput] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [verifiedResult, setVerifiedResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [isAmountCopied, setIsAmountCopied] = useState(false);
 
   const copyUpiId = (text: string) => {
     navigator.clipboard.writeText(text);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
+
+  const copyAmount = () => {
+    navigator.clipboard.writeText(Number(amount).toFixed(2));
+    setIsAmountCopied(true);
+    setTimeout(() => setIsAmountCopied(false), 2000);
+  };
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Generate dynamic QR code when entering payment selection
+  useEffect(() => {
+    if (step === 'select_app' && vendorUpi && amount) {
+      const tracking = txnRef || `TRIP${Date.now().toString().slice(-8)}`;
+      if (!txnRef) setTxnRef(tracking);
+      generateUpiQrCode({
+        upiId: vendorUpi.trim(),
+        payeeName: vendorName.trim() || 'Vendor',
+        amount: Number(amount),
+        currency: 'INR',
+        note: description.trim() || 'Trip Shared Expense',
+        txnRef: tracking
+      }).then((url) => {
+        if (url) setQrCodeDataUrl(url);
+      });
+      setQrTimeRemaining(300);
+    }
+  }, [step, vendorUpi, amount, vendorName, description]);
+
+  // QR countdown interval
+  useEffect(() => {
+    if (step !== 'select_app' || payMethodTab !== 'qr') return;
+    const timer = setInterval(() => {
+      setQrTimeRemaining((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [step, payMethodTab]);
 
   // Camera scanner refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -783,241 +841,606 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
         )}
 
         {/* ------------------------------------------------------------------ */}
-        {/* STEP 3: CHOOSE PAYMENT APP (PhonePe, GPay, Paytm)                  */}
+        {/* STEP 3: FLIPKART-STYLE MULTI-TIER PAYMENT FLOW                     */}
         {/* ------------------------------------------------------------------ */}
         {step === 'select_app' && (
           <div>
             {/* Payment Summary Hero */}
             <div
               style={{
-                background: 'linear-gradient(135deg, #243E36 0%, #1A2F29 100%)',
+                background: 'linear-gradient(135deg, #14241F 0%, #1F382F 100%)',
                 borderRadius: '18px',
                 padding: '16px',
                 color: '#FFFFFF',
-                marginBottom: '18px'
+                marginBottom: '14px',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)'
               }}
             >
-              <span style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 700 }}>
-                Direct UPI Transfer
-              </span>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800, margin: '2px 0 6px', color: '#A7F3D0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.66rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255, 255, 255, 0.75)', fontWeight: 700 }}>
+                  Trip Shared Expense
+                </span>
+                <span style={{ fontSize: '0.64rem', color: '#6EE7B7', background: 'rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '9999px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  <ShieldCheck size={11} /> 100% Secure NPCI
+                </span>
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, margin: '4px 0 6px', color: '#A7F3D0' }}>
                 ₹{Number(amount).toFixed(2)}
               </div>
-              <div style={{ fontSize: '0.76rem', color: 'rgba(255, 255, 255, 0.9)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.95)' }}>
                 To: <strong>{vendorName || vendorUpi}</strong> ({vendorUpi})
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '2px' }}>
-                Trip: {selectedTrip?.name} · {description}
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '2px' }}>
+                Trip: {selectedTrip?.name} · {description || 'Shared Expense'}
               </div>
             </div>
 
-            {/* Quick UPI ID Copy Bar (Fail-Safe for PhonePe / GPay) */}
+            {/* Flipkart Multi-Option Payment Navigation Tabs */}
             <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                borderRadius: '12px',
-                background: 'var(--bg-surface-warm)',
-                border: '1px solid var(--border-light)',
-                marginBottom: '12px',
-                gap: '8px'
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: '6px',
+                background: 'rgba(36, 62, 54, 0.08)',
+                padding: '4px',
+                borderRadius: '14px',
+                marginBottom: '16px'
               }}
             >
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
-                  Recipient UPI ID
-                </div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {vendorUpi}
-                </div>
-              </div>
               <button
                 type="button"
-                onClick={() => copyUpiId(vendorUpi)}
+                onClick={() => setPayMethodTab('apps')}
                 style={{
-                  padding: '5px 10px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-light)',
-                  background: isCopied ? '#059669' : '#FFFFFF',
-                  color: isCopied ? '#FFFFFF' : 'var(--text-primary)',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
+                  padding: '8px 4px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: payMethodTab === 'apps' ? '#FFFFFF' : 'transparent',
+                  color: payMethodTab === 'apps' ? '#14241F' : 'var(--text-secondary)',
+                  fontWeight: payMethodTab === 'apps' ? 700 : 600,
+                  fontSize: '0.74rem',
                   cursor: 'pointer',
-                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  boxShadow: payMethodTab === 'apps' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
                   transition: 'all 0.15s ease'
                 }}
               >
-                {isCopied ? 'Copied!' : 'Copy UPI'}
+                <Smartphone size={13} />
+                <span>UPI Apps</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPayMethodTab('qr')}
+                style={{
+                  padding: '8px 4px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: payMethodTab === 'qr' ? '#FFFFFF' : 'transparent',
+                  color: payMethodTab === 'qr' ? '#14241F' : 'var(--text-secondary)',
+                  fontWeight: payMethodTab === 'qr' ? 700 : 600,
+                  fontSize: '0.74rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  boxShadow: payMethodTab === 'qr' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <QrCode size={13} />
+                <span>Scan QR</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPayMethodTab('manual')}
+                style={{
+                  padding: '8px 4px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: payMethodTab === 'manual' ? '#FFFFFF' : 'transparent',
+                  color: payMethodTab === 'manual' ? '#14241F' : 'var(--text-secondary)',
+                  fontWeight: payMethodTab === 'manual' ? 700 : 600,
+                  fontSize: '0.74rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  boxShadow: payMethodTab === 'manual' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Copy size={13} />
+                <span>Manual Pay</span>
               </button>
             </div>
 
-            <div style={{ marginBottom: '14px' }}>
-              <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: '8px' }}>
-                Select Your Installed UPI App:
-              </span>
+            {/* ------------------------------------------------------------- */}
+            {/* OPTION 1: 1-TAP UPI APPS (Intent Flow)                         */}
+            {/* ------------------------------------------------------------- */}
+            {payMethodTab === 'apps' && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Tap App to Pay Directly:
+                  </span>
+                  <span style={{ fontSize: '0.66rem', color: '#059669', fontWeight: 700 }}>
+                    Fastest (No typing required)
+                  </span>
+                </div>
 
-              {/* Grid of Branded UPI Apps */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                {/* 1. PhonePe */}
-                <button
-                  type="button"
-                  onClick={() => handleLaunchApp('phonepe')}
-                  style={{
-                    padding: '14px 10px',
-                    borderRadius: '16px',
-                    border: '1.5px solid #5f259f',
-                    background: 'rgba(95, 37, 159, 0.05)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    transition: 'transform 0.15s ease'
-                  }}
-                >
-                  <div
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                  {/* PhonePe */}
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchApp('phonepe')}
                     style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      background: '#5f259f',
-                      color: '#FFFFFF',
+                      padding: '12px 10px',
+                      borderRadius: '16px',
+                      border: '1.5px solid #5f259f',
+                      background: 'rgba(95, 37, 159, 0.05)',
+                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '1rem',
-                      flexShrink: 0
+                      gap: '10px',
+                      transition: 'transform 0.15s ease'
                     }}
                   >
-                    पे
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B' }}>PhonePe</div>
-                    <div style={{ fontSize: '0.66rem', color: '#64748B' }}>Direct Intent</div>
-                  </div>
-                </button>
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        background: '#5f259f',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '1rem',
+                        flexShrink: 0
+                      }}
+                    >
+                      पे
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B' }}>PhonePe</div>
+                      <div style={{ fontSize: '0.66rem', color: '#64748B' }}>1-Tap Intent</div>
+                    </div>
+                  </button>
 
-                {/* 2. Google Pay (GPay) */}
-                <button
-                  type="button"
-                  onClick={() => handleLaunchApp('gpay')}
+                  {/* Google Pay */}
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchApp('gpay')}
+                    style={{
+                      padding: '12px 10px',
+                      borderRadius: '16px',
+                      border: '1.5px solid #1A73E8',
+                      background: 'rgba(26, 115, 232, 0.05)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'transform 0.15s ease'
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        background: '#FFFFFF',
+                        border: '1px solid #CBD5E1',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.8rem',
+                        flexShrink: 0
+                      }}
+                    >
+                      <span style={{ color: '#4285F4' }}>G</span>
+                      <span style={{ color: '#EA4335' }}>P</span>
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B' }}>Google Pay</div>
+                      <div style={{ fontSize: '0.66rem', color: '#64748B' }}>1-Tap Intent</div>
+                    </div>
+                  </button>
+
+                  {/* Paytm */}
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchApp('paytm')}
+                    style={{
+                      padding: '12px 10px',
+                      borderRadius: '16px',
+                      border: '1.5px solid #00B9F5',
+                      background: 'rgba(0, 185, 245, 0.05)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'transform 0.15s ease'
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        background: '#002E6E',
+                        color: '#00B9F5',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.66rem',
+                        flexShrink: 0
+                      }}
+                    >
+                      Paytm
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B' }}>Paytm</div>
+                      <div style={{ fontSize: '0.66rem', color: '#64748B' }}>1-Tap Intent</div>
+                    </div>
+                  </button>
+
+                  {/* Any UPI / BHIM */}
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchApp('generic')}
+                    style={{
+                      padding: '12px 10px',
+                      borderRadius: '16px',
+                      border: '1.5px solid #243E36',
+                      background: 'rgba(36, 62, 54, 0.05)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'transform 0.15s ease'
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        background: '#243E36',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        flexShrink: 0
+                      }}
+                    >
+                      UPI
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B' }}>Any UPI App</div>
+                      <div style={{ fontSize: '0.66rem', color: '#64748B' }}>BHIM / Bank</div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Security Advice for Bank Browser Filters */}
+                <div
                   style={{
-                    padding: '14px 10px',
-                    borderRadius: '16px',
-                    border: '1.5px solid #1A73E8',
-                    background: 'rgba(26, 115, 232, 0.05)',
-                    cursor: 'pointer',
+                    padding: '10px 12px',
+                    borderRadius: '12px',
+                    background: '#F0FDF4',
+                    border: '1px solid #BBF7D0',
+                    fontSize: '0.72rem',
+                    color: '#166534',
+                    lineHeight: 1.4,
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    transition: 'transform 0.15s ease'
+                    alignItems: 'flex-start',
+                    gap: '8px'
                   }}
                 >
+                  <ShieldCheck size={16} color="#15803D" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <strong>Zero-Failure Guarantee:</strong> If your bank's security policy flags browser links, switch to the <strong>Scan QR</strong> tab above to scan with PhonePe/GPay camera directly.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ------------------------------------------------------------- */}
+            {/* OPTION 2: FLIPKART DYNAMIC QR CODE (Scan to Pay)               */}
+            {/* ------------------------------------------------------------- */}
+            {payMethodTab === 'qr' && (
+              <div style={{ textAlign: 'center' }}>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '3px 10px',
+                    borderRadius: '9999px',
+                    background: '#FEF3C7',
+                    color: '#92400E',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    marginBottom: '10px'
+                  }}
+                >
+                  <Clock size={12} />
+                  <span>QR Expires in {formatTimer(qrTimeRemaining)}</span>
+                </div>
+
+                {qrCodeDataUrl ? (
                   <div
                     style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
                       background: '#FFFFFF',
-                      border: '1px solid #CBD5E1',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '0.8rem',
-                      flexShrink: 0
+                      padding: '12px',
+                      borderRadius: '18px',
+                      border: '2px solid #E2E8F0',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
+                      display: 'inline-block',
+                      margin: '0 auto 12px'
                     }}
                   >
-                    <span style={{ color: '#4285F4' }}>G</span>
-                    <span style={{ color: '#EA4335' }}>P</span>
+                    <img
+                      src={qrCodeDataUrl}
+                      alt="UPI Dynamic QR Code"
+                      style={{
+                        width: '190px',
+                        height: '190px',
+                        display: 'block',
+                        borderRadius: '8px'
+                      }}
+                    />
                   </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B' }}>Google Pay</div>
-                    <div style={{ fontSize: '0.66rem', color: '#64748B' }}>Direct Intent</div>
+                ) : (
+                  <div style={{ height: '190px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>
+                    Generating Secure NPCI QR...
                   </div>
-                </button>
+                )}
 
-                {/* 3. Paytm */}
+                <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.4 }}>
+                  Open <strong>PhonePe, Google Pay, or Paytm</strong> on any device and scan this QR code with the in-app camera.
+                </p>
+
                 <button
                   type="button"
-                  onClick={() => handleLaunchApp('paytm')}
+                  className="btn-primary"
+                  onClick={() => {
+                    setStep('verifying');
+                    verifyPaymentOnReturn();
+                  }}
                   style={{
-                    padding: '14px 10px',
-                    borderRadius: '16px',
-                    border: '1.5px solid #00B9F5',
-                    background: 'rgba(0, 185, 245, 0.05)',
-                    cursor: 'pointer',
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '9999px',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '10px',
-                    transition: 'transform 0.15s ease'
+                    justifyContent: 'center',
+                    gap: '8px',
+                    cursor: 'pointer'
                   }}
                 >
-                  <div
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      background: '#002E6E',
-                      color: '#00B9F5',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '0.68rem',
-                      flexShrink: 0
-                    }}
-                  >
-                    Paytm
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B' }}>Paytm</div>
-                    <div style={{ fontSize: '0.66rem', color: '#64748B' }}>Direct Intent</div>
-                  </div>
-                </button>
-
-                {/* 4. Other UPI / BHIM */}
-                <button
-                  type="button"
-                  onClick={() => handleLaunchApp('generic')}
-                  style={{
-                    padding: '14px 10px',
-                    borderRadius: '16px',
-                    border: '1.5px solid #243E36',
-                    background: 'rgba(36, 62, 54, 0.05)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    transition: 'transform 0.15s ease'
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      background: '#243E36',
-                      color: '#FFFFFF',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '0.74rem',
-                      flexShrink: 0
-                    }}
-                  >
-                    UPI
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B' }}>Any UPI App</div>
-                    <div style={{ fontSize: '0.66rem', color: '#64748B' }}>BHIM / Bank</div>
-                  </div>
+                  <CheckCircle2 size={16} />
+                  <span>I have Scanned & Completed Payment</span>
                 </button>
               </div>
-            </div>
+            )}
+
+            {/* ------------------------------------------------------------- */}
+            {/* OPTION 3: MANUAL TRANSFER & UTR INPUT (Fail-Safe)              */}
+            {/* ------------------------------------------------------------- */}
+            {payMethodTab === 'manual' && (
+              <div>
+                <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.4 }}>
+                  Copy the UPI ID, open your bank app to transfer the exact amount, then enter the 12-digit UTR confirmation below.
+                </p>
+
+                {/* 1. Recipient UPI Copy Box */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 12px',
+                    borderRadius: '12px',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-light)',
+                    marginBottom: '10px'
+                  }}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                      Payee UPI ID
+                    </div>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                      {vendorUpi}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyUpiId(vendorUpi)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: isCopied ? '#059669' : '#FFFFFF',
+                      color: isCopied ? '#FFFFFF' : 'var(--text-primary)',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    {isCopied ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+
+                {/* 2. Amount Copy Box */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 12px',
+                    borderRadius: '12px',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-light)',
+                    marginBottom: '14px'
+                  }}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                      Exact Amount
+                    </div>
+                    <div style={{ fontSize: '0.94rem', fontWeight: 800, color: '#059669' }}>
+                      ₹{Number(amount).toFixed(2)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copyAmount}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: isAmountCopied ? '#059669' : '#FFFFFF',
+                      color: isAmountCopied ? '#FFFFFF' : 'var(--text-primary)',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    {isAmountCopied ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{isAmountCopied ? 'Copied' : 'Copy ₹'}</span>
+                  </button>
+                </div>
+
+                {/* 3. Direct App Shortcuts */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                  <a
+                    href={getDirectAppLaunchUrl('phonepe')}
+                    style={{
+                      flex: 1,
+                      padding: '7px',
+                      borderRadius: '8px',
+                      background: 'rgba(95, 37, 159, 0.08)',
+                      border: '1px solid #5f259f',
+                      color: '#5f259f',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <span>Open PhonePe</span>
+                    <ExternalLink size={11} />
+                  </a>
+
+                  <a
+                    href={getDirectAppLaunchUrl('paytm')}
+                    style={{
+                      flex: 1,
+                      padding: '7px',
+                      borderRadius: '8px',
+                      background: 'rgba(0, 185, 245, 0.08)',
+                      border: '1px solid #00B9F5',
+                      color: '#002E6E',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <span>Open Paytm</span>
+                    <ExternalLink size={11} />
+                  </a>
+                </div>
+
+                {/* 4. Enter 12-Digit UTR Input */}
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                    Enter 12-Digit Bank UTR / Reference No:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 428190382910"
+                    maxLength={18}
+                    value={manualUtrInput}
+                    onChange={(e) => setManualUtrInput(e.target.value.replace(/[^0-9]/g, ''))}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #243E36',
+                      background: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.9rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '3px', display: 'block' }}>
+                    Available on your transaction receipt screen under "UPI Transaction ID" or "UTR".
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={isVerifying || !manualUtrInput.trim()}
+                  onClick={() => {
+                    setUtrNumber(manualUtrInput.trim());
+                    setStep('verifying');
+                    verifyPaymentOnReturn(manualUtrInput.trim());
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '9999px',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    cursor: (!manualUtrInput.trim() || isVerifying) ? 'not-allowed' : 'pointer',
+                    opacity: (!manualUtrInput.trim() || isVerifying) ? 0.6 : 1
+                  }}
+                >
+                  <CheckCircle2 size={16} />
+                  <span>Verify UTR & Commit to Group</span>
+                </button>
+              </div>
+            )}
 
             <div style={{ marginTop: '16px' }}>
               <button
@@ -1025,12 +1448,12 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                 onClick={() => setStep('details')}
                 style={{
                   width: '100%',
-                  padding: '10px',
+                  padding: '9px',
                   borderRadius: '9999px',
                   border: '1px solid var(--border-light)',
                   background: 'var(--bg-main)',
                   color: 'var(--text-secondary)',
-                  fontSize: '0.82rem',
+                  fontSize: '0.8rem',
                   fontWeight: 600,
                   cursor: 'pointer'
                 }}
@@ -1137,22 +1560,46 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
               <span>{isVerifying ? 'Verifying with Ledger...' : 'I have Paid ₹' + Number(amount).toFixed(2)}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => handleLaunchApp(selectedApp)}
-              style={{
-                marginTop: '10px',
-                background: 'none',
-                border: 'none',
-                color: '#243E36',
-                fontSize: '0.76rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                textDecoration: 'underline'
-              }}
-            >
-              Reopen UPI App
-            </button>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+              <button
+                type="button"
+                onClick={() => handleLaunchApp(selectedApp)}
+                style={{
+                  flex: 1,
+                  padding: '9px',
+                  borderRadius: '10px',
+                  background: 'rgba(36, 62, 54, 0.08)',
+                  border: '1px solid var(--border-light)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.76rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Reopen App
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('select_app');
+                  setPayMethodTab('qr');
+                }}
+                style={{
+                  flex: 1,
+                  padding: '9px',
+                  borderRadius: '10px',
+                  background: '#FEF3C7',
+                  border: '1px solid #FDE68A',
+                  color: '#92400E',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Switch to QR Code
+              </button>
+            </div>
           </div>
         )}
 

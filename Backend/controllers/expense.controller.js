@@ -133,13 +133,13 @@ async function addExpense(req, res) {
         // 1. Insert Expense Record
         const expenseInsert = await client.query(`
             INSERT INTO expenses (
-                id, group_id, paid_by, paid_by_member_id, description,
+                id, group_id, paid_by, paid_by_member_id, created_by, description,
                 amount, category, currency, split_model, payment_method, payment_reference,
                 created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
             RETURNING id, description, amount, category, currency, split_model as "splitModel", payment_method as "paymentMethod", created_at as "createdAt"
         `, [
-            expenseId, groupId, userId || null, payer.id, description.trim(),
+            expenseId, groupId, payer.id, payer.id, userId || null, description.trim(),
             numAmount, category, currency || group.currency, effectiveSplitModel, paymentMethod, paymentReference
         ]);
 
@@ -225,7 +225,7 @@ async function getGroupExpenses(req, res) {
                    e.payment_reference as "paymentReference", e.created_at as "createdAt",
                    gm.id as "paidById", gm.name as "paidByName", gm.role as "paidByRole", gm.avatar_bg as "paidByAvatar"
             FROM expenses e
-            LEFT JOIN group_members gm ON e.paid_by_member_id = gm.id
+            LEFT JOIN group_members gm ON COALESCE(e.paid_by_member_id, e.paid_by) = gm.id
             WHERE e.group_id = $1
             ORDER BY e.created_at DESC
         `, [groupId]);
@@ -367,7 +367,7 @@ async function getGroupSettlement(req, res) {
 
         // 3. Fetch expenses with full detail and splits
         const expensesRes = await pool.query(`
-            SELECT id, paid_by_member_id, amount, description, category, currency, split_model, payment_method, payment_reference, created_at
+            SELECT id, COALESCE(paid_by_member_id, paid_by) as paid_by_member_id, amount, description, category, currency, split_model, payment_method, payment_reference, created_at
             FROM expenses
             WHERE group_id = $1
             ORDER BY created_at DESC

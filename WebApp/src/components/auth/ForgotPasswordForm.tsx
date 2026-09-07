@@ -531,7 +531,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
             <CheckCircle2 size={36} strokeWidth={2.4} />
           </div>
 
-          <h1 className="auth-modern-title" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>
+          <h1 className="auth-modern-title" style={{ fontSize: '1.4rem', marginBottom: '8px' }}>
             Password Reset
           </h1>
           <p className="auth-modern-subtitle" style={{ marginBottom: '24px' }}>

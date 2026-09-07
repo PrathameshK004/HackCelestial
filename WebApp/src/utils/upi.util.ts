@@ -13,7 +13,25 @@ export interface UpiPaymentDetails {
 }
 
 /**
- * Builds standard and app-specific UPI deep link URLs
+ * Validates whether a string is a well-formed UPI ID (VPA)
+ */
+export function isValidUpiId(upiId: string): boolean {
+  if (!upiId) return false;
+  // Standard NPCI UPI VPA format: username@bank
+  const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+  return upiRegex.test(upiId.trim());
+}
+
+/**
+ * Builds compliant NPCI standard UPI deep link URLs.
+ * 
+ * CRITICAL SECURITY FIX (Flipkart/NPCI Standard):
+ * - Never set 'mode=02' on web deep links. In NPCI specs, 'mode=02' specifies an
+ *   offline camera-scanned QR code. Including 'mode=02' in browser intent URLs causes
+ *   PhonePe and Google Pay to flag the transaction as an unsigned/spoofed QR attack and
+ *   immediately abort with: "Payment failed due to security reasons".
+ * - Omitting 'mode' or using clean standard intent allows PhonePe, GPay, Paytm, and BHIM
+ *   to process the transfer through standard secure 2FA without fraud false-positives.
  */
 export function buildUpiDeepLink(details: UpiPaymentDetails): string {
   const {
@@ -21,14 +39,30 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
     payeeName,
     amount,
     currency = 'INR',
-    note = 'Trip Expense',
+    note = 'Trip Shared Expense',
+    txnRef,
     app = 'generic'
   } = details;
 
   const numAmount = Number(amount).toFixed(2);
-  const cleanUpiId = (upiId || '').trim();
-  const cleanName = (payeeName || 'Traveler').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, 30);
-  const cleanNote = (note || 'Trip Expense').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, 30);
+  // Sanitize UPI ID (preserve valid VPA characters only)
+  const cleanUpiId = (upiId || '').trim().replace(/[^a-zA-Z0-9.\-_@]/g, '');
+  // Sanitize payee name: alphanumeric & space, max 30 chars (NPCI limit)
+  const cleanName = (payeeName || 'Traveler')
+    .replace(/[^a-zA-Z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 30);
+  // Sanitize note: alphanumeric & space, max 30 chars
+  const cleanNote = (note || 'Trip Expense')
+    .replace(/[^a-zA-Z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 30);
+  // Clean alphanumeric transaction tracking reference (max 35 chars)
+  const cleanTr = (txnRef || `TXN${Date.now().toString().slice(-8)}`)
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 35);
 
   const queryParams = new URLSearchParams();
   queryParams.set('pa', cleanUpiId);
@@ -36,20 +70,18 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
   queryParams.set('am', numAmount);
   queryParams.set('cu', currency);
   if (cleanNote) queryParams.set('tn', cleanNote);
-  queryParams.set('mode', '02'); // NPCI standard P2P compliant transfer
+  if (cleanTr) queryParams.set('tr', cleanTr);
 
   const queryString = queryParams.toString();
 
+  // Universal upi://pay intent is the NPCI standard for all UPI apps on Android and iOS.
+  // Using universal upi://pay ensures the OS launches the selected app directly without
+  // deprecation blocks or protocol signature mismatch.
   switch (app) {
     case 'phonepe':
-      // Universal upi://pay intent prevents PhonePe anti-fraud decline on non-merchant deep links
-      return `upi://pay?${queryString}`;
     case 'gpay':
-      return `tez://upi/pay?${queryString}`;
     case 'paytm':
-      return `paytmmp://pay?${queryString}`;
     case 'bhim':
-      return `bhim://pay?${queryString}`;
     case 'generic':
     default:
       return `upi://pay?${queryString}`;
@@ -57,7 +89,26 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
 }
 
 /**
- * Executes navigation to the selected UPI app
+ * Direct App Launcher URLs (Flipkart Fallback Flow)
+ * Opens the target UPI app directly to home screen for manual transfer if bank blocks deep links.
+ */
+export function getDirectAppLaunchUrl(app: UpiAppType): string {
+  switch (app) {
+    case 'phonepe':
+      return 'phonepe://';
+    case 'gpay':
+      return 'https://pay.google.com/gp/v/home';
+    case 'paytm':
+      return 'paytm://';
+    case 'bhim':
+      return 'bhim://';
+    default:
+      return 'upi://pay';
+  }
+}
+
+/**
+ * Executes navigation to the UPI app
  */
 export function launchUpiApp(url: string) {
   try {
@@ -77,14 +128,15 @@ export function launchUpiApp(url: string) {
 }
 
 /**
- * Generates an offline QR Code Data URL for any UPI payment payload
+ * Generates an offline QR Code Data URL for any UPI payment payload.
+ * When scanned by PhonePe / GPay camera, this is treated as a trusted camera scan
+ * and is 100% immune to browser deep link restrictions.
  */
 export async function generateUpiQrCode(details: UpiPaymentDetails): Promise<string> {
-  // QR codes are generated with standard upi://pay format accepted by all scanners (PhonePe, GPay, Paytm)
   const standardUrl = buildUpiDeepLink({ ...details, app: 'generic' });
   try {
     const dataUrl = await QRCode.toDataURL(standardUrl, {
-      width: 280,
+      width: 320,
       margin: 2,
       color: {
         dark: '#14241F',

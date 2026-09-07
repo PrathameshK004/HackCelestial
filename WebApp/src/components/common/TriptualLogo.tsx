@@ -42,7 +42,7 @@ export const TriptualLogo: React.FC<TriptualLogoProps> = ({
           className="triptual-logo-text"
           style={{
             fontFamily: 'var(--font-serif)',
-            fontSize: size > 32 ? '1.8rem' : '1.6rem',
+            fontSize: size > 32 ? '1.45rem' : '1.3rem',
             fontWeight: 600,
             color: variant === 'light' ? '#FFFFFF' : 'var(--text-primary)',
             letterSpacing: '-0.02em',
