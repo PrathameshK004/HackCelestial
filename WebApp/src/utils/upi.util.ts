@@ -74,15 +74,51 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
 
   const queryString = queryParams.toString();
 
-  // Universal upi://pay intent is the NPCI standard for all UPI apps on Android and iOS.
-  // Using universal upi://pay ensures the OS launches the selected app directly without
-  // deprecation blocks or protocol signature mismatch.
+  const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent || '');
+  const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+
+  // Specific Package Intents for Android (bypasses device default UPI app handler)
+  if (isAndroid) {
+    switch (app) {
+      case 'gpay':
+        return `intent://pay?${queryString}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`;
+      case 'phonepe':
+        return `intent://pay?${queryString}#Intent;scheme=upi;package=com.phonepe.app;end`;
+      case 'paytm':
+        return `intent://pay?${queryString}#Intent;scheme=upi;package=net.one97.paytm;end`;
+      case 'bhim':
+        return `intent://pay?${queryString}#Intent;scheme=upi;package=in.org.npci.upiapp;end`;
+      case 'generic':
+      default:
+        return `upi://pay?${queryString}`;
+    }
+  }
+
+  // Specific App Schemes for iOS
+  if (isIOS) {
+    switch (app) {
+      case 'gpay':
+        return `gpay://upi/pay?${queryString}`;
+      case 'phonepe':
+        return `phonepe://pay?${queryString}`;
+      case 'paytm':
+        return `paytmmp://pay?${queryString}`;
+      case 'bhim':
+        return `bhim://pay?${queryString}`;
+      case 'generic':
+      default:
+        return `upi://pay?${queryString}`;
+    }
+  }
+
+  // Fallback for desktop / standard browsers
   switch (app) {
-    case 'phonepe':
     case 'gpay':
+      return `intent://pay?${queryString}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`;
+    case 'phonepe':
+      return `phonepe://pay?${queryString}`;
     case 'paytm':
-    case 'bhim':
-    case 'generic':
+      return `paytmmp://pay?${queryString}`;
     default:
       return `upi://pay?${queryString}`;
   }
@@ -112,6 +148,11 @@ export function getDirectAppLaunchUrl(app: UpiAppType): string {
  */
 export function launchUpiApp(url: string) {
   try {
+    // On Android, window.location.href directly triggers package manager for intent:// URLs
+    if (url.startsWith('intent://')) {
+      window.location.href = url;
+      return;
+    }
     const link = document.createElement('a');
     link.href = url;
     link.target = '_top';

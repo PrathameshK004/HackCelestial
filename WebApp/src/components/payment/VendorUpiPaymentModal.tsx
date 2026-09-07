@@ -315,6 +315,7 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
       amount: Number(amount),
       note: description.trim() || 'Trip Shared Expense',
       currency: 'INR',
+      txnRef: trackingRef,
       app
     });
 
