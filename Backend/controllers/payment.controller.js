@@ -508,7 +508,7 @@ async function verifyPaymentStatus(req, res) {
             SELECT id, group_id, user_id, name, role
             FROM group_members
             WHERE group_id = $1
-            ORDER BY created_at ASC
+            ORDER BY joined_at ASC
         `, [groupId]);
 
         if (membersRes.rows.length === 0) {
@@ -516,7 +516,6 @@ async function verifyPaymentStatus(req, res) {
             client.release();
             return sendError(res, "No members found in group", null, 400);
         }
-        const members = membersRes.rows[0];
 
         // 4. Determine payer identity
         let payer = membersRes.rows.find(m => m.user_id && m.user_id === userId);
@@ -524,7 +523,14 @@ async function verifyPaymentStatus(req, res) {
 
         // 5. Calculate split using group's preset ratio
         const effectiveSplitModel = mapGroupSplitToModel(group.expense_split);
-        const computedSplits = calculateExpenseSplits(numAmount, membersRes.rows, effectiveSplitModel);
+        const participants = membersRes.rows.map(m => ({
+            memberId: m.id,
+            userId: m.user_id,
+            shareType: 'EQUAL_UNIT',
+            shareValue: 1.0,
+            isOptedIn: true
+        }));
+        const computedSplits = calculateExpenseSplits(numAmount, effectiveSplitModel, participants);
 
         const expenseId = crypto.randomUUID();
         const desc = description && description.trim()

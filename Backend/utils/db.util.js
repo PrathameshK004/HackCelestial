@@ -127,6 +127,8 @@ const initializeDatabase = async () => {
     await pool.query(`
         ALTER TABLE groups ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE';
         ALTER TABLE group_members ADD COLUMN IF NOT EXISTS upi_id VARCHAR(255);
+        ALTER TABLE group_members ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+        ALTER TABLE settlements ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
     `);
 
     // 6. Expenses Table

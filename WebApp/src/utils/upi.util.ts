@@ -21,30 +21,29 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
     payeeName,
     amount,
     currency = 'INR',
-    note = 'Trip Settlement',
-    txnRef = 'TRIP-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+    note = 'Trip Expense',
     app = 'generic'
   } = details;
 
   const numAmount = Number(amount).toFixed(2);
   const cleanUpiId = (upiId || '').trim();
-  const cleanName = (payeeName || 'Traveler').trim();
-  const cleanNote = (note || 'Trip Expense').trim().slice(0, 50);
+  const cleanName = (payeeName || 'Traveler').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, 30);
+  const cleanNote = (note || 'Trip Expense').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, 30);
 
-  const queryParams = new URLSearchParams({
-    pa: cleanUpiId,
-    pn: cleanName,
-    am: numAmount,
-    cu: currency,
-    tn: cleanNote,
-    tr: txnRef,
-  });
+  const queryParams = new URLSearchParams();
+  queryParams.set('pa', cleanUpiId);
+  if (cleanName) queryParams.set('pn', cleanName);
+  queryParams.set('am', numAmount);
+  queryParams.set('cu', currency);
+  if (cleanNote) queryParams.set('tn', cleanNote);
+  queryParams.set('mode', '02'); // NPCI standard P2P compliant transfer
 
   const queryString = queryParams.toString();
 
   switch (app) {
     case 'phonepe':
-      return `phonepe://pay?${queryString}`;
+      // Universal upi://pay intent prevents PhonePe anti-fraud decline on non-merchant deep links
+      return `upi://pay?${queryString}`;
     case 'gpay':
       return `tez://upi/pay?${queryString}`;
     case 'paytm':

@@ -60,6 +60,13 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
   const [isVerifying, setIsVerifying] = useState(false);
   const [verifiedResult, setVerifiedResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const copyUpiId = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
 
   // Camera scanner refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -244,26 +251,20 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
     const trackingRef = `TRIP-TXN-${Date.now().toString().slice(-8)}`;
     setTxnRef(trackingRef);
 
-    const callbackUrl = `${window.location.origin}/payments?verified_ref=${trackingRef}`;
-
     const deepLink = buildUpiDeepLink({
       upiId: vendorUpi.trim(),
       payeeName: vendorName.trim() || 'Vendor',
       amount: Number(amount),
       note: description.trim() || 'Trip Shared Expense',
       currency: 'INR',
-      txnRef: trackingRef,
       app
     });
-
-    // Append standard NPCI callback url
-    const fullDeepLink = `${deepLink}&url=${encodeURIComponent(callbackUrl)}`;
 
     // Transition to official callback verification listener
     setStep('verifying');
 
-    // Launch app directly on phone
-    launchUpiApp(fullDeepLink);
+    // Launch app directly on phone without unauthorized url= param that causes PhonePe security decline
+    launchUpiApp(deepLink);
   };
 
   if (!isOpen) return null;
@@ -808,6 +809,48 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
               <div style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '2px' }}>
                 Trip: {selectedTrip?.name} · {description}
               </div>
+            </div>
+
+            {/* Quick UPI ID Copy Bar (Fail-Safe for PhonePe / GPay) */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                borderRadius: '12px',
+                background: 'var(--bg-surface-warm)',
+                border: '1px solid var(--border-light)',
+                marginBottom: '12px',
+                gap: '8px'
+              }}
+            >
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Recipient UPI ID
+                </div>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {vendorUpi}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyUpiId(vendorUpi)}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: isCopied ? '#059669' : '#FFFFFF',
+                  color: isCopied ? '#FFFFFF' : 'var(--text-primary)',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {isCopied ? 'Copied!' : 'Copy UPI'}
+              </button>
             </div>
 
             <div style={{ marginBottom: '14px' }}>
