@@ -7,7 +7,7 @@ const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [isAuthModeForInvite, setIsAuthModeForInvite] = useState(false);
-  const [activeView, setActiveView] = useState<'create-group' | 'dashboard'>('create-group');
+  const [activeView, setActiveView] = useState<'create-group' | 'dashboard'>('dashboard');
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(undefined);
 
   // Helper to extract invite code from pathname, query or hash

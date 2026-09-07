@@ -1,130 +1,164 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ArrowLeft,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Download,
+  Briefcase,
+  Music,
+  Coffee,
+  Fuel,
+  Activity,
+  Home,
+  Compass,
   Search,
-  Share2,
+  SlidersHorizontal,
+  X,
   Check,
-  Zap,
-  Receipt
+  Copy,
+  ShieldCheck,
+  Download,
+  Plus,
+  QrCode
 } from 'lucide-react';
+import { groupService } from '../services/group.service';
+import { VendorUpiPaymentModal } from '../components/payment/VendorUpiPaymentModal';
 
 interface PaymentsPageProps {
   onBack: () => void;
 }
 
-interface PaymentRecord {
+export interface TransactionItem {
   id: string;
   txId: string;
-  type: 'sent' | 'received';
+  title: string;
+  category: string;
+  note: string;
+  dateGroup: 'Today' | 'Yesterday' | string;
+  timestamp: string;
+  type: 'received' | 'sent';
   amount: number;
   currencySymbol: string;
   counterpart: string;
   groupName: string;
-  method: 'UPI (GPay)' | 'UPI (PhonePe)' | 'Bank IMPS' | 'Cash Handover';
-  date: string;
-  time: string;
-  status: 'Completed' | 'Processing';
+  groupId?: string;
+  method: string;
+  iconType: 'income' | 'entertainment' | 'food' | 'transport' | 'health' | 'stay' | 'travel';
+  status?: string;
+  splitModel?: string;
 }
 
-const MOCK_PAYMENTS: PaymentRecord[] = [
-  {
-    id: 'pay-1',
-    txId: 'UPI-9837241289',
-    type: 'sent',
-    amount: 2200,
-    currencySymbol: '₹',
-    counterpart: 'Sneha Patil',
-    groupName: 'Goa Friends Getaway',
-    method: 'UPI (GPay)',
-    date: '27 Aug 2026',
-    time: '14:22',
-    status: 'Completed'
-  },
-  {
-    id: 'pay-2',
-    txId: 'UPI-7812903451',
-    type: 'received',
-    amount: 3200,
-    currencySymbol: '₹',
-    counterpart: 'Rahul Sharma',
-    groupName: 'Goa Friends Getaway',
-    method: 'UPI (PhonePe)',
-    date: '26 Aug 2026',
-    time: '19:45',
-    status: 'Completed'
-  },
-  {
-    id: 'pay-3',
-    txId: 'IMPS-4491823901',
-    type: 'sent',
-    amount: 1500,
-    currencySymbol: '₹',
-    counterpart: 'Vikram Mehta',
-    groupName: 'Manali Altitude Trek',
-    method: 'Bank IMPS',
-    date: '24 Aug 2026',
-    time: '11:10',
-    status: 'Completed'
-  },
-  {
-    id: 'pay-4',
-    txId: 'CASH-991209381',
-    type: 'received',
-    amount: 850,
-    currencySymbol: '₹',
-    counterpart: 'Aditya Kulkarni',
-    groupName: 'Goa Friends Getaway',
-    method: 'Cash Handover',
-    date: '22 Aug 2026',
-    time: '16:30',
-    status: 'Completed'
-  },
-  {
-    id: 'pay-5',
-    txId: 'UPI-1192834012',
-    type: 'sent',
-    amount: 450,
-    currencySymbol: '$',
-    counterpart: 'Amit Patel',
-    groupName: 'Bali Tropical Retreat',
-    method: 'Bank IMPS',
-    date: '16 Jul 2026',
-    time: '10:00',
-    status: 'Completed'
-  }
-];
-
 export const PaymentsPage: React.FC<PaymentsPageProps> = ({ onBack }) => {
-  const [filterType, setFilterType] = useState<'all' | 'sent' | 'received'>('all');
+  // Live Data States
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [totalSpent, setTotalSpent] = useState<number>(0);
+  const [totalReceived, setTotalReceived] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [userGroups, setUserGroups] = useState<any[]>([]);
+
+  // Filter & Sort States
+  const [filterDirection, setFilterDirection] = useState<'all' | 'paid' | 'received'>('all');
+  const [sortBy, setSortBy] = useState<'recent' | 'highest' | 'lowest' | 'income' | 'expense'>('recent');
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTx, setSelectedTx] = useState<TransactionItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const filteredPayments = MOCK_PAYMENTS.filter((pay) => {
-    if (filterType !== 'all' && pay.type !== filterType) return false;
+  // Record Payment Modal State
+  const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
+  const [autoStartCamera, setAutoStartCamera] = useState(false);
+
+  // Load Real Data from PostgreSQL
+  const loadPaymentsData = async () => {
+    setIsLoading(true);
+    try {
+      const [paymentsRes, groupsRes] = await Promise.all([
+        groupService.getUserPayments().catch(() => ({ data: { totalSpent: 0, totalReceived: 0, transactions: [] } })),
+        groupService.getMyGroups().catch(() => ({ data: [] }))
+      ]);
+
+      if (paymentsRes?.data?.transactions) {
+        setTransactions(paymentsRes.data.transactions);
+        setTotalSpent(paymentsRes.data.totalSpent || 0);
+        setTotalReceived(paymentsRes.data.totalReceived || 0);
+      }
+
+      if (groupsRes?.data && Array.isArray(groupsRes.data)) {
+        setUserGroups(groupsRes.data);
+      }
+    } catch (err) {
+      console.warn('Error loading payments ledger:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPaymentsData();
+  }, []);
+
+  const countAll = transactions.length;
+  const countReceived = useMemo(() => transactions.filter((t) => t.type === 'received').length, [transactions]);
+  const countPaid = useMemo(() => transactions.filter((t) => t.type === 'sent').length, [transactions]);
+
+  // Sorting and Filtering
+  const filteredAndSorted = useMemo(() => {
+    let list = [...transactions];
+
+    // Direction Filter (All, Paid, Received)
+    if (filterDirection === 'paid') {
+      list = list.filter((t) => t.type === 'sent');
+    } else if (filterDirection === 'received') {
+      list = list.filter((t) => t.type === 'received');
+    }
+
+    // Search Query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return (
-        pay.counterpart.toLowerCase().includes(q) ||
-        pay.groupName.toLowerCase().includes(q) ||
-        pay.txId.toLowerCase().includes(q)
+      list = list.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          t.category.toLowerCase().includes(q) ||
+          (t.note && t.note.toLowerCase().includes(q)) ||
+          t.counterpart.toLowerCase().includes(q) ||
+          t.groupName.toLowerCase().includes(q) ||
+          t.txId.toLowerCase().includes(q)
       );
     }
-    return true;
-  });
 
-  const totalSent = MOCK_PAYMENTS.filter((p) => p.type === 'sent').reduce(
-    (acc, cur) => acc + cur.amount,
-    0
-  );
-  const totalReceived = MOCK_PAYMENTS.filter((p) => p.type === 'received').reduce(
-    (acc, cur) => acc + cur.amount,
-    0
-  );
+    // Sort order
+    switch (sortBy) {
+      case 'highest':
+        list.sort((a, b) => b.amount - a.amount);
+        break;
+      case 'lowest':
+        list.sort((a, b) => a.amount - b.amount);
+        break;
+      case 'income':
+        list = list.filter((t) => t.type === 'received');
+        break;
+      case 'expense':
+        list = list.filter((t) => t.type === 'sent');
+        break;
+      case 'recent':
+      default:
+        // Preserves recent chronological order
+        break;
+    }
 
-  const handleCopyId = (txId: string) => {
+    return list;
+  }, [transactions, filterDirection, sortBy, searchQuery]);
+
+  // Group by Date for authentic sectioned mobile list
+  const groupedTransactions = useMemo(() => {
+    const groups: { [key: string]: TransactionItem[] } = {};
+    filteredAndSorted.forEach((item) => {
+      const g = item.dateGroup;
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(item);
+    });
+    return groups;
+  }, [filteredAndSorted]);
+
+  const handleCopyId = (txId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     navigator.clipboard.writeText(txId);
     setCopiedId(txId);
     setTimeout(() => setCopiedId(null), 2000);
@@ -133,290 +167,528 @@ export const PaymentsPage: React.FC<PaymentsPageProps> = ({ onBack }) => {
   const handleExportCSV = () => {
     const csvContent =
       'data:text/csv;charset=utf-8,' +
-      'Transaction ID,Type,Amount,Currency,Counterpart,Group,Method,Date,Time,Status\n' +
-      MOCK_PAYMENTS.map(
-        (p) =>
-          `"${p.txId}","${p.type}","${p.amount}","${p.currencySymbol}","${p.counterpart}","${p.groupName}","${p.method}","${p.date}","${p.time}","${p.status}"`
-      ).join('\n');
+      'Transaction ID,Title,Category,Note,Date,Type,Amount,Currency,Counterpart,Group,Method\n' +
+      transactions
+        .map(
+          (p) =>
+            `"${p.txId}","${p.title}","${p.category}","${p.note}","${p.dateGroup}","${p.type}","${p.amount}","${p.currencySymbol}","${p.counterpart}","${p.groupName}","${p.method}"`
+        )
+        .join('\n');
 
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'Triptual_Payment_History.csv');
+    link.setAttribute('download', 'Triptual_Transactions.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  const sortLabelMap = {
+    recent: 'Recent',
+    highest: 'Highest Amount',
+    lowest: 'Lowest Amount',
+    income: 'Income Only',
+    expense: 'Expenses Only'
+  };
+
+  const renderIcon = (type: TransactionItem['iconType'], isIncome: boolean) => {
+    switch (type) {
+      case 'income':
+        return (
+          <div className="tx-icon-bubble" style={{ background: '#E8F5E9', color: '#2E7D32' }}>
+            <Briefcase size={18} strokeWidth={2} />
+          </div>
+        );
+      case 'entertainment':
+        return (
+          <div className="tx-icon-bubble" style={{ background: '#E8F5E9', color: '#1B5E20' }}>
+            <Music size={18} strokeWidth={2} />
+          </div>
+        );
+      case 'food':
+        return (
+          <div className="tx-icon-bubble" style={{ background: '#E0F2F1', color: '#00796B' }}>
+            <Coffee size={18} strokeWidth={2} />
+          </div>
+        );
+      case 'transport':
+        return (
+          <div className="tx-icon-bubble" style={{ background: '#ECEFF1', color: '#455A64' }}>
+            <Fuel size={18} strokeWidth={2} />
+          </div>
+        );
+      case 'health':
+        return (
+          <div className="tx-icon-bubble" style={{ background: '#E0F7FA', color: '#00838F' }}>
+            <Activity size={18} strokeWidth={2} />
+          </div>
+        );
+      case 'stay':
+        return (
+          <div className="tx-icon-bubble" style={{ background: '#FFF3E0', color: '#E65100' }}>
+            <Home size={18} strokeWidth={2} />
+          </div>
+        );
+      case 'travel':
+      default:
+        return (
+          <div
+            className="tx-icon-bubble"
+            style={{
+              background: isIncome ? '#E8F5E9' : '#F1F5F9',
+              color: isIncome ? '#2E7D32' : '#475569'
+            }}
+          >
+            <Compass size={18} strokeWidth={2} />
+          </div>
+        );
+    }
+  };
+
   return (
-    <div className="profile-page-root animate-fade-in" style={{ paddingBottom: '90px' }}>
-      <div className="profile-page-container" style={{ maxWidth: '680px', padding: '12px 14px 40px' }}>
-        {/* Clean Header: Back Button + Title */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            marginBottom: '18px',
-            paddingBottom: '12px',
-            borderBottom: '1px solid var(--border-light)'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+    <div className="tx-page-root animate-fade-in">
+      <div className="tx-page-container">
+        {/* Top Bar with Record Payment CTA */}
+        <header className="tx-top-nav">
+          <div className="tx-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                className="tx-back-arrow-btn"
+                onClick={onBack}
+                title="Back"
+                aria-label="Back"
+              >
+                <ArrowLeft size={20} strokeWidth={2.2} />
+              </button>
+              <h1 className="tx-page-heading">Transactions</h1>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                className="split-add-bill-btn"
+                onClick={() => {
+                  setAutoStartCamera(false);
+                  setIsRecordPaymentOpen(true);
+                }}
+                style={{ margin: 0, padding: '7px 14px', fontSize: '0.78rem' }}
+                title="Make or record a payment"
+              >
+                <Plus size={14} strokeWidth={2.4} />
+                <span>Record Payment</span>
+              </button>
+
+              <button
+                type="button"
+                className="tx-back-arrow-btn"
+                onClick={handleExportCSV}
+                title="Export CSV"
+                aria-label="Export CSV"
+              >
+                <Download size={18} color="#475569" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Permanent Clean Search Box with Right-side Sorting Filter */}
+        <div className="tx-search-box">
+          <Search size={15} color="#94A3B8" />
+          <input
+            type="text"
+            className="tx-search-input"
+            placeholder="Search by title, note, or peer..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
             <button
               type="button"
-              className="btn-icon-circle"
-              onClick={onBack}
-              title="Back"
+              onClick={() => setSearchQuery('')}
               style={{
-                width: '38px',
-                height: '38px',
-                flexShrink: 0,
+                background: 'none',
+                border: 'none',
+                padding: '2px',
+                cursor: 'pointer',
+                color: '#94A3B8',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-card)',
-                borderRadius: '50%',
-                cursor: 'pointer'
+                alignItems: 'center'
               }}
+              aria-label="Clear search"
             >
-              <ArrowLeft size={18} color="var(--text-primary)" />
+              <X size={14} />
             </button>
+          )}
 
-            <h1
-              style={{
-                fontFamily: 'var(--font-serif)',
-                fontSize: '1.35rem',
-                color: 'var(--text-primary)',
-                margin: 0,
-                lineHeight: 1.2
-              }}
-            >
-              Payment History
-            </h1>
-          </div>
+          <div
+            style={{
+              width: '1px',
+              height: '18px',
+              background: '#E2E8F0',
+              margin: '0 2px'
+            }}
+          />
 
           <button
             type="button"
-            className="profile-header-icon-btn"
-            onClick={handleExportCSV}
-            title="Export CSV Statement"
-            style={{ padding: '6px 12px', fontSize: '0.74rem' }}
+            className={`tx-search-filter-btn ${showSortMenu ? 'active' : ''}`}
+            onClick={() => setShowSortMenu((prev) => !prev)}
+            title={`Sort & Filter (${sortLabelMap[sortBy]})`}
+            aria-label="Sort and filter transactions"
+            aria-expanded={showSortMenu}
           >
-            <Download size={13} />
-            <span>CSV Export</span>
+            <SlidersHorizontal size={15} strokeWidth={2.2} />
+            {sortBy !== 'recent' && <span className="tx-filter-dot" />}
           </button>
-        </div>
 
-        {/* Hero Financial Summary Strip */}
-        <div className="expense-split-hero-strip" style={{ marginBottom: '16px' }}>
-          <div className="expense-metric-card" style={{ padding: '14px 14px' }}>
-            <div className="expense-metric-header">
-              <span className="expense-metric-title" style={{ fontSize: '0.7rem' }}>Total Collected</span>
-              <ArrowDownLeft size={14} color="var(--accent-olive)" />
-            </div>
-            <div className="expense-metric-val" style={{ color: 'var(--accent-olive)', fontSize: '1.3rem' }}>
-              +₹{totalReceived.toLocaleString()}
-            </div>
-            <div className="expense-metric-sub" style={{ fontSize: '0.7rem' }}>Received across groups</div>
-          </div>
-
-          <div className="expense-metric-card" style={{ padding: '14px 14px' }}>
-            <div className="expense-metric-header">
-              <span className="expense-metric-title" style={{ fontSize: '0.7rem' }}>Total Paid Out</span>
-              <ArrowUpRight size={14} color="var(--accent-rose)" />
-            </div>
-            <div className="expense-metric-val" style={{ color: 'var(--accent-rose)', fontSize: '1.3rem' }}>
-              -₹{totalSent.toLocaleString()}
-            </div>
-            <div className="expense-metric-sub" style={{ fontSize: '0.7rem' }}>Settled via UPI / Bank</div>
-          </div>
-
-          <div className="expense-metric-card" style={{ padding: '14px 14px' }}>
-            <div className="expense-metric-header">
-              <span className="expense-metric-title" style={{ fontSize: '0.7rem' }}>Linked UPI VPA</span>
-              <Zap size={14} color="var(--accent-amber)" />
-            </div>
-            <div className="expense-metric-val" style={{ fontSize: '1.05rem', wordBreak: 'break-all' }}>
-              yogesh@oksbi
-            </div>
-            <div className="expense-metric-sub" style={{ fontSize: '0.7rem' }}>Instant QR ready</div>
-          </div>
-        </div>
-
-        {/* Filter and Search Bar */}
-        <div className="clean-section-card" style={{ padding: '14px 14px', marginBottom: '16px' }}>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px'
-            }}
-          >
-            {/* Search Input */}
-            <div style={{ position: 'relative', width: '100%' }}>
-              <Search
-                size={15}
-                color="var(--text-muted)"
-                style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}
-              />
-              <input
-                type="text"
-                className="profile-input-field"
-                placeholder="Search by name, trip group, or transaction ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ paddingLeft: '36px', fontSize: '0.78rem', width: '100%', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            {/* Filter Pills */}
-            <div className="category-pills-bar" style={{ padding: 0, margin: 0 }}>
-              {(['all', 'received', 'sent'] as const).map((type) => (
+          {/* Integrated Sort & Filter Dropdown */}
+          {showSortMenu && (
+            <div className="tx-sort-dropdown">
+              <div
+                style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: '#94A3B8',
+                  padding: '4px 10px 6px'
+                }}
+              >
+                Sort & Filter
+              </div>
+              {(
+                [
+                  { id: 'recent', label: 'Recent' },
+                  { id: 'highest', label: 'Highest Amount' },
+                  { id: 'lowest', label: 'Lowest Amount' },
+                  { id: 'income', label: 'Income Only (+)' },
+                  { id: 'expense', label: 'Expenses Only (-)' }
+                ] as const
+              ).map((opt) => (
                 <button
-                  key={type}
+                  key={opt.id}
                   type="button"
-                  className={`category-pill ${filterType === type ? 'active' : ''}`}
-                  onClick={() => setFilterType(type)}
-                  style={{ padding: '4px 12px', fontSize: '0.74rem' }}
+                  className={`tx-sort-option ${sortBy === opt.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setSortBy(opt.id);
+                    setShowSortMenu(false);
+                  }}
                 >
-                  <span>
-                    {type === 'all'
-                      ? `All Records (${MOCK_PAYMENTS.length})`
-                      : type === 'received'
-                      ? 'Received'
-                      : 'Paid Out'}
-                  </span>
+                  <span>{opt.label}</span>
+                  {sortBy === opt.id && <Check size={14} color="#243E36" />}
                 </button>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* Live Ledger Metrics Summary */}
+        <div style={{ display: 'flex', gap: '8px', margin: '4px 0 12px', padding: '10px 14px', background: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-light)', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Total Spent</span>
+            <span style={{ fontSize: '0.96rem', fontWeight: 700, color: '#EF4444' }}>-₹{totalSpent.toLocaleString()}</span>
+          </div>
+          <div style={{ width: '1px', height: '22px', background: 'var(--border-light)' }} />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Total Received</span>
+            <span style={{ fontSize: '0.96rem', fontWeight: 700, color: '#10B981' }}>+₹{totalReceived.toLocaleString()}</span>
+          </div>
+          <div style={{ width: '1px', height: '22px', background: 'var(--border-light)' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Status</span>
+            <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#243E36' }}>{transactions.length} Verified</span>
           </div>
         </div>
 
-        {/* Transactions List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {filteredPayments.map((pay) => {
-            const isSent = pay.type === 'sent';
-            return (
-              <div
-                key={pay.id}
-                className="expense-item-row"
+        {/* Horizontal Capsule Filters Row matching mockup */}
+        <div className="tx-capsule-row">
+          <button
+            type="button"
+            className={`tx-capsule-btn ${filterDirection === 'all' ? 'active' : ''}`}
+            onClick={() => setFilterDirection('all')}
+          >
+            <span>All</span>
+            <span className="tx-capsule-badge">{countAll}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`tx-capsule-btn ${filterDirection === 'paid' ? 'active' : ''}`}
+            onClick={() => setFilterDirection('paid')}
+          >
+            <span>Paid</span>
+            <span className="tx-capsule-badge">{countPaid}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`tx-capsule-btn ${filterDirection === 'received' ? 'active' : ''}`}
+            onClick={() => setFilterDirection('received')}
+          >
+            <span>Received</span>
+            <span className="tx-capsule-badge">{countReceived}</span>
+          </button>
+        </div>
+
+        {/* Sectioned Flat Transaction List */}
+        {Object.keys(groupedTransactions).length > 0 ? (
+          <div className="tx-stream-flow">
+            {Object.entries(groupedTransactions).map(([dateGroup, items]) => (
+              <section key={dateGroup} className="tx-date-group-section">
+                <div className="tx-date-group-heading">{dateGroup}</div>
+
+                <div className="tx-flat-items-list">
+                  {items.map((tx) => {
+                    const isIncome = tx.type === 'received';
+                    return (
+                      <div
+                        key={tx.id}
+                        className="tx-flat-row"
+                        onClick={() => setSelectedTx(tx)}
+                        role="button"
+                        tabIndex={0}
+                      >
+                        {/* Soft Circle Category Icon */}
+                        {renderIcon(tx.iconType, isIncome)}
+
+                        {/* Middle Info Column */}
+                        <div className="tx-flat-content">
+                          <div className="tx-flat-title-line">
+                            <span className="tx-flat-title">{tx.title}</span>
+                          </div>
+
+                          <div className="tx-flat-meta-line">
+                            <span className="tx-flat-meta-tag">{tx.groupName || tx.category}</span>
+                            <span className="tx-flat-dot">·</span>
+                            <span className="tx-flat-timestamp">{tx.timestamp}</span>
+                            {tx.splitModel && (
+                              <>
+                                <span className="tx-flat-dot">·</span>
+                                <span style={{ fontSize: '0.68rem', color: '#64748B', fontWeight: 600 }}>
+                                  {tx.splitModel} split
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Amount on Far Right */}
+                        <div
+                          className={`tx-flat-amount ${
+                            isIncome ? 'amount-income' : 'amount-expense'
+                          }`}
+                        >
+                          {isIncome ? '+' : '-'}
+                          {tx.currencySymbol}
+                          {tx.amount.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          /* Cardless Minimalist Empty State */
+          <div className="tx-empty-state">
+            <svg
+              className="tx-empty-illustration"
+              width="100"
+              height="80"
+              viewBox="0 0 112 92"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              style={{ margin: '0 auto', display: 'block' }}
+            >
+              <rect x="18" y="10" width="76" height="54" rx="10" fill="#243E36" />
+              <path d="M18 22H94" stroke="#1D322C" strokeWidth="2" />
+              <rect x="68" y="27" width="26" height="20" rx="6" fill="#CBD5E1" />
+              <circle cx="78" cy="37" r="3.5" fill="#FFFFFF" />
+              <rect x="22" y="74" width="68" height="3.5" rx="1.75" fill="#94A3B8" />
+              <rect x="32" y="81" width="48" height="3.5" rx="1.75" fill="#CBD5E1" />
+            </svg>
+
+            <h2 className="tx-empty-title">
+              {isLoading ? 'Loading payment records...' : 'No transactions recorded yet'}
+            </h2>
+            <p className="tx-empty-sub">
+              {isLoading
+                ? 'Retrieving your real-time PostgreSQL payment and settlement ledger...'
+                : 'Expedition expenses and peer settlements will be tracked here in real-time.'}
+            </p>
+          </div>
+        )}
+
+        {/* Floating Scanner Action Button (Bottom Right) */}
+        <button
+          type="button"
+          className="tx-floating-scan-fab"
+          onClick={() => {
+            setAutoStartCamera(true);
+            setIsRecordPaymentOpen(true);
+          }}
+          title="Scan Vendor QR Code"
+          aria-label="Scan Vendor QR Code"
+        >
+          <QrCode size={21} color="#243E36" strokeWidth={2.2} />
+        </button>
+      </div>
+
+      {/* ---------------- VENDOR UPI & SCAN PAYMENT GATEWAY MODAL ---------------- */}
+      <VendorUpiPaymentModal
+        isOpen={isRecordPaymentOpen}
+        onClose={() => setIsRecordPaymentOpen(false)}
+        userGroups={userGroups}
+        onPaymentSuccess={loadPaymentsData}
+        autoStartCamera={autoStartCamera}
+      />
+
+      {/* ---------------- TRANSACTION RECEIPT MODAL (Apple/Stripe Sheet) ---------------- */}
+      {selectedTx && (
+        <div
+          className="payment-receipt-sheet-backdrop"
+          onClick={() => setSelectedTx(null)}
+        >
+          <div
+            className="payment-receipt-sheet"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="payment-receipt-handle" />
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '16px'
+              }}
+            >
+              <span
                 style={{
-                  padding: '12px 14px',
-                  borderRadius: 'var(--radius-lg)',
-                  background: 'var(--bg-surface)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '10px',
-                  border: '1px solid var(--border-light)'
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: '#64748B'
                 }}
               >
-                {/* Left: Direction Icon & Details */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: '34px',
-                      height: '34px',
-                      borderRadius: '50%',
-                      background: isSent ? 'var(--accent-rose-subtle)' : 'var(--accent-emerald-subtle)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    {isSent ? (
-                      <ArrowUpRight size={16} color="var(--accent-rose)" />
-                    ) : (
-                      <ArrowDownLeft size={16} color="var(--accent-emerald)" />
-                    )}
-                  </div>
+                Transaction Details
+              </span>
 
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {isSent ? `Paid to ${pay.counterpart}` : `Received from ${pay.counterpart}`}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '0.66rem',
-                          fontWeight: 700,
-                          padding: '1px 6px',
-                          borderRadius: '9999px',
-                          background: 'var(--bg-surface-warm)',
-                          color: 'var(--text-muted)'
-                        }}
-                      >
-                        {pay.method}
-                      </span>
-                    </div>
+              <button
+                type="button"
+                className="payment-receipt-close"
+                onClick={() => setSelectedTx(null)}
+                title="Close receipt"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span>{pay.groupName}</span>
-                      <span>·</span>
-                      <span>{pay.date}, {pay.time}</span>
-                    </div>
-                  </div>
+            {/* Hero Amount Section */}
+            <div className="payment-receipt-hero">
+              <div
+                className={`payment-receipt-amount ${
+                  selectedTx.type === 'received' ? 'amount-income' : 'amount-expense'
+                }`}
+              >
+                {selectedTx.type === 'received' ? '+' : '-'}
+                {selectedTx.currencySymbol}
+                {selectedTx.amount.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2
+                })}
+              </div>
+
+              <div className="payment-receipt-status-pill">
+                <ShieldCheck size={14} color="#10B981" />
+                <span>Verified by PostgreSQL Ledger</span>
+              </div>
+            </div>
+
+            {/* Breakdown Rows */}
+            <div className="payment-receipt-table">
+              <div className="payment-receipt-row">
+                <span className="receipt-k">Expedition / Trip</span>
+                <span className="receipt-v" style={{ fontWeight: 700 }}>
+                  {selectedTx.groupName}
+                </span>
+              </div>
+
+              <div className="payment-receipt-row">
+                <span className="receipt-k">Counterparty / Payer</span>
+                <span className="receipt-v">{selectedTx.counterpart}</span>
+              </div>
+
+              <div className="payment-receipt-row">
+                <span className="receipt-k">Category</span>
+                <span className="receipt-v">{selectedTx.category}</span>
+              </div>
+
+              <div className="payment-receipt-row">
+                <span className="receipt-k">Description</span>
+                <span className="receipt-v">{selectedTx.title}</span>
+              </div>
+
+              {selectedTx.splitModel && (
+                <div className="payment-receipt-row">
+                  <span className="receipt-k">Split Ratio</span>
+                  <span className="receipt-v" style={{ color: '#059669', fontWeight: 600 }}>
+                    {selectedTx.splitModel} Split
+                  </span>
                 </div>
+              )}
 
-                {/* Right: Amount & Ref ID Copy */}
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div
-                    style={{
-                      fontFamily: 'var(--font-serif)',
-                      fontSize: '1.05rem',
-                      fontWeight: 700,
-                      color: isSent ? 'var(--accent-rose)' : 'var(--accent-emerald)'
-                    }}
-                  >
-                    {isSent ? '-' : '+'}{pay.currencySymbol}{pay.amount.toLocaleString()}
-                  </div>
+              <div className="payment-receipt-row">
+                <span className="receipt-k">Payment Method</span>
+                <span className="receipt-v">{selectedTx.method}</span>
+              </div>
 
+              <div className="payment-receipt-row">
+                <span className="receipt-k">Date & Time</span>
+                <span className="receipt-v">
+                  {selectedTx.dateGroup} at {selectedTx.timestamp}
+                </span>
+              </div>
+
+              <div className="payment-receipt-row">
+                <span className="receipt-k">Reference ID</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <code style={{ fontSize: '0.78rem', background: '#F1F5F9', padding: '2px 6px', borderRadius: '4px' }}>
+                    {selectedTx.txId}
+                  </code>
                   <button
                     type="button"
-                    onClick={() => handleCopyId(pay.txId)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      marginTop: '2px',
-                      fontSize: '0.66rem',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px'
-                    }}
-                    title="Click to copy Transaction ID"
+                    onClick={() => handleCopyId(selectedTx.txId)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center' }}
+                    title="Copy Reference"
                   >
-                    {copiedId === pay.txId ? (
-                      <>
-                        <Check size={10} color="var(--accent-emerald)" />
-                        <span style={{ color: 'var(--accent-emerald)' }}>Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Share2 size={10} />
-                        <span>{pay.txId.slice(0, 10)}...</span>
-                      </>
-                    )}
+                    {copiedId === selectedTx.txId ? <Check size={14} color="#10B981" /> : <Copy size={14} />}
                   </button>
                 </div>
               </div>
-            );
-          })}
-
-          {filteredPayments.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--text-muted)' }}>
-              <Receipt size={32} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
-              <p style={{ fontSize: '0.8rem' }}>No payment transactions match your query.</p>
             </div>
-          )}
+
+            {/* Receipt Footer Action */}
+            <div style={{ marginTop: '20px' }}>
+              <button
+                type="button"
+                className="tx-bottom-cta"
+                onClick={() => setSelectedTx(null)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

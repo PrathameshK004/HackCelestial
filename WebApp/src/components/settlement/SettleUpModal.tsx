@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, CheckCircle, Smartphone, CreditCard, Banknote, ShieldCheck, ArrowRight } from 'lucide-react';
+import { X, CheckCircle, Smartphone, CreditCard, Banknote, ArrowRight } from 'lucide-react';
 import { SimplifiedTransfer } from '../../mock/dashboardMockData';
 import { groupService } from '../../services/group.service';
+import { UpiAppSelector } from '../payment/UpiAppSelector';
 
 interface SettleUpModalProps {
   transfer: SimplifiedTransfer | null;
@@ -21,26 +22,23 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   if (!isOpen || !transfer) return null;
 
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'cash'>('upi');
-  const [upiId, setUpiId] = useState(
-    `${transfer.to.name.toLowerCase().replace(/\s+/g, '')}@okaxis`
-  );
+  const upiId = (transfer.to as any).upiId || `${transfer.to.name.toLowerCase().replace(/\s+/g, '')}@okaxis`;
   const [notes, setNotes] = useState(`Settlement for trip expense`);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDone, setIsDone] = useState(false);
+  const [confirmedApp, setConfirmedApp] = useState('UPI');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const executeSettlementRecord = async (methodLabel: string, refId?: string) => {
     setIsProcessing(true);
-
     try {
-      if (groupId && !groupId.startsWith('mock-') && !groupId.startsWith('grp-')) {
+      if (groupId) {
         await groupService.recordSettlement(groupId, {
           fromMemberId: transfer.from.id,
           paidTo: transfer.to.id,
           amount: Number(transfer.amount).toFixed(2),
           remarks: notes.trim(),
-          paymentMethod: paymentMethod === 'cash' ? 'CASH' : 'UPI',
-          paymentReference: paymentMethod === 'upi' ? upiId : undefined
+          paymentMethod: methodLabel,
+          paymentReference: refId || (methodLabel.includes('UPI') ? upiId : undefined)
         });
       }
     } catch (err) {
@@ -49,11 +47,30 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
       setIsProcessing(false);
       setIsDone(true);
       setTimeout(() => {
-        onConfirmSettlement(transfer.id, paymentMethod, notes);
+        onConfirmSettlement(transfer.id, methodLabel, notes);
         setIsDone(false);
         onClose();
-      }, 1000);
+      }, 1200);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const methodLabel = paymentMethod === 'cash' ? 'CASH' : (paymentMethod === 'card' ? 'IMPS / Bank' : confirmedApp);
+    await executeSettlementRecord(methodLabel);
+  };
+
+  const handleUpiPaymentCompleted = async (ref: string, app: string) => {
+    const appNames: Record<string, string> = {
+      phonepe: 'UPI (PhonePe)',
+      gpay: 'UPI (Google Pay)',
+      paytm: 'UPI (Paytm)',
+      bhim: 'UPI (BHIM)',
+      generic: 'UPI'
+    };
+    const methodLabel = appNames[app] || 'UPI';
+    setConfirmedApp(methodLabel);
+    await executeSettlementRecord(methodLabel, ref);
   };
 
   return (
@@ -70,6 +87,7 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
         zIndex: 9999,
         padding: '16px'
       }}
+      onClick={onClose}
     >
       <div
         style={{
@@ -77,11 +95,14 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
           borderRadius: 'var(--radius-xl)',
           border: '1px solid var(--border-light)',
           width: '100%',
-          maxWidth: '460px',
+          maxWidth: '480px',
           padding: '20px',
+          maxHeight: '92vh',
+          overflowY: 'auto',
           boxShadow: '0 24px 48px rgba(0, 0, 0, 0.18)',
           boxSizing: 'border-box'
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
         <div
@@ -108,18 +129,18 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
                 display: 'inline-block'
               }}
             >
-              Settlement Hub
+              Settlement Gateway
             </span>
             <h3
               style={{
-                fontFamily: 'var(--font-serif)',
                 fontSize: '1.2rem',
+                fontWeight: 700,
                 color: 'var(--text-primary)',
                 margin: '4px 0 0',
                 lineHeight: 1.2
               }}
             >
-              Record Payment & Settle Up
+              Pay & Settle Up
             </h3>
           </div>
 
@@ -161,15 +182,15 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
             >
               <CheckCircle size={32} color="#059669" />
             </div>
-            <h4 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: 'var(--text-primary)', margin: '0 0 6px' }}>
-              Payment Recorded Successfully!
+            <h4 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 6px' }}>
+              Payment Settled Successfully!
             </h4>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
               {transfer.currencySymbol}{transfer.amount.toLocaleString()} marked as settled between {transfer.from.name} and {transfer.to.name}.
             </p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {/* Transfer Visual Card */}
             <div
               style={{
@@ -224,7 +245,7 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
 
               {/* Arrow Flow & Amount */}
               <div style={{ textAlign: 'center', flexShrink: 0, padding: '0 6px' }}>
-                <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', fontWeight: 700, color: 'var(--accent-olive)' }}>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-olive)' }}>
                   {transfer.currencySymbol}{transfer.amount.toLocaleString()}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px' }}>
@@ -297,8 +318,8 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
                   }}
                 >
                   <Smartphone size={18} color={paymentMethod === 'upi' ? 'var(--accent-olive)' : 'var(--text-muted)'} />
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-primary)' }}>UPI / QR</span>
-                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>GPay, PhonePe</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-primary)' }}>UPI Apps</span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>PhonePe, GPay</span>
                 </button>
 
                 <button
@@ -349,92 +370,69 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
               </div>
             </div>
 
-            {/* UPI ID Field if UPI selected */}
-            {paymentMethod === 'upi' && (
-              <div>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  Receiver UPI ID / Phone
-                </label>
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            {/* UPI App Launcher Section */}
+            {paymentMethod === 'upi' ? (
+              <div style={{ marginTop: '4px' }}>
+                <UpiAppSelector
+                  details={{
+                    upiId,
+                    payeeName: transfer.to.name,
+                    amount: transfer.amount,
+                    currency: (transfer as any).currency || 'INR',
+                    note: notes,
+                    txnRef: `TRIP-STL-${transfer.id.slice(-6).toUpperCase()}`
+                  }}
+                  onPaymentCompleted={handleUpiPaymentCompleted}
+                  currencySymbol={transfer.currencySymbol}
+                />
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                    Settlement Remarks
+                  </label>
                   <input
                     type="text"
                     className="styled-text-input"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    placeholder="user@upi"
-                    style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.8rem', padding: '9px 12px', paddingRight: '85px' }}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="e.g. Cleared room share & activities"
+                    style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.8rem', padding: '9px 12px' }}
                   />
-                  <span
-                    style={{
-                      position: 'absolute',
-                      right: '8px',
-                      fontSize: '0.66rem',
-                      fontWeight: 600,
-                      color: '#059669',
-                      background: 'rgba(5, 150, 105, 0.1)',
-                      padding: '3px 8px',
-                      borderRadius: '9999px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px'
-                    }}
-                  >
-                    <ShieldCheck size={11} /> Verified
-                  </span>
                 </div>
-              </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: '10px',
+                    paddingTop: '12px',
+                    borderTop: '1px solid var(--border-light)'
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn-cancel-flat"
+                    onClick={onClose}
+                    disabled={isProcessing}
+                    style={{ padding: '9px 16px', fontSize: '0.78rem' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={isProcessing}
+                    style={{ padding: '9px 18px', fontSize: '0.78rem', cursor: 'pointer' }}
+                  >
+                    {isProcessing ? 'Processing...' : `Confirm Settlement (${transfer.currencySymbol}${transfer.amount})`}
+                  </button>
+                </div>
+              </form>
             )}
-
-            {/* Note / Memo */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                Note / Reference (Optional)
-              </label>
-              <input
-                type="text"
-                className="styled-text-input"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g. Settle Goa Villa & Activities"
-                style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.8rem', padding: '9px 12px' }}
-              />
-            </div>
-
-            {/* Modal Bottom Action Buttons */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                gap: '10px',
-                paddingTop: '12px',
-                borderTop: '1px solid var(--border-light)',
-                marginTop: '4px'
-              }}
-            >
-              <button
-                type="button"
-                className="btn-cancel-flat"
-                onClick={onClose}
-                disabled={isProcessing}
-                style={{ padding: '9px 16px', fontSize: '0.78rem' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn-primary-luxury"
-                disabled={isProcessing}
-                style={{ padding: '9px 18px', fontSize: '0.78rem' }}
-              >
-                {isProcessing ? (
-                  <span>Processing...</span>
-                ) : (
-                  <span>Confirm Settlement ({transfer.currencySymbol}{transfer.amount.toLocaleString()})</span>
-                )}
-              </button>
-            </div>
-          </form>
+          </div>
         )}
       </div>
     </div>

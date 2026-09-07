@@ -122,23 +122,12 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
         >
           <button
             type="button"
-            className="btn-icon-circle"
+            className="btn-back-transparent"
             onClick={onBack}
             title="Back"
-            style={{
-              width: '38px',
-              height: '38px',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-card)',
-              borderRadius: '50%',
-              cursor: 'pointer'
-            }}
+            aria-label="Back"
           >
-            <ArrowLeft size={18} color="var(--text-primary)" />
+            <ArrowLeft size={22} color="var(--text-primary)" />
           </button>
 
           <h1

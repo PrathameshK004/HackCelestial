@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Sparkles } from 'lucide-react';
+import { MapPin, Compass } from 'lucide-react';
 import { MOCK_DESTINATIONS } from '../mock/mockData';
 import { DestinationOption } from '../types/group';
 
@@ -53,7 +53,7 @@ export const DestinationInput: React.FC<DestinationInputProps> = ({
       </label>
       <div className="input-with-icon">
         <div className="input-icon">
-          <Search size={18} />
+          <MapPin size={18} />
         </div>
         <input
           id="destination-input"
@@ -86,7 +86,7 @@ export const DestinationInput: React.FC<DestinationInputProps> = ({
                 <span className="suggestion-country">, {item.country}</span>
               </div>
               <span className="suggestion-tag">
-                <Sparkles size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                <Compass size={12} style={{ display: 'inline', marginRight: '4px' }} />
                 {item.tag}
               </span>
             </div>

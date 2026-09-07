@@ -185,6 +185,8 @@ function calculateExpenseSplits(totalAmount, splitModel = 'EQUAL', participants 
  */
 function calculateNetBalances(members = [], expenses = [], settlements = []) {
     const balances = {};
+    const paidTotals = {};
+    const owedTotals = {};
     const memberLookup = {};
     let totalSpend = 0;
 
@@ -192,6 +194,8 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
     for (const m of members) {
         const id = String(m.id);
         balances[id] = 0;
+        paidTotals[id] = 0;
+        owedTotals[id] = 0;
         memberLookup[id] = {
             id: m.id,
             userId: m.user_id || m.userId || null,
@@ -212,6 +216,7 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
         // Payer gets credit
         if (balances[payerId] !== undefined) {
             balances[payerId] = round2(balances[payerId] + expAmount);
+            paidTotals[payerId] = round2((paidTotals[payerId] || 0) + expAmount);
         }
 
         // Each split owes debit
@@ -221,6 +226,7 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
             const shareAmount = Number(s.computed_amount || s.computedAmount) || 0;
             if (balances[memberId] !== undefined) {
                 balances[memberId] = round2(balances[memberId] - shareAmount);
+                owedTotals[memberId] = round2((owedTotals[memberId] || 0) + shareAmount);
             }
         }
     }
@@ -234,10 +240,12 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
         // Sender paid their debt -> balance increases (less negative or positive)
         if (balances[fromId] !== undefined) {
             balances[fromId] = round2(balances[fromId] + amount);
+            paidTotals[fromId] = round2((paidTotals[fromId] || 0) + amount);
         }
         // Receiver received money -> balance decreases (credit redeemed)
         if (balances[toId] !== undefined) {
             balances[toId] = round2(balances[toId] - amount);
+            owedTotals[toId] = round2((owedTotals[toId] || 0) + amount);
         }
     }
 
@@ -247,6 +255,8 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
         const net = balances[id] || 0;
         return {
             ...memberLookup[id],
+            totalPaid: paidTotals[id] || 0,
+            totalOwed: owedTotals[id] || 0,
             netBalance: net,
             status: net > 0.01 ? 'OWED' : (net < -0.01 ? 'OWES' : 'SETTLED')
         };

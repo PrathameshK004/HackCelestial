@@ -50,12 +50,26 @@ async function addExpense(req, res) {
         }
 
         // Verify group exists
-        const groupRes = await client.query('SELECT id, name, currency FROM groups WHERE id = $1', [groupId]);
+        const groupRes = await client.query('SELECT id, name, currency, expense_split FROM groups WHERE id = $1', [groupId]);
         if (groupRes.rows.length === 0) {
             client.release();
             return sendError(res, "Group trip not found", null, 404);
         }
         const group = groupRes.rows[0];
+
+        const mapGroupSplit = (s) => {
+            if (!s) return 'EQUAL';
+            const upper = s.toString().trim().toUpperCase();
+            if (upper === 'PARTICIPANT' || upper === 'PARTICIPANT_BASED') return 'PARTICIPANT_BASED';
+            if (upper === 'ORGANIZER' || upper === 'ORGANIZER_PAID') return 'ORGANIZER_PAID';
+            if (upper === 'ROOM' || upper === 'ROOM_SHARE') return 'ROOM_SHARE';
+            if (upper === 'ACTIVITY' || upper === 'ACTIVITY_BASED') return 'ACTIVITY_BASED';
+            return 'EQUAL';
+        };
+
+        const effectiveSplitModel = (req.body.splitModel && req.body.splitModel !== 'EQUAL')
+            ? req.body.splitModel.toUpperCase()
+            : mapGroupSplit(group.expense_split);
 
         // Fetch all group members
         const membersRes = await client.query('SELECT id, user_id, name, email, role FROM group_members WHERE group_id = $1', [groupId]);
@@ -110,7 +124,7 @@ async function addExpense(req, res) {
         }
 
         // Calculate splits via Recalculation Engine
-        const computedSplits = calculateExpenseSplits(numAmount, splitModel, participantItems);
+        const computedSplits = calculateExpenseSplits(numAmount, effectiveSplitModel, participantItems);
 
         await client.query('BEGIN');
 
@@ -126,7 +140,7 @@ async function addExpense(req, res) {
             RETURNING id, description, amount, category, currency, split_model as "splitModel", payment_method as "paymentMethod", created_at as "createdAt"
         `, [
             expenseId, groupId, userId || null, payer.id, description.trim(),
-            numAmount, category, currency || group.currency, splitModel, paymentMethod, paymentReference
+            numAmount, category, currency || group.currency, effectiveSplitModel, paymentMethod, paymentReference
         ]);
 
         // 2. Insert Expense Splits
@@ -337,20 +351,37 @@ async function getGroupSettlement(req, res) {
         `, [groupId]);
         const members = membersRes.rows;
 
-        // 3. Fetch expenses with splits
+        if (members.length === 0) {
+            return sendSuccess(res, "Settlement calculated successfully", {
+                groupId: group.id,
+                groupName: group.name,
+                groupStatus: group.status,
+                currency: group.currency,
+                totalSpend: 0,
+                members: [],
+                transfers: [],
+                rawSettlementsCount: 0,
+                settlements: []
+            });
+        }
+
+        // 3. Fetch expenses with full detail and splits
         const expensesRes = await pool.query(`
-            SELECT id, paid_by_member_id, amount, description, payment_method, created_at
+            SELECT id, paid_by_member_id, amount, description, category, currency, split_model, payment_method, payment_reference, created_at
             FROM expenses
             WHERE group_id = $1
+            ORDER BY created_at DESC
         `, [groupId]);
 
         const expenseIds = expensesRes.rows.map(e => e.id);
         let splits = [];
         if (expenseIds.length > 0) {
             const splitsRes = await pool.query(`
-                SELECT expense_id, member_id, computed_amount
-                FROM expense_splits
-                WHERE expense_id = ANY($1::uuid[])
+                SELECT es.id, es.expense_id, es.member_id, es.share_type, es.share_value, es.computed_amount,
+                       gm.name as "memberName", gm.avatar_bg as "memberAvatar"
+                FROM expense_splits es
+                JOIN group_members gm ON es.member_id = gm.id
+                WHERE es.expense_id = ANY($1::uuid[])
             `, [expenseIds]);
             splits = splitsRes.rows;
         }
@@ -361,10 +392,48 @@ async function getGroupSettlement(req, res) {
             splitsByExp[s.expense_id].push(s);
         }
 
-        const formattedExpenses = expensesRes.rows.map(e => ({
-            ...e,
-            splits: splitsByExp[e.id] || []
-        }));
+        const memberLookupMap = {};
+        for (const m of members) {
+            memberLookupMap[String(m.id)] = m;
+        }
+
+        const formattedExpenses = expensesRes.rows.map(e => {
+            const payer = memberLookupMap[String(e.paid_by_member_id)] || {
+                id: e.paid_by_member_id,
+                name: 'Traveler',
+                role: 'Traveler',
+                avatar_bg: '#10b981'
+            };
+            const itemSplits = (splitsByExp[e.id] || []).map(s => ({
+                id: s.id,
+                memberId: s.member_id,
+                memberName: s.memberName || (memberLookupMap[String(s.member_id)]?.name || 'Traveler'),
+                memberAvatar: s.memberAvatar || memberLookupMap[String(s.member_id)]?.avatar_bg,
+                shareType: s.share_type,
+                shareValue: Number(s.share_value || 1),
+                computedAmount: Number(s.computed_amount || 0)
+            }));
+
+            return {
+                id: e.id,
+                description: e.description,
+                amount: Number(e.amount),
+                category: e.category || 'Other',
+                currency: e.currency || group.currency,
+                splitModel: e.split_model || 'EQUAL',
+                paymentMethod: e.payment_method || 'CASH',
+                paymentReference: e.payment_reference,
+                createdAt: e.created_at,
+                paidBy: {
+                    id: payer.id,
+                    name: payer.name,
+                    role: payer.role,
+                    avatarBg: payer.avatar_bg
+                },
+                paidByName: payer.name,
+                splits: itemSplits
+            };
+        });
 
         // 4. Fetch settlements
         const settlementsRes = await pool.query(`
@@ -390,13 +459,14 @@ async function getGroupSettlement(req, res) {
             totalSpend: netResult.totalSpend,
             members: netResult.memberSummaries,
             transfers: simplifiedTransfers,
+            expenses: formattedExpenses,
             rawSettlementsCount: settlementsRes.rows.length,
             settlements: settlementsRes.rows.map(s => ({
                 id: s.id,
                 fromMemberId: s.from_member_id,
                 toMemberId: s.to_member_id,
-                fromName: s.fromName,
-                toName: s.toName,
+                fromName: s.fromName || (memberLookupMap[String(s.from_member_id)]?.name || 'Traveler'),
+                toName: s.toName || (memberLookupMap[String(s.to_member_id)]?.name || 'Traveler'),
                 amount: Number(s.amount),
                 currency: s.currency,
                 paymentMethod: s.payment_method,

@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plane, Compass, Sparkles } from 'lucide-react';
-import { CreateGroupHeader } from '../components/CreateGroupHeader';
+import { Compass, ArrowLeft, FileText } from 'lucide-react';
 
 import { StepProgress } from '../components/StepProgress';
 import { DestinationInput } from '../components/DestinationInput';
@@ -227,19 +226,7 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
     addToast('Traveler removed', 'info');
   };
 
-  // Form actions
-  const handleReset = () => {
-    setFormData(getInitialTripForm(user));
-    setErrors({});
-    setCurrentStep(1);
-    addToast('Form reset to clean trip state', 'info');
-  };
-
-  const handleSaveDraft = () => {
-    localStorage.setItem('triptual_trip_draft', JSON.stringify(formData));
-    addToast('Trip draft saved securely in browser!', 'success');
-  };
-
+  // Step navigation actions
   const handleNextStep = () => {
     const newErrors: Record<string, string> = {};
 
@@ -346,53 +333,21 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
     await submitWithData(updatedFormData);
   };
 
-  const getPageTitle = () => {
-    switch (currentStep) {
-      case 1:
-        return 'Trip Details';
-      case 2:
-        return 'Who’s Going?';
-      case 3:
-        return 'Trip Preferences';
-      case 4:
-        return 'Confirm Group Application';
-      default:
-        return 'Create a New Group';
-    }
-  };
-
-  const getPageSubtitle = () => {
-    switch (currentStep) {
-      case 1:
-        return 'Set your trip name, destination, and travel dates.';
-      case 2:
-        return 'Manage travelers and send official invitations to your shared ledger.';
-      case 3:
-        return 'Choose your ledger currency and default expense sharing formula.';
-      case 4:
-        return 'Review your trip details, ledger configuration, and member roster before activation.';
-      default:
-        return 'Organize bookings and split expenses effortlessly.';
-    }
-  };
-
   return (
-    <div className="app-container">
-      <CreateGroupHeader 
-        onHelpClick={() => addToast('GroupTrip Ledger: Create trip, invite companions, track splits & settle debts.', 'info')} 
-        onDashboardClick={onNavigateDashboard}
-      />
-
-      <main className="main-content">
-        {/* Dynamic Step Header */}
-        <section className="page-header-section">
-          <div className="page-badge">
-            <Plane size={13} />
-            <span>Group Travel & Expense Coordinator</span>
-          </div>
-          <h1 className="page-title">{getPageTitle()}</h1>
-          <p className="page-subtitle">{getPageSubtitle()}</p>
-        </section>
+    <div className="app-wrapper create-group-wrapper">
+      <div className="app-content-container create-group-content-container">
+        {/* Clean Back Button with "Create Group" Title */}
+        <div className="create-group-top-bar">
+          <button
+            type="button"
+            className="create-group-back-btn"
+            onClick={() => onNavigateDashboard && onNavigateDashboard()}
+            title="Return to Trips"
+          >
+            <ArrowLeft size={22} />
+          </button>
+          <h1 className="create-group-page-title">Create Group</h1>
+        </div>
 
         {/* Step Progress Indicator (Clickable on visited steps) */}
         <StepProgress currentStep={currentStep} onStepClick={handleStepClick} />
@@ -432,7 +387,7 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
                     </label>
                     <div className="input-with-icon">
                       <div className="input-icon">
-                        <Sparkles size={18} />
+                        <FileText size={18} />
                       </div>
                       <input
                         id="group-name-input"
@@ -513,19 +468,17 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
             </aside>
           </div>
         )}
-      </main>
 
-      {/* Fixed Bottom Action Bar for Steps 1, 2, and 3 */}
-      {currentStep < 4 && (
-        <CreateGroupActionBar
-          currentStep={currentStep}
-          onPrev={handlePrevStep}
-          onNext={handleNextStep}
-          onSaveDraft={handleSaveDraft}
-          onReset={handleReset}
-          isSubmitting={isSubmitting}
-        />
-      )}
+        {/* Fixed Bottom Action Bar for Steps 1, 2, and 3 */}
+        {currentStep < 4 && (
+          <CreateGroupActionBar
+            currentStep={currentStep}
+            onPrev={handlePrevStep}
+            onNext={handleNextStep}
+            isSubmitting={isSubmitting}
+          />
+        )}
+      </div>
 
       {/* Interactive Toast Notifications */}
       <ToastNotification toasts={toasts} onDismiss={removeToast} />

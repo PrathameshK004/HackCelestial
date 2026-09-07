@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Heart, Briefcase, GraduationCap, Compass } from 'lucide-react';
+import { Users, Heart, Briefcase, GraduationCap, Compass } from 'lucide-react';
 import { TRIP_TYPES } from '../mock/mockData';
 import { TripType } from '../types/group';
 
@@ -12,7 +12,7 @@ export const TripTypeSelector: React.FC<TripTypeSelectorProps> = ({ selected, on
   const getIcon = (id: string) => {
     switch (id) {
       case 'Friends':
-        return <Sparkles size={20} />;
+        return <Users size={20} />;
       case 'Family':
         return <Heart size={20} />;
       case 'Corporate':

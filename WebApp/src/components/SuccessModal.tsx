@@ -8,7 +8,8 @@ import {
   Send, 
   MessageCircle, 
   Mail, 
-  Compass
+  Compass,
+  ArrowRight
 } from 'lucide-react';
 
 import { CreatedGroupData, TripFormData } from '../types/group';
@@ -48,152 +49,169 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
   const handleCopy = () => {
     navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
+    setTimeout(() => setCopied(false), 2500);
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="success-drawer-overlay" onClick={onClose}>
       <div
-        className="success-theme-dialog"
+        className="success-drawer-sheet"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        style={{ maxWidth: '580px', width: '92%' }}
       >
-        {/* Top Right Close 'X' Button */}
-        <button
-          type="button"
-          className="success-theme-close-btn"
-          onClick={onClose}
-          aria-label="Close dialog"
-        >
-          <X size={22} strokeWidth={2.2} />
-        </button>
-
-        {/* Circular Checkmark Badge */}
-        <div className="success-icon-outer-ring">
-          <div className="success-icon-inner-circle">
-            <Check size={38} strokeWidth={3.5} color="#ffffff" />
-          </div>
+        {/* Top Handle & Close Bar */}
+        <div className="success-drawer-handle-bar">
+          <div className="success-drawer-handle" />
+          <button
+            type="button"
+            className="success-drawer-close-btn"
+            onClick={onClose}
+            aria-label="Close dialog"
+          >
+            <X size={18} strokeWidth={2.4} />
+          </button>
         </div>
 
-        {/* Success Message Heading */}
-        <h2 className="success-theme-title">
-          Trip Workspace Created<br />Successfully!
-        </h2>
-
-        {/* Trip Context Card */}
-        <div className="created-trip-summary-box">
-          <div className="trip-summary-top">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Compass size={18} className="text-emerald-600" />
-              <strong style={{ fontSize: '1.05rem', color: 'var(--slate-900)' }}>
-                {tripData.groupName || createdGroup?.name}
-              </strong>
-            </div>
-            <span className="trip-type-pill">{tripData.tripType || createdGroup?.tripType}</span>
+        <div className="success-drawer-content">
+          {/* Refined Check Icon Badge */}
+          <div className="success-drawer-icon-badge">
+            <Check size={24} strokeWidth={3} />
           </div>
 
-          <p style={{ fontSize: '0.85rem', color: 'var(--slate-600)', margin: '6px 0 0 0' }}>
-            📍 <strong>{tripData.destination || createdGroup?.destination}</strong> •{' '}
-            {startDateFormatted && endDateFormatted ? `${startDateFormatted} - ${endDateFormatted}` : `${durationDays} Days`} •{' '}
-            {tripData.currency} ({tripData.expenseSplit} split)
+          {/* Heading */}
+          <h2 className="success-drawer-title">
+            Trip Workspace Created!
+          </h2>
+          <p className="success-drawer-subtitle">
+            Your trip workspace is ready. Invite your travelers to begin planning.
           </p>
 
-          {(createdGroup?.paymentStatus === 'PAID' || tripData.payment?.status === 'PAID') && (
-            <div className="created-trip-payment-badge">
-              <span className="payment-check-chip">
-                <Check size={12} strokeWidth={3} />
-                ₹19.00 Large Squad Upgrade Activated
-              </span>
-              {(createdGroup?.paymentTransactionId || tripData.payment?.transactionId) && (
-                <span className="payment-txn-text">
-                  Txn: {createdGroup?.paymentTransactionId || tripData.payment?.transactionId}
+          {/* Trip Summary Card */}
+          <div className="success-drawer-trip-card">
+            <div className="success-drawer-trip-header">
+              <div className="success-drawer-trip-name-wrap">
+                <Compass size={17} className="success-drawer-compass" />
+                <span className="success-drawer-trip-name">
+                  {tripData.groupName || createdGroup?.name || 'Untitled Trip'}
                 </span>
-              )}
+              </div>
+              <span className="success-drawer-type-pill">
+                {tripData.tripType || createdGroup?.tripType || 'Trip'}
+              </span>
             </div>
-          )}
-        </div>
 
-        {/* Shareable Invite Section */}
-        <div className="invite-sharing-section">
-          <div className="invite-section-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Share2 size={16} className="text-emerald-600" />
-              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--slate-900)' }}>
-                Invite Travelers via Multi-App Links
-              </h4>
+            <div className="success-drawer-trip-details">
+              <span>📍 {tripData.destination || createdGroup?.destination}</span>
+              <span className="success-drawer-dot">•</span>
+              <span>{startDateFormatted && endDateFormatted ? `${startDateFormatted} - ${endDateFormatted}` : `${durationDays} Days`}</span>
+              <span className="success-drawer-dot">•</span>
+              <span>{tripData.currency} ({tripData.expenseSplit} split)</span>
             </div>
-            <span className="invite-code-pill">Code: {createdGroup?.inviteCode || 'TRIP-READY'}</span>
+
+            {(createdGroup?.paymentStatus === 'PAID' || tripData.payment?.status === 'PAID') && (
+              <div className="success-drawer-payment-badge">
+                <Check size={12} strokeWidth={3} />
+                <span>Squad Upgrade Activated</span>
+                {(createdGroup?.paymentTransactionId || tripData.payment?.transactionId) && (
+                  <span className="success-drawer-txn">
+                    • Txn: {createdGroup?.paymentTransactionId || tripData.payment?.transactionId}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Copyable Link Input */}
-          <div className="copy-link-input-wrap">
-            <input 
-              type="text" 
-              readOnly 
-              value={inviteUrl} 
-              className="copy-link-input"
-            />
-            <button 
-              type="button" 
-              className={`btn-copy-link ${copied ? 'copied' : ''}`}
-              onClick={handleCopy}
-            >
-              {copied ? <CheckCheck size={16} /> : <Copy size={16} />}
-              <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-            </button>
+          {/* Share Section */}
+          <div className="success-drawer-share-section">
+            <div className="success-drawer-share-header">
+              <div className="success-drawer-share-title">
+                <Share2 size={15} />
+                <span>Invite Travelers</span>
+              </div>
+              <span className="success-drawer-code-pill">
+                Code: <strong>{createdGroup?.inviteCode || 'TRIP-READY'}</strong>
+              </span>
+            </div>
+
+            {/* Copyable Link Field */}
+            <div className="success-drawer-copy-bar">
+              <input 
+                type="text" 
+                readOnly 
+                value={inviteUrl} 
+                className="success-drawer-copy-input"
+              />
+              <button 
+                type="button" 
+                className={`success-drawer-copy-btn ${copied ? 'copied' : ''}`}
+                onClick={handleCopy}
+              >
+                {copied ? <CheckCheck size={15} strokeWidth={2.4} /> : <Copy size={15} strokeWidth={2.2} />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+
+            {/* Unified 4-App Share Grid */}
+            <div className="success-drawer-apps-grid">
+              <a 
+                href={shareLinks.whatsapp} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="success-drawer-app-item app-whatsapp"
+              >
+                <div className="app-icon-wrap whatsapp-icon">
+                  <MessageCircle size={16} />
+                </div>
+                <span>WhatsApp</span>
+              </a>
+
+              <a 
+                href={shareLinks.telegram} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="success-drawer-app-item app-telegram"
+              >
+                <div className="app-icon-wrap telegram-icon">
+                  <Send size={15} />
+                </div>
+                <span>Telegram</span>
+              </a>
+
+              <a 
+                href={shareLinks.sms} 
+                className="success-drawer-app-item app-sms"
+              >
+                <div className="app-icon-wrap sms-icon">
+                  <MessageCircle size={16} />
+                </div>
+                <span>SMS</span>
+              </a>
+
+              <a 
+                href={`mailto:?subject=${encodeURIComponent(`Join "${tripData.groupName}" on Triptual`)}&body=${encodeURIComponent(`Hey!\n\nJoin our trip to ${tripData.destination}: ${inviteUrl}`)}`} 
+                className="success-drawer-app-item app-email"
+              >
+                <div className="app-icon-wrap email-icon">
+                  <Mail size={16} />
+                </div>
+                <span>Email</span>
+              </a>
+            </div>
           </div>
 
-          {/* 1-Click Multi-App Sharing Buttons */}
-          <div className="multi-app-share-grid">
-            <a 
-              href={shareLinks.whatsapp} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="share-app-btn share-whatsapp"
-            >
-              <MessageCircle size={18} />
-              <span>WhatsApp</span>
-            </a>
-
-            <a 
-              href={shareLinks.telegram} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="share-app-btn share-telegram"
-            >
-              <Send size={18} />
-              <span>Telegram</span>
-            </a>
-
-            <a 
-              href={shareLinks.sms} 
-              className="share-app-btn share-sms"
-            >
-              <MessageCircle size={18} />
-              <span>SMS</span>
-            </a>
-
-            <a 
-              href={`mailto:?subject=${encodeURIComponent(`Join "${tripData.groupName}" on Triptual`)}&body=${encodeURIComponent(`Hey!\n\nJoin our trip to ${tripData.destination}: ${inviteUrl}`)}`} 
-              className="share-app-btn share-email"
-            >
-              <Mail size={18} />
-              <span>Email</span>
-            </a>
-          </div>
+          {/* Primary Action Button */}
+          <button
+            type="button"
+            className="success-drawer-dashboard-btn"
+            onClick={onClose}
+          >
+            <span>Go to Trip Dashboard</span>
+            <ArrowRight size={17} strokeWidth={2.2} />
+          </button>
         </div>
-
-        {/* Action Button */}
-        <button
-          type="button"
-          className="success-theme-done-btn"
-          onClick={onClose}
-        >
-          Go to Trip Dashboard
-        </button>
       </div>
     </div>
   );
 };
+

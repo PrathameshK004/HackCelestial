@@ -140,11 +140,17 @@ export interface GroupSummary {
   memberCount: number;
   status: 'ACTIVE' | 'SETTLED';
   createdAt: string;
+  expenseSplit?: ExpenseSplit;
+  tripType?: TripType;
+  members?: Traveler[];
 }
 
-export interface SettlementMember extends Traveler {
+export interface SettlementMember extends Omit<Traveler, 'status'> {
   upiId?: string;
   netBalance?: number;
+  totalPaid?: number;
+  totalOwed?: number;
+  status?: string;
 }
 
 export interface ExpenseSplitDetail {

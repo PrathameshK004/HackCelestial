@@ -140,13 +140,13 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
         isOptedIn: selectedMemberIds.includes(m.id),
       }));
 
-      // Call live backend endpoint if valid UUID group
-      if (currentGroup.id && !currentGroup.id.startsWith('mock-') && !currentGroup.id.startsWith('grp-')) {
+      // Call live backend endpoint
+      if (currentGroup.id) {
         await groupService.addExpense(currentGroup.id, {
           description: title.trim(),
           amount: Number(amount).toFixed(2),
           category,
-          currency: currentGroup.currency,
+          currency: currentGroup.currency || 'INR',
           splitModel,
           paidByMemberId: payer.id,
           participants: participantsPayload,

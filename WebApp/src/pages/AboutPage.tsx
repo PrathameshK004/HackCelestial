@@ -57,24 +57,12 @@ export const AboutPage: React.FC<AboutPageProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
               type="button"
-              className="btn-icon-circle"
+              className="btn-back-transparent"
               onClick={onBack}
               title="Back to Dashboard"
-              style={{
-                width: '40px',
-                height: '40px',
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-card)',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
+              aria-label="Back to Dashboard"
             >
-              <ArrowLeft size={18} color="var(--text-primary)" />
+              <ArrowLeft size={22} color="var(--text-primary)" />
             </button>
 
             <div>

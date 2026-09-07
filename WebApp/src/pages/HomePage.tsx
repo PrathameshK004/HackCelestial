@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Compass,
   Plus,
@@ -24,10 +25,12 @@ import {
   LogOut,
   Zap,
   Check,
-  Wallet,
   Split,
   Info,
   Menu,
+  Car,
+  ShoppingBag,
+  Receipt,
   X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -44,9 +47,8 @@ import { QuickExpenseModal } from '../components/home/QuickExpenseModal';
 import { JoinGroupModal } from '../components/home/JoinGroupModal';
 import { SettleUpModal } from '../components/settlement/SettleUpModal';
 import {
-  MOCK_DASHBOARD_GROUPS,
-  SimplifiedTransfer,
-  calculateOptimalSettlements
+  GroupCardItem,
+  SimplifiedTransfer
 } from '../mock/dashboardMockData';
 import { RoundtableGroupsIcon } from '../components/common/RoundtableGroupsIcon';
 
@@ -285,14 +287,17 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const [selectedStay, setSelectedStay] = useState<CuratedStay | null>(null);
   const [savedStayIds, setSavedStayIds] = useState<string[]>(['stay-cozy-den', 'stay-oasis']);
 
-  // Backend & Mock Data States
+  // Backend & Real Data States
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupSummary | null>(null);
   const [settlement, setSettlement] = useState<SettlementData | null>(null);
   const [isLoadingGroups, setIsLoadingGroups] = useState(true);
+  const [expenseGroupSettlement, setExpenseGroupSettlement] = useState<SettlementData | null>(null);
+  const [expenseGroupBills, setExpenseGroupBills] = useState<any[]>([]);
+  const [isLoadingExpenseData, setIsLoadingExpenseData] = useState<boolean>(false);
 
   // Modals & Menus
-  const [selectedExpenseGroupId, setSelectedExpenseGroupId] = useState<string>(MOCK_DASHBOARD_GROUPS[0]?.id || 'custom-sandbox');
+  const [selectedExpenseGroupId, setSelectedExpenseGroupId] = useState<string>('');
   const [isCopiedShare, setIsCopiedShare] = useState(false);
   const [completedTransferIds, setCompletedTransferIds] = useState<string[]>([]);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -305,12 +310,17 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [settleTransferData, setSettleTransferData] = useState<SimplifiedTransfer | null>(null);
+  const [splitTab, setSplitTab] = useState<'transfers' | 'expenses'>('transfers');
 
   const profileMenuRef = React.useRef<HTMLDivElement>(null);
 
   // Close profile dropdown on outside click
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('.mobile-side-drawer-portal')) {
+        return;
+      }
       if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
         setIsProfileMenuOpen(false);
       }
@@ -332,6 +342,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
           const matched = response.data.find((g: any) => g.id === initialSelectedGroupId);
           if (matched) setSelectedGroup(matched);
         }
+        if (response.data.length > 0) {
+          setSelectedExpenseGroupId((prev) => {
+            const exists = response.data.some((g: any) => g.id === prev);
+            return exists && prev ? prev : response.data[0].id;
+          });
+        }
       } else {
         setGroups([]);
       }
@@ -343,9 +359,36 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     }
   };
 
+  const loadExpenseGroupData = async (grpId: string) => {
+    if (!grpId) return;
+    setIsLoadingExpenseData(true);
+    try {
+      const [settlementRes, expensesRes] = await Promise.all([
+        groupService.getSettlement(grpId).catch(() => null),
+        groupService.getExpenses(grpId).catch(() => null)
+      ]);
+      if (settlementRes?.data) {
+        setExpenseGroupSettlement(settlementRes.data);
+      }
+      if (expensesRes?.data && Array.isArray(expensesRes.data)) {
+        setExpenseGroupBills(expensesRes.data);
+      }
+    } catch (e) {
+      console.warn('Failed to load expense group data:', e);
+    } finally {
+      setIsLoadingExpenseData(false);
+    }
+  };
+
   useEffect(() => {
     loadGroups();
   }, []);
+
+  useEffect(() => {
+    if (selectedExpenseGroupId) {
+      loadExpenseGroupData(selectedExpenseGroupId);
+    }
+  }, [selectedExpenseGroupId]);
 
   // Fetch group settlement when group is selected
   useEffect(() => {
@@ -388,6 +431,74 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     .slice(0, 2)
     .toUpperCase();
 
+  // Dynamic Real Groups for QuickExpenseModal & Dashboards
+  const realDashboardGroups: GroupCardItem[] = useMemo(() => {
+    if (!groups || groups.length === 0) return [];
+    return groups.map((g: any) => {
+      const isSelected = g.id === selectedExpenseGroupId;
+      const membersSource = (isSelected && expenseGroupSettlement?.members && expenseGroupSettlement.members.length > 0)
+        ? expenseGroupSettlement.members
+        : (g.members || []);
+
+      const mappedMembers = membersSource.map((m: any) => ({
+        id: String(m.id),
+        name: m.name || 'Traveler',
+        email: m.email || '',
+        role: (m.role === 'Organizer' ? 'Organizer' : 'Traveler') as 'Organizer' | 'Traveler',
+        avatarBg: m.avatarBg || '#10B981',
+        isUser: m.userId === user?.userId,
+        balance: m.netBalance || 0
+      }));
+
+      const finalMembers = mappedMembers.length > 0 ? mappedMembers : [
+        {
+          id: 'org-' + (user?.userId || 'me'),
+          name: user?.username || 'You (Organizer)',
+          email: user?.emailId || '',
+          role: 'Organizer' as const,
+          avatarBg: '#059669',
+          isUser: true,
+          balance: 0
+        }
+      ];
+
+      return {
+        id: g.id,
+        name: g.name,
+        destination: g.destination || 'Expedition',
+        tag: g.tripType || 'Trip',
+        tripType: (g.tripType || 'Friends') as any,
+        status: 'active' as const,
+        startDate: g.startDate || '',
+        endDate: g.endDate || '',
+        currency: g.currency || 'INR',
+        currencySymbol: g.currency === 'USD' ? '$' : (g.currency === 'EUR' ? '€' : '₹'),
+        totalBudget: 0,
+        totalSpent: isSelected && expenseGroupSettlement?.totalSpend ? expenseGroupSettlement.totalSpend : 0,
+        userBalance: 0,
+        members: finalMembers,
+        expenses: isSelected ? expenseGroupBills.map((b: any) => ({
+          id: b.id,
+          title: b.description,
+          amount: Number(b.amount),
+          currency: b.currency || 'INR',
+          category: (b.category || 'Other') as any,
+          paidBy: {
+            name: b.paidBy?.name || 'Traveler',
+            avatarBg: b.paidBy?.avatarBg || '#10B981',
+            isUser: false
+          },
+          splitWithCount: b.splits?.length || 1,
+          date: new Date(b.createdAt).toLocaleDateString(),
+          time: new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        })) : [],
+        inviteCode: '',
+        coverGradient: 'linear-gradient(135deg, #243E36 0%, #1A2E28 100%)',
+        description: g.description || ''
+      };
+    });
+  }, [groups, selectedExpenseGroupId, expenseGroupSettlement, expenseGroupBills, user]);
+
   // ---------------- VIEW: DEDICATED PROFILE PAGE ----------------
   if (isProfileOpen || dockTab === 'profile') {
     return (
@@ -403,12 +514,81 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   // ---------------- VIEW: DEDICATED PAYMENTS FULL PAGE ----------------
   if (isPaymentHistoryOpen) {
     return (
-      <PaymentsPage
-        onBack={() => {
-          setIsPaymentHistoryOpen(false);
-          setDockTab('explore');
-        }}
-      />
+      <div className="app-wrapper">
+        <PaymentsPage
+          onBack={() => {
+            setIsPaymentHistoryOpen(false);
+            setDockTab('explore');
+          }}
+        />
+
+        {/* Bottom Floating Navigation Dock (Mobile-First) */}
+        <nav className="yondr-bottom-dock">
+          <div className="yondr-bottom-dock-inner">
+            <button
+              type="button"
+              className="dock-tab-btn"
+              onClick={() => {
+                setIsPaymentHistoryOpen(false);
+                setDockTab('explore');
+              }}
+            >
+              <Compass size={20} />
+              <span>Explore</span>
+            </button>
+
+            <button
+              type="button"
+              className="dock-tab-btn"
+              onClick={() => {
+                setIsPaymentHistoryOpen(false);
+                setDockTab('trips');
+              }}
+            >
+              <RoundtableGroupsIcon size={26} />
+              <span>Groups</span>
+            </button>
+
+            {/* Central Elevated Floating Action Button (+) */}
+            <div className="dock-fab-wrapper">
+              <button
+                type="button"
+                className="dock-fab-btn"
+                onClick={() => {
+                  setIsPaymentHistoryOpen(false);
+                  onCreateGroup();
+                }}
+                title="Create New Trip"
+              >
+                <Plus size={24} strokeWidth={2.6} />
+              </button>
+              <span className="dock-fab-label">Create</span>
+            </div>
+
+            <button
+              type="button"
+              className="dock-tab-btn"
+              onClick={() => {
+                setIsPaymentHistoryOpen(false);
+                setDockTab('expenses');
+              }}
+            >
+              <Split size={20} />
+              <span>Split</span>
+            </button>
+
+            <button
+              type="button"
+              className="dock-tab-btn active"
+              onClick={() => setIsPaymentHistoryOpen(true)}
+              title="Payment History"
+            >
+              <CreditCard size={20} />
+              <span>Payments</span>
+            </button>
+          </div>
+        </nav>
+      </div>
     );
   }
 
@@ -470,8 +650,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     );
   }
 
-  // If a group is selected and settlement is loaded, render GroupMenuPage
-  if (selectedGroup && settlement) {
+  // If a group is selected, render GroupMenuPage immediately
+  if (selectedGroup) {
     return (
       <GroupMenuPage
         group={selectedGroup}
@@ -514,10 +694,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 type="button"
                 className="btn-icon-circle"
                 onClick={() => setSelectedStay(null)}
-                style={{ background: 'rgba(255,255,255,0.85)' }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  boxShadow: 'none',
+                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.6))'
+                }}
                 title="Back to matches"
               >
-                <ArrowLeft size={18} />
+                <ArrowLeft size={22} color="#FFFFFF" />
               </button>
 
               <div
@@ -558,7 +744,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 {selectedStay.destination} · {selectedStay.dateRange} · {selectedStay.guests} guests
               </div>
               <h1 className="stay-hero-name">
-                <MapPin size={22} color="#E5EC68" fill="#E5EC68" />
+                <span className="stay-name-pin-wrap">
+                  <MapPin size={22} color="#E5EC68" fill="#E5EC68" />
+                </span>
                 <span>{selectedStay.name}</span>
               </h1>
             </div>
@@ -645,70 +833,83 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 <span className="section-counter-badge">3/12</span>
               </div>
 
-              <table className="compare-matrix-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '22%' }} />
-                    <th style={{ width: '26%' }}>
-                      <img
-                        src={selectedStay.image}
-                        alt="stay 1"
-                        className="compare-thumb-img"
-                      />
-                    </th>
-                    <th style={{ width: '26%' }}>
-                      <img
-                        src="https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=300&q=80"
-                        alt="stay 2"
-                        className="compare-thumb-img"
-                      />
-                    </th>
-                    <th style={{ width: '26%' }}>
-                      <img
-                        src="https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=300&q=80"
-                        alt="stay 3"
-                        className="compare-thumb-img"
-                      />
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Match</td>
-                    <td>
-                      <span className="match-badge" style={{ padding: '2px 8px' }}>
-                        {selectedStay.matchScore}%
-                      </span>
-                    </td>
-                    <td>85%</td>
-                    <td>81%</td>
-                  </tr>
-                  <tr>
-                    <td>Price</td>
-                    <td style={{ fontWeight: 600 }}>${selectedStay.pricePerNight}</td>
-                    <td>$132</td>
-                    <td>$120</td>
-                  </tr>
-                  <tr>
-                    <td>Style</td>
-                    <td>{selectedStay.style}</td>
-                    <td>Coastal</td>
-                    <td>Classic</td>
-                  </tr>
-                  <tr>
-                    <td>Location</td>
-                    <td>{selectedStay.distance}</td>
-                    <td>1.2 km</td>
-                    <td>2 km</td>
-                  </tr>
-                  <tr>
-                    <td>Reviews</td>
-                    <td>★ {selectedStay.rating}</td>
-                    <td>★ 4.91</td>
-                    <td>★ 4.91</td>
-                  </tr>
-                </tbody>
-              </table>
+              <div className="compare-matrix-scroll">
+                <table className="compare-matrix-table">
+                  <thead>
+                    <tr>
+                      <th className="compare-col-label" style={{ width: '22%' }} />
+                      <th className="compare-col-item active-col" style={{ width: '26%' }}>
+                        <div className="compare-thumb-wrap">
+                          <img
+                            src={selectedStay.image}
+                            alt={selectedStay.name}
+                            className="compare-thumb-img active-thumb"
+                          />
+                          <span className="compare-current-badge">Selected</span>
+                        </div>
+                      </th>
+                      <th className="compare-col-item" style={{ width: '26%' }}>
+                        <div className="compare-thumb-wrap">
+                          <img
+                            src="https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=300&q=80"
+                            alt="Alternative 1"
+                            className="compare-thumb-img"
+                          />
+                          <span className="compare-alt-badge">Alt 1</span>
+                        </div>
+                      </th>
+                      <th className="compare-col-item" style={{ width: '26%' }}>
+                        <div className="compare-thumb-wrap">
+                          <img
+                            src="https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=300&q=80"
+                            alt="Alternative 2"
+                            className="compare-thumb-img"
+                          />
+                          <span className="compare-alt-badge">Alt 2</span>
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Match</td>
+                      <td className="active-col">
+                        <span className="match-badge" style={{ padding: '2px 8px' }}>
+                          {selectedStay.matchScore}%
+                        </span>
+                      </td>
+                      <td>85%</td>
+                      <td>81%</td>
+                    </tr>
+                    <tr>
+                      <td>Price</td>
+                      <td className="active-col" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        ${selectedStay.pricePerNight}
+                      </td>
+                      <td>$132</td>
+                      <td>$120</td>
+                    </tr>
+                    <tr>
+                      <td>Style</td>
+                      <td className="active-col">{selectedStay.style}</td>
+                      <td>Coastal</td>
+                      <td>Classic</td>
+                    </tr>
+                    <tr>
+                      <td>Location</td>
+                      <td className="active-col">{selectedStay.distance}</td>
+                      <td>1.2 km</td>
+                      <td>2 km</td>
+                    </tr>
+                    <tr>
+                      <td>Reviews</td>
+                      <td className="active-col">★ {selectedStay.rating}</td>
+                      <td>★ 4.91</td>
+                      <td>★ 4.91</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Why We Matched You */}
@@ -735,35 +936,43 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
             {/* Sticky Action Bar */}
             <div className="sticky-action-bar">
-              <div className="sticky-price-col">
-                <div className="price-main">
-                  ${selectedStay.pricePerNight}{' '}
-                  <span style={{ fontSize: '0.88rem', fontWeight: 400, color: 'var(--text-secondary)' }}>
-                    /night
-                  </span>
+              <div className="sticky-action-header-row">
+                <div className="sticky-price-col">
+                  <div className="price-main">
+                    ${selectedStay.pricePerNight}
+                    <span className="price-period">/night</span>
+                  </div>
+                  <div className="price-sub">
+                    ${selectedStay.pricePerNight * selectedStay.totalNights} total · {selectedStay.totalNights} nights
+                  </div>
                 </div>
-                <div className="price-sub">
-                  ${selectedStay.pricePerNight * selectedStay.totalNights} · {selectedStay.totalNights} nights
+
+                <div className="sticky-rating-pill">
+                  <Star size={13} fill="var(--accent-chartreuse)" color="var(--accent-olive)" />
+                  <span>{selectedStay.rating}</span>
+                  <span style={{ color: 'var(--border-card)' }}>·</span>
+                  <span style={{ color: 'var(--accent-olive)' }}>{selectedStay.matchScore}% Match</span>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="sticky-action-btns-group">
                 <button
                   type="button"
-                  className="btn-pill-reserve"
+                  className="btn-pill-action btn-pill-ledger"
                   onClick={() => onCreateGroup()}
                 >
-                  Create Trip Ledger
+                  <Users size={15} />
+                  <span>Create Trip Ledger</span>
                 </button>
                 <button
                   type="button"
-                  className="btn-pill-reserve"
-                  style={{ background: 'var(--accent-olive)', color: '#fff', borderColor: 'var(--accent-olive)' }}
+                  className="btn-pill-action btn-pill-reserve"
                   onClick={() => {
                     alert(`Booking reservation confirmed for ${selectedStay.name}!`);
                   }}
                 >
-                  Reserve
+                  <span>Reserve</span>
+                  <ArrowRight size={15} />
                 </button>
               </div>
             </div>
@@ -816,6 +1025,155 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
       </div>
     );
   }
+
+  // Reusable Profile Menu Content (for desktop dropdown and mobile side drawer)
+  const renderProfileMenuItems = () => (
+    <>
+      {/* User Mini Card */}
+      <div className="profile-menu-user-header">
+        <div className="profile-menu-avatar">
+          {displayInitials}
+        </div>
+        <div className="profile-menu-user-info">
+          <div className="profile-menu-name">{displayName}</div>
+          <div className="profile-menu-email">{user?.emailId || 'organizer@triptual.com'}</div>
+        </div>
+      </div>
+
+      <div className="profile-menu-divider" />
+
+      {/* 6 Requested Menu Options */}
+      <div className="profile-menu-items-list">
+        {/* 1. My Profile */}
+        <button
+          type="button"
+          className="profile-menu-item"
+          onClick={() => {
+            setIsProfileMenuOpen(false);
+            setIsProfileOpen(true);
+          }}
+        >
+          <div className="profile-menu-item-icon">
+            <User size={15} />
+          </div>
+          <div className="profile-menu-item-text">
+            <span>My Profile</span>
+            <small>Personal & travel identity</small>
+          </div>
+        </button>
+
+        {/* 2. Payments */}
+        <button
+          type="button"
+          className="profile-menu-item"
+          onClick={() => {
+            setIsProfileMenuOpen(false);
+            setIsPaymentHistoryOpen(true);
+          }}
+        >
+          <div className="profile-menu-item-icon">
+            <CreditCard size={15} />
+          </div>
+          <div className="profile-menu-item-text">
+            <span>Payments</span>
+            <small>UPI VPAs & settlement history</small>
+          </div>
+        </button>
+
+        {/* 3. Saved trips */}
+        <button
+          type="button"
+          className="profile-menu-item"
+          onClick={() => {
+            setIsProfileMenuOpen(false);
+            setIsSavedTripsOpen(true);
+          }}
+        >
+          <div className="profile-menu-item-icon">
+            <Heart size={15} />
+          </div>
+          <div className="profile-menu-item-text">
+            <span>Saved trips</span>
+            <small>{savedStayIds.length} saved destinations</small>
+          </div>
+        </button>
+
+        {/* 4. Security and setting */}
+        <button
+          type="button"
+          className="profile-menu-item"
+          onClick={() => {
+            setIsProfileMenuOpen(false);
+            setIsSecurityOpen(true);
+          }}
+        >
+          <div className="profile-menu-item-icon">
+            <ShieldCheck size={15} />
+          </div>
+          <div className="profile-menu-item-text">
+            <span>Security & Setting</span>
+            <small>Password, 2FA & devices</small>
+          </div>
+        </button>
+
+        {/* 5. Help and support */}
+        <button
+          type="button"
+          className="profile-menu-item"
+          onClick={() => {
+            setIsProfileMenuOpen(false);
+            setIsHelpOpen(true);
+          }}
+        >
+          <div className="profile-menu-item-icon">
+            <HelpCircle size={15} />
+          </div>
+          <div className="profile-menu-item-text">
+            <span>Help & Support</span>
+            <small>FAQs & support guides</small>
+          </div>
+        </button>
+
+        {/* 6. About Triptual */}
+        <button
+          type="button"
+          className="profile-menu-item"
+          onClick={() => {
+            setIsProfileMenuOpen(false);
+            setIsAboutOpen(true);
+          }}
+        >
+          <div className="profile-menu-item-icon">
+            <Info size={15} />
+          </div>
+          <div className="profile-menu-item-text">
+            <span>About Triptual</span>
+            <small>Algorithm, security & mission</small>
+          </div>
+        </button>
+      </div>
+
+      <div className="profile-menu-divider" />
+
+      {/* 7. Logout */}
+      <button
+        type="button"
+        className="profile-menu-item profile-menu-logout"
+        onClick={() => {
+          setIsProfileMenuOpen(false);
+          logout();
+        }}
+      >
+        <div className="profile-menu-item-icon logout-icon">
+          <LogOut size={15} />
+        </div>
+        <div className="profile-menu-item-text">
+          <span>Logout</span>
+          <small>End active session securely</small>
+        </div>
+      </button>
+    </>
+  );
 
   // ---------------- MAIN APP WRAPPER ----------------
   return (
@@ -894,188 +1252,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                   <User size={18} />
                 </button>
 
+                {/* Desktop Profile Dropdown (attached directly beneath avatar) */}
                 {isProfileMenuOpen && (
-                  <>
-                    <div
-                      className="mobile-drawer-backdrop"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                    />
-
-                    <div className="luxury-profile-dropdown-menu">
-                      {/* Mobile Drawer Header with Close Button */}
-                      <div className="mobile-drawer-header">
-                        <div
-                          className="mobile-drawer-title"
-                          onClick={() => {
-                            setDockTab('explore');
-                            setIsProfileMenuOpen(false);
-                          }}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <img
-                            src="/triptual-logo.png"
-                            alt="Triptual"
-                            className="triptual-header-logo-icon"
-                            style={{ width: '28px', height: '28px' }}
-                          />
-                          <span className="triptual-logo-text" style={{ fontSize: '1.3rem' }}>Triptual</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="mobile-drawer-close"
-                          onClick={() => setIsProfileMenuOpen(false)}
-                          aria-label="Close menu"
-                        >
-                          <X size={15} />
-                        </button>
-                      </div>
-
-                      {/* User Mini Card */}
-                    <div className="profile-menu-user-header">
-                      <div className="profile-menu-avatar">
-                        {displayInitials}
-                      </div>
-                      <div className="profile-menu-user-info">
-                        <div className="profile-menu-name">{displayName}</div>
-                        <div className="profile-menu-email">{user?.emailId || 'organizer@triptual.com'}</div>
-                      </div>
-                    </div>
-
-                    <div className="profile-menu-divider" />
-
-                    {/* 6 Requested Menu Options */}
-                    <div className="profile-menu-items-list">
-                      {/* 1. My Profile */}
-                      <button
-                        type="button"
-                        className="profile-menu-item"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          setIsProfileOpen(true);
-                        }}
-                      >
-                        <div className="profile-menu-item-icon">
-                          <User size={15} />
-                        </div>
-                        <div className="profile-menu-item-text">
-                          <span>My Profile</span>
-                          <small>Personal & travel identity</small>
-                        </div>
-                      </button>
-
-                      {/* 2. Payments */}
-                      <button
-                        type="button"
-                        className="profile-menu-item"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          setIsPaymentHistoryOpen(true);
-                        }}
-                      >
-                        <div className="profile-menu-item-icon">
-                          <CreditCard size={15} />
-                        </div>
-                        <div className="profile-menu-item-text">
-                          <span>Payments</span>
-                          <small>UPI VPAs & settlement history</small>
-                        </div>
-                      </button>
-
-                      {/* 3. Saved trips */}
-                      <button
-                        type="button"
-                        className="profile-menu-item"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          setIsSavedTripsOpen(true);
-                        }}
-                      >
-                        <div className="profile-menu-item-icon">
-                          <Heart size={15} />
-                        </div>
-                        <div className="profile-menu-item-text">
-                          <span>Saved trips</span>
-                          <small>{savedStayIds.length} saved destinations</small>
-                        </div>
-                      </button>
-
-                      {/* 4. Security and setting */}
-                      <button
-                        type="button"
-                        className="profile-menu-item"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          setIsSecurityOpen(true);
-                        }}
-                      >
-                        <div className="profile-menu-item-icon">
-                          <ShieldCheck size={15} />
-                        </div>
-                        <div className="profile-menu-item-text">
-                          <span>Security & Setting</span>
-                          <small>Password, 2FA & devices</small>
-                        </div>
-                      </button>
-
-                      {/* 5. Help and support */}
-                      <button
-                        type="button"
-                        className="profile-menu-item"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          setIsHelpOpen(true);
-                        }}
-                      >
-                        <div className="profile-menu-item-icon">
-                          <HelpCircle size={15} />
-                        </div>
-                        <div className="profile-menu-item-text">
-                          <span>Help & Support</span>
-                          <small>FAQs & support guides</small>
-                        </div>
-                      </button>
-
-                      {/* 6. About Triptual */}
-                      <button
-                        type="button"
-                        className="profile-menu-item"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          setIsAboutOpen(true);
-                        }}
-                      >
-                        <div className="profile-menu-item-icon">
-                          <Info size={15} />
-                        </div>
-                        <div className="profile-menu-item-text">
-                          <span>About Triptual</span>
-                          <small>Algorithm, security & mission</small>
-                        </div>
-                      </button>
-                    </div>
-
-                    <div className="profile-menu-divider" />
-
-                    {/* 7. Logout */}
-                    <button
-                      type="button"
-                      className="profile-menu-item profile-menu-logout"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        logout();
-                      }}
-                    >
-                      <div className="profile-menu-item-icon logout-icon">
-                        <LogOut size={15} />
-                      </div>
-                      <div className="profile-menu-item-text">
-                        <span>Logout</span>
-                        <small>End active session securely</small>
-                      </div>
-                    </button>
+                  <div className="luxury-profile-dropdown-menu desktop-profile-dropdown">
+                    {renderProfileMenuItems()}
                   </div>
-                </>
-              )}
+                )}
               </div>
             </div>
           </div>
@@ -1482,18 +1664,60 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
         {/* ---------------- TAB: EXPENSE SPLIT & SETTLEMENT ENGINE ---------------- */}
         {dockTab === 'expenses' && (() => {
-          const activeGrp = MOCK_DASHBOARD_GROUPS.find((g) => g.id === selectedExpenseGroupId) || MOCK_DASHBOARD_GROUPS[0];
-          const optimal = calculateOptimalSettlements(
-            activeGrp.members,
-            activeGrp.currency,
-            activeGrp.currencySymbol
+          if (!groups || groups.length === 0) {
+            return (
+              <main className="expense-split-dashboard animate-fade-in" style={{ padding: '24px 16px' }}>
+                <div className="curated-header-info">
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(36, 62, 54, 0.08)', color: '#243E36', padding: '3px 12px', borderRadius: '9999px', fontSize: '0.74rem', fontWeight: 700, marginBottom: '6px' }}>
+                    <Zap size={13} color="#10B981" /> AI Debt Graph Active
+                  </div>
+                  <h2 className="curated-title">Expense Split & Settlement</h2>
+                  <div className="curated-meta">
+                    <span>Smart settlement algorithm · Zero redundant peer transfers</span>
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'center', padding: '50px 20px', background: 'var(--bg-surface)', borderRadius: '24px', border: '1px solid var(--border-light)', margin: '20px 0' }}>
+                  <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(36, 62, 54, 0.08)', color: '#243E36', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                    <Zap size={26} color="#10B981" />
+                  </div>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+                    No Active Expeditions Yet
+                  </h3>
+                  <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', maxWidth: '380px', margin: '0 auto 20px', lineHeight: 1.5 }}>
+                    Create your first trip group with travel companions to start logging expenses with real-time graph debt simplification and zero breakpoints.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={onCreateGroup}
+                    style={{ padding: '10px 24px', borderRadius: '9999px', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: '0 auto' }}
+                  >
+                    <Plus size={16} strokeWidth={2.4} />
+                    <span>Create Your First Trip</span>
+                  </button>
+                </div>
+              </main>
+            );
+          }
+
+          const activeGrp = groups.find((g) => g.id === selectedExpenseGroupId) || groups[0];
+          const currencySymbol = activeGrp.currency === 'USD' ? '$' : (activeGrp.currency === 'EUR' ? '€' : '₹');
+          const totalSpent = expenseGroupSettlement?.totalSpend ?? 0;
+          const transfers = expenseGroupSettlement?.transfers ?? [];
+          const bills = expenseGroupBills ?? [];
+
+          const userMember = expenseGroupSettlement?.members?.find(
+            (m: any) => (user?.userId && m.userId === user.userId) || (user?.emailId && m.email?.toLowerCase() === user.emailId.toLowerCase())
           );
+          const userBalance = userMember?.netBalance ?? 0;
 
           const handleCopyShare = () => {
             let text = `*⚡ ${activeGrp.name} — Expense Settlement Summary (Triptual)*\n\n`;
-            text += `*Summary:* ${optimal.transfers.length} simplified transfers needed.\n\n`;
-            optimal.transfers.forEach((t, i) => {
-              text += `${i + 1}. ${t.from.name} ➡️ pays ${t.currencySymbol}${t.amount.toLocaleString()} ➡️ ${t.to.name}\n`;
+            text += `*Total Spend:* ${currencySymbol}${totalSpent.toLocaleString()}\n`;
+            text += `*Transfers Needed:* ${transfers.length} simplified peer transfers\n\n`;
+            transfers.forEach((t: any, i: number) => {
+              text += `${i + 1}. ${t.from.name} ➡️ pays ${currencySymbol}${Number(t.amount).toLocaleString()} ➡️ ${t.to.name}\n`;
             });
             text += `\n_Generated via Triptual AI Settlement Engine_`;
 
@@ -1503,141 +1727,219 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
           };
 
           return (
-            <main className="expense-split-dashboard">
-              {/* Header Title */}
+            <main className="expense-split-dashboard animate-fade-in">
+              {/* Header Info */}
               <div className="curated-header-info">
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--badge-match-bg)', color: 'var(--badge-match-text)', padding: '3px 12px', borderRadius: '9999px', fontSize: '0.74rem', fontWeight: 700, marginBottom: '6px' }}>
-                  <Zap size={13} /> Graph Debt Optimization
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(36, 62, 54, 0.08)', color: '#243E36', padding: '3px 12px', borderRadius: '9999px', fontSize: '0.74rem', fontWeight: 700, marginBottom: '6px' }}>
+                  <Zap size={13} color="#10B981" /> {isLoadingExpenseData ? 'Syncing Ledger...' : 'AI Debt Graph Active'}
                 </div>
-                <h2 className="curated-title">Expense Split & Settlements</h2>
+                <h2 className="curated-title">Expense Split & Settlement</h2>
                 <div className="curated-meta">
-                  <span>Auto-balance group expenses · Minimum payment routes</span>
+                  <span>Smart settlement algorithm · Zero redundant peer transfers</span>
                 </div>
               </div>
 
-              {/* Group Selector Horizontal Pills */}
-              <div className="category-pills-bar">
-                {MOCK_DASHBOARD_GROUPS.map((grp) => (
+              {/* Group Selector Horizontal Capsule Pills */}
+              <div className="split-groups-strip">
+                {groups.map((grp: any) => {
+                  const grpSym = grp.currency === 'USD' ? '$' : (grp.currency === 'EUR' ? '€' : '₹');
+                  return (
+                    <button
+                      key={grp.id}
+                      type="button"
+                      className={`split-group-pill ${selectedExpenseGroupId === grp.id ? 'active' : ''}`}
+                      onClick={() => setSelectedExpenseGroupId(grp.id)}
+                    >
+                      <span>{grp.name}</span>
+                      <span className="split-group-pill-spend">
+                        ({grpSym}{grp.id === selectedExpenseGroupId ? totalSpent.toLocaleString() : (grp.memberCount ? `${grp.memberCount} members` : 'Trip')})
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sleek Hero Settlement Overview Card */}
+              <div className="split-hero-card">
+                <div className="split-hero-top">
+                  <div className="split-hero-badge">
+                    <Zap size={12} color="#10B981" />
+                    <span>Debt Simplification Graph ({activeGrp.expenseSplit || 'Equal'} Ratio)</span>
+                  </div>
+
                   <button
-                    key={grp.id}
                     type="button"
-                    className={`category-pill ${selectedExpenseGroupId === grp.id ? 'active' : ''}`}
-                    onClick={() => setSelectedExpenseGroupId(grp.id)}
+                    className="split-hero-share-btn"
+                    onClick={handleCopyShare}
+                    title="Copy WhatsApp Summary"
                   >
-                    <span>{grp.name}</span>
-                    <span style={{ opacity: 0.75, fontSize: '0.72rem' }}>({grp.currencySymbol}{grp.totalSpent.toLocaleString()})</span>
+                    {isCopiedShare ? <Check size={13} color="#10B981" /> : <Share2 size={13} />}
+                    <span>{isCopiedShare ? 'Copied' : 'Share'}</span>
                   </button>
-                ))}
+                </div>
+
+                <div className="split-hero-balance-section">
+                  <span className="split-hero-balance-label">
+                    {userBalance > 0 ? 'You are owed' : userBalance < 0 ? 'You owe' : 'Net Settlement'}
+                  </span>
+                  <div
+                    className="split-hero-balance-amount"
+                    style={{
+                      color: userBalance > 0 ? '#10B981' : userBalance < 0 ? '#EF4444' : 'var(--text-primary)'
+                    }}
+                  >
+                    {userBalance > 0
+                      ? `+${currencySymbol}${userBalance.toLocaleString()}`
+                      : userBalance < 0
+                      ? `-${currencySymbol}${Math.abs(userBalance).toLocaleString()}`
+                      : `${currencySymbol}0.00`}
+                  </div>
+                  <span className="split-hero-balance-sub">
+                    {userBalance > 0
+                      ? 'Companions will settle this to you'
+                      : userBalance < 0
+                      ? 'Your share of group expedition expenses'
+                      : 'All companion balances are balanced'}
+                  </span>
+                </div>
+
+                {/* Micro Metrics Strip */}
+                <div className="split-hero-metrics-grid">
+                  <div className="split-metric-item">
+                    <span className="split-metric-k">Total Spent</span>
+                    <span className="split-metric-v">
+                      {currencySymbol}{totalSpent.toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="split-metric-divider" />
+
+                  <div className="split-metric-item">
+                    <span className="split-metric-k">Transfers Needed</span>
+                    <span className="split-metric-v" style={{ color: '#10B981' }}>
+                      {transfers.length} direct {transfers.length === 1 ? 'transfer' : 'transfers'}
+                    </span>
+                  </div>
+
+                  <div className="split-metric-divider" />
+
+                  <div className="split-metric-item">
+                    <span className="split-metric-k">Active Receipts</span>
+                    <span className="split-metric-v">
+                      {bills.length} bills
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              {/* 3 Metric Cards */}
-              <div className="expense-split-hero-strip">
-                <div className="expense-metric-card">
-                  <div className="expense-metric-header">
-                    <span className="expense-metric-title">Total Spending</span>
-                    <Wallet size={16} color="var(--accent-olive)" />
-                  </div>
-                  <div className="expense-metric-val">
-                    {activeGrp.currencySymbol}{activeGrp.totalSpent.toLocaleString()}
-                  </div>
-                  <div className="expense-metric-sub">
-                    Across {activeGrp.expenses.length} itemized receipts
-                  </div>
+              {/* Mobile View Switcher & Action Bar */}
+              <div className="split-controls-row">
+                <div className="split-capsule-switcher">
+                  <button
+                    type="button"
+                    className={`split-capsule-tab ${splitTab === 'transfers' ? 'active' : ''}`}
+                    onClick={() => setSplitTab('transfers')}
+                  >
+                    <span>Settlements</span>
+                    <span className="split-tab-badge">{transfers.length}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`split-capsule-tab ${splitTab === 'expenses' ? 'active' : ''}`}
+                    onClick={() => setSplitTab('expenses')}
+                  >
+                    <span>Itemized Bills</span>
+                    <span className="split-tab-badge">{bills.length}</span>
+                  </button>
                 </div>
 
-                <div className="expense-metric-card">
-                  <div className="expense-metric-header">
-                    <span className="expense-metric-title">Debt Simplification</span>
-                    <Zap size={16} color="var(--accent-amber)" />
-                  </div>
-                  <div className="expense-metric-val" style={{ color: 'var(--accent-olive)' }}>
-                    {optimal.optimizedTxCount} Transfers
-                  </div>
-                  <div className="expense-metric-sub">
-                    ⚡ {optimal.reductionPercentage}% fewer transactions
-                  </div>
-                </div>
-
-                <div className="expense-metric-card">
-                  <div className="expense-metric-header">
-                    <span className="expense-metric-title">Your Balance</span>
-                    <CreditCard size={16} color="var(--accent-emerald)" />
-                  </div>
-                  <div className="expense-metric-val" style={{ color: activeGrp.userBalance >= 0 ? 'var(--accent-olive)' : 'var(--accent-rose)' }}>
-                    {activeGrp.userBalance >= 0 ? `+${activeGrp.currencySymbol}${activeGrp.userBalance.toLocaleString()}` : `-${activeGrp.currencySymbol}${Math.abs(activeGrp.userBalance).toLocaleString()}`}
-                  </div>
-                  <div className="expense-metric-sub">
-                    {activeGrp.userBalance >= 0 ? 'You get back from members' : 'You owe to organizers'}
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  className="split-add-bill-btn"
+                  onClick={() => setIsQuickExpenseOpen(true)}
+                >
+                  <Plus size={15} strokeWidth={2.4} />
+                  <span>Add Bill</span>
+                </button>
               </div>
 
-              {/* 2-Column Interactive Split Matrix */}
-              <div className="expense-split-grid">
-                {/* Column 1: Optimized Settlement Instructions */}
-                <div className="expense-split-card">
-                  <div className="section-header-row" style={{ marginBottom: '14px' }}>
+              {/* Interactive Split Grid (Responsive: Tab on Mobile, Dual Col on Desktop) */}
+              <div className="split-grid-wrapper">
+                {/* Column 1: Settlements List */}
+                <div className={`split-column-card ${splitTab === 'transfers' ? 'active-tab' : 'inactive-tab'}`}>
+                  <div className="split-col-header">
                     <div>
-                      <h3 className="section-serif-title">Optimal Transfer Instructions</h3>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        Execute these {optimal.transfers.length} direct settlements to clear all debts.
+                      <h3 className="split-col-title">Optimal Route Instructions</h3>
+                      <p className="split-col-sub">
+                        Direct peer transfers to balance the ledger
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      className="btn-icon-circle"
-                      onClick={handleCopyShare}
-                      title="Copy WhatsApp Summary"
-                      style={{ flexShrink: 0 }}
-                    >
-                      {isCopiedShare ? <Check size={16} color="var(--accent-emerald)" /> : <Share2 size={16} />}
-                    </button>
+                    <span style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: 600 }}>
+                      {transfers.filter((t: any) => completedTransferIds.includes(t.id)).length}/{transfers.length} cleared
+                    </span>
                   </div>
 
-                  <div className="settlement-transfers-list">
-                    {optimal.transfers.map((tx) => {
+                  <div>
+                    {transfers.map((tx: any) => {
                       const isCompleted = completedTransferIds.includes(tx.id);
                       return (
-                        <div key={tx.id} className="transfer-item-card" style={{ opacity: isCompleted ? 0.6 : 1 }}>
-                          <div className="transfer-parties-row">
-                            <div className="party-avatar" style={{ background: tx.from.avatarBg }}>
-                              {tx.from.name[0]}
-                            </div>
-                            <div>
-                              <div className="party-name">{tx.from.name}</div>
-                              <div className="party-sub">pays</div>
+                        <div
+                          key={tx.id}
+                          className="split-transfer-item"
+                          style={{ opacity: isCompleted ? 0.6 : 1 }}
+                        >
+                          <div className="split-transfer-parties">
+                            <div className="split-party-chip">
+                              <div className="split-party-avatar" style={{ background: tx.from?.avatarBg || '#243E36' }}>
+                                {(tx.from?.name || 'T')[0]}
+                              </div>
+                              <div className="split-party-info">
+                                <div className="split-party-name">{tx.from?.name || 'Traveler'}</div>
+                                <div className="split-party-role">pays</div>
+                              </div>
                             </div>
 
-                            <ArrowRight size={14} color="var(--text-muted)" style={{ margin: '0 4px' }} />
+                            <ArrowRight size={14} color="#94A3B8" style={{ flexShrink: 0, margin: '0 4px' }} />
 
-                            <div className="party-avatar" style={{ background: tx.to.avatarBg }}>
-                              {tx.to.name[0]}
-                            </div>
-                            <div>
-                              <div className="party-name">{tx.to.name}</div>
-                              <div className="party-sub">receives</div>
+                            <div className="split-party-chip">
+                              <div className="split-party-avatar" style={{ background: tx.to?.avatarBg || '#10B981' }}>
+                                {(tx.to?.name || 'C')[0]}
+                              </div>
+                              <div className="split-party-info">
+                                <div className="split-party-name">{tx.to?.name || 'Companion'}</div>
+                                <div className="split-party-role">receives</div>
+                              </div>
                             </div>
                           </div>
 
-                          <div className="transfer-item-actions-side">
-                            <div className="transfer-val">
-                              {tx.currencySymbol}{tx.amount.toLocaleString()}
+                          <div className="split-transfer-right">
+                            <div className="split-transfer-amount">
+                              {currencySymbol}{Number(tx.amount).toLocaleString()}
                             </div>
-                            <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+
+                            <div className="split-transfer-actions-grp">
                               <button
                                 type="button"
-                                className="btn-settle-action-pill"
-                                onClick={() => setSettleTransferData(tx)}
+                                className="split-upi-btn"
+                                onClick={() => setSettleTransferData({
+                                  id: tx.id,
+                                  from: { id: tx.fromMemberId || tx.from?.id, name: tx.from?.name || 'Payer', avatarBg: tx.from?.avatarBg || '#243E36' },
+                                  to: { id: tx.toMemberId || tx.to?.id, name: tx.to?.name || 'Recipient', avatarBg: tx.to?.avatarBg || '#10B981' },
+                                  amount: tx.amount,
+                                  currency: tx.currency || activeGrp.currency,
+                                  currencySymbol
+                                } as any)}
                                 title="Settle via UPI"
                               >
                                 <Zap size={11} />
                                 <span>UPI</span>
                               </button>
+
                               <button
                                 type="button"
-                                className="btn-settle-action-pill"
-                                style={{ background: isCompleted ? 'var(--accent-emerald)' : 'var(--bg-surface-subtle)', color: isCompleted ? '#FFF' : 'var(--text-secondary)' }}
+                                className={`split-settle-toggle-btn ${isCompleted ? 'completed' : ''}`}
                                 onClick={() => {
                                   if (completedTransferIds.includes(tx.id)) {
                                     setCompletedTransferIds((p) => p.filter((i) => i !== tx.id));
@@ -1645,74 +1947,156 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                                     setCompletedTransferIds((p) => [...p, tx.id]);
                                   }
                                 }}
-                                title="Mark as settled"
+                                title={isCompleted ? 'Mark uncompleted' : 'Mark as settled'}
+                                aria-label="Toggle settled status"
                               >
-                                <Check size={12} />
+                                <Check size={13} strokeWidth={2.8} />
                               </button>
                             </div>
                           </div>
                         </div>
                       );
                     })}
+
+                    {transfers.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94A3B8' }}>
+                        <Check size={28} style={{ margin: '0 auto 6px', color: '#10B981' }} />
+                        <div style={{ fontWeight: 600, color: '#0F172A', fontSize: '0.88rem' }}>
+                          All Settled!
+                        </div>
+                        <p style={{ fontSize: '0.74rem', margin: '4px 0 0' }}>
+                          No pending transfers needed for this trip.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Column 2: Itemized Receipts & Quick Add */}
-                <div className="expense-split-card">
-                  <div className="section-header-row" style={{ marginBottom: '14px' }}>
+                {/* Column 2: Itemized Receipts */}
+                <div className={`split-column-card ${splitTab === 'expenses' ? 'active-tab' : 'inactive-tab'}`}>
+                  <div className="split-col-header">
                     <div>
-                      <h3 className="section-serif-title">Itemized Expense Receipts</h3>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        {activeGrp.expenses.length} bills recorded in {activeGrp.name}
+                      <h3 className="split-col-title">Itemized Expense Receipts</h3>
+                      <p className="split-col-sub">
+                        {bills.length} bills recorded in {activeGrp.name}
                       </p>
                     </div>
 
                     <button
                       type="button"
-                      className="btn-primary-luxury"
-                      style={{ padding: '7px 14px', fontSize: '0.78rem' }}
                       onClick={() => setIsQuickExpenseOpen(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#243E36',
+                        fontSize: '0.76rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
                     >
-                      <Plus size={14} />
-                      <span>Add Bill</span>
+                      <Plus size={13} />
+                      <span>Add</span>
                     </button>
                   </div>
 
                   <div>
-                    {activeGrp.expenses.map((exp) => {
-                      const catIcons: Record<string, string> = {
-                        Stay: '🏠',
-                        Food: '🍽️',
-                        Transport: '✈️',
-                        Activities: '🏄',
-                        Supplies: '🛒',
-                        Other: '🧾'
+                    {bills.map((exp: any) => {
+                      const getCategoryIcon = (cat: string) => {
+                        switch (cat) {
+                          case 'Stay':
+                            return (
+                              <div className="split-cat-bubble" style={{ background: '#E8F5E9', color: '#2E7D32' }}>
+                                <Home size={17} strokeWidth={2.2} />
+                              </div>
+                            );
+                          case 'Food':
+                            return (
+                              <div className="split-cat-bubble" style={{ background: '#FFF3E0', color: '#E65100' }}>
+                                <Utensils size={17} strokeWidth={2.2} />
+                              </div>
+                            );
+                          case 'Transport':
+                            return (
+                              <div className="split-cat-bubble" style={{ background: '#E0F7FA', color: '#00838F' }}>
+                                <Car size={17} strokeWidth={2.2} />
+                              </div>
+                            );
+                          case 'Activities':
+                            return (
+                              <div className="split-cat-bubble" style={{ background: '#F3E8FF', color: '#7E22CE' }}>
+                                <Compass size={17} strokeWidth={2.2} />
+                              </div>
+                            );
+                          case 'Supplies':
+                            return (
+                              <div className="split-cat-bubble" style={{ background: '#FEF3C7', color: '#D97706' }}>
+                                <ShoppingBag size={17} strokeWidth={2.2} />
+                              </div>
+                            );
+                          case 'Other':
+                          default:
+                            return (
+                              <div className="split-cat-bubble" style={{ background: '#F1F5F9', color: '#475569' }}>
+                                <Receipt size={17} strokeWidth={2.2} />
+                              </div>
+                            );
+                        }
                       };
+
                       return (
-                        <div key={exp.id} className="expense-item-row">
-                          <div className="expense-item-left">
-                            <div className="expense-cat-badge">
-                              {catIcons[exp.category] || '🧾'}
-                            </div>
-                            <div>
-                              <div className="expense-item-title">{exp.title}</div>
-                              <div className="expense-item-meta">
-                                Paid by {exp.paidBy.name} · {exp.date}
+                        <div key={exp.id} className="split-expense-item">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                            {getCategoryIcon(exp.category)}
+
+                            <div className="split-expense-info">
+                              <div className="split-expense-title">{exp.description}</div>
+                              <div className="split-expense-meta">
+                                Paid by {exp.paidBy?.name || 'Traveler'} · {new Date(exp.createdAt).toLocaleDateString()}
                               </div>
                             </div>
                           </div>
 
-                          <div className="expense-item-right">
-                            <div className="expense-item-amount">
-                              {activeGrp.currencySymbol}{exp.amount.toLocaleString()}
+                          <div className="split-expense-amount-col">
+                            <div className="split-expense-amount">
+                              {currencySymbol}{Number(exp.amount).toLocaleString()}
                             </div>
-                            <span className="expense-item-split-tag">
-                              Split ÷ {exp.splitWithCount}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                              <span className="split-expense-tag">
+                                {exp.splitModel || 'EQUAL'} split
+                              </span>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (window.confirm(`Delete expense "${exp.description}"?`)) {
+                                    await groupService.deleteExpense(activeGrp.id, exp.id);
+                                    loadExpenseGroupData(activeGrp.id);
+                                  }
+                                }}
+                                style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '2px' }}
+                                title="Delete expense"
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
+
+                    {bills.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94A3B8' }}>
+                        <Receipt size={28} style={{ margin: '0 auto 6px', opacity: 0.4 }} />
+                        <div style={{ fontWeight: 600, color: '#0F172A', fontSize: '0.88rem' }}>
+                          No expenses yet
+                        </div>
+                        <p style={{ fontSize: '0.74rem', margin: '4px 0 0' }}>
+                          Click "+ Add Bill" to record your first group expense.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1861,10 +2245,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
       {isQuickExpenseOpen && (
         <QuickExpenseModal
           isOpen={isQuickExpenseOpen}
-          groups={MOCK_DASHBOARD_GROUPS}
-          selectedGroupId={selectedGroup?.id || groups[0]?.id}
+          groups={realDashboardGroups}
+          selectedGroupId={selectedExpenseGroupId || groups[0]?.id}
           onClose={() => setIsQuickExpenseOpen(false)}
-          onAddExpense={() => loadGroups()}
+          onAddExpense={() => {
+            loadGroups();
+            if (selectedExpenseGroupId) loadExpenseGroupData(selectedExpenseGroupId);
+          }}
         />
       )}
 
@@ -1880,13 +2267,56 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
         <SettleUpModal
           isOpen={Boolean(settleTransferData)}
           transfer={settleTransferData}
-          groupId={selectedGroup?.id || groups[0]?.id}
+          groupId={selectedExpenseGroupId || groups[0]?.id}
           onClose={() => setSettleTransferData(null)}
           onConfirmSettlement={() => {
             setSettleTransferData(null);
             loadGroups();
+            if (selectedExpenseGroupId) loadExpenseGroupData(selectedExpenseGroupId);
           }}
         />
+      )}
+
+      {/* Standard Mobile Side Drawer (Mounted directly to document.body for zero right-side gap) */}
+      {isProfileMenuOpen && typeof document !== 'undefined' && createPortal(
+        <div className="mobile-side-drawer-portal">
+          <div
+            className="mobile-drawer-backdrop"
+            onClick={() => setIsProfileMenuOpen(false)}
+          />
+          <div className="mobile-side-drawer-container">
+            {/* Mobile Drawer Header with Triptual Logo & Close Button */}
+            <div className="mobile-drawer-header">
+              <div
+                className="mobile-drawer-title"
+                onClick={() => {
+                  setDockTab('explore');
+                  setIsProfileMenuOpen(false);
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                <img
+                  src="/triptual-logo.png"
+                  alt="Triptual"
+                  className="triptual-header-logo-icon"
+                  style={{ width: '28px', height: '28px' }}
+                />
+                <span className="triptual-logo-text" style={{ fontSize: '1.3rem' }}>Triptual</span>
+              </div>
+              <button
+                type="button"
+                className="mobile-drawer-close"
+                onClick={() => setIsProfileMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {renderProfileMenuItems()}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

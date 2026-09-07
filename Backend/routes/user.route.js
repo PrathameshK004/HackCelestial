@@ -2,6 +2,7 @@
 let express = require("express");
 let router = express.Router();
 let usersController = require('../controllers/user.controller');
+let paymentController = require('../controllers/payment.controller');
 let userMiddleware = require('../middleware/user.middleware');
 const { sendSuccess } = require('../utils/response.util');
 
@@ -17,6 +18,11 @@ router.get('/checkAuth', verifyToken, (req, res) => {
 
 router.get('/logout', usersController.logoutUser);
 router.post('/refresh', usersController.refreshAccessToken);
+
+// User payments ledger & unified record payment
+router.get('/me/payments', verifyToken, paymentController.getMyPayments);
+router.post('/me/record-payment', verifyToken, paymentController.recordUnifiedPayment);
+
 router.get('/:userId', verifyToken, userMiddleware.validateUserId, usersController.getUserById);
 router.post('/login', userMiddleware.checkLogin, usersController.validateLogin);
 router.post('/google-login', usersController.googleLogin);

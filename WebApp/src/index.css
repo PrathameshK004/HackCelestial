@@ -1260,6 +1260,10 @@ button, input, select, textarea {
     gap: 8px;
   }
 
+  .action-btn-reset {
+    background: transparent !important;
+  }
+
   .action-btn-reset,
   .action-btn-draft {
     flex: 1;
@@ -2109,6 +2113,7 @@ button, input, select, textarea {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  background: transparent !important;
 }
 
 @media (min-width: 641px) {

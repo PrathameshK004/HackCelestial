@@ -233,6 +233,67 @@ export const groupService = {
       method: 'DELETE',
     });
   },
+
+  /**
+   * Get all real payments, expenses, and settlements for current user across all trips
+   */
+  async getUserPayments(): Promise<{
+    message: string;
+    data: {
+      totalSpent: number;
+      totalReceived: number;
+      count: number;
+      transactions: any[];
+    };
+  }> {
+    return request('/payments/my-payments', {
+      method: 'GET',
+    });
+  },
+
+  /**
+   * Record a payment:
+   * - Trip Expense with automatic splitting according to group's split ratio
+   * - Or companion settlement resolving trip debt
+   */
+  async recordUnifiedPayment(payload: {
+    groupId: string;
+    type?: 'EXPENSE' | 'SETTLEMENT';
+    description?: string;
+    amount: number | string;
+    category?: string;
+    currency?: string;
+    paymentMethod?: string;
+    paymentReference?: string;
+    toMemberId?: string;
+    splitModel?: string;
+  }): Promise<{ message: string; data: any }> {
+    return request('/payments/record', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /**
+   * Official Payment Gateway Callback / Status Verification
+   * Verifies UPI payment return callback and records expense to group
+   */
+  async verifyUpiPaymentStatus(payload: {
+    txnRef: string;
+    groupId: string;
+    amount: number | string;
+    description?: string;
+    category?: string;
+    paymentMethod?: string;
+    utr?: string;
+    vendorUpi?: string;
+    vendorName?: string;
+  }): Promise<{ message: string; data: any }> {
+    return request('/payments/verify-status', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 
