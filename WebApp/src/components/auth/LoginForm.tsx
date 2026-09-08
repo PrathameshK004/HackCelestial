@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Sparkles, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface LoginFormProps {
@@ -67,28 +67,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
 
   return (
     <div className="auth-modern-form-pane">
-      {/* Top back navigation */}
-      <button 
-        type="button" 
-        className="auth-minimal-back-btn" 
-        onClick={onSwitchToSignup}
-        title="Switch to sign up"
-      >
-        <ArrowLeft size={20} />
-      </button>
-
-      {/* Main Title & Switch link */}
+      {/* Main Title & Subtitle */}
       <div className="auth-modern-header">
         <h1 className="auth-modern-title">Welcome Back</h1>
         <p className="auth-modern-subtitle">
-          Don't have an account?{' '}
-          <button 
-            type="button" 
-            className="auth-bold-link" 
-            onClick={onSwitchToSignup}
-          >
-            Sign up
-          </button>
+          Sign in to access your trips, split expenses, and manage budgets.
         </p>
       </div>
 
@@ -107,47 +90,42 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
       )}
 
       <form onSubmit={handleSubmit} className="auth-modern-form" noValidate>
-        {/* Email Address */}
+        {/* Email Address with Leading Icon */}
         <div className="auth-field-group">
           <label htmlFor="login-email" className="auth-field-label">
             Email Address
           </label>
-          <input
-            id="login-email"
-            type="email"
-            className="auth-modern-input"
-            placeholder="Email Address"
-            value={emailId}
-            onChange={(e) => {
-              setEmailId(e.target.value);
-              if (errorMessage) setErrorMessage(null);
-            }}
-            autoComplete="email"
-            required
-            disabled={isLoading}
-          />
+          <div className="auth-input-relative-wrap">
+            <Mail size={18} className="auth-input-leading-icon" />
+            <input
+              id="login-email"
+              type="email"
+              className="auth-modern-input has-left-icon"
+              placeholder="name@example.com"
+              value={emailId}
+              onChange={(e) => {
+                setEmailId(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              autoComplete="email"
+              required
+              disabled={isLoading}
+            />
+          </div>
         </div>
 
-        {/* Password */}
+        {/* Password with Leading Icon & Eye Toggle */}
         <div className="auth-field-group">
-          <div className="auth-field-header-row">
-            <label htmlFor="login-password" className="auth-field-label">
-              Password
-            </label>
-            <button
-              type="button"
-              className="auth-forgot-link"
-              onClick={() => setErrorMessage('Please contact your trip administrator for a password reset.')}
-            >
-              Forgot Password?
-            </button>
-          </div>
+          <label htmlFor="login-password" className="auth-field-label">
+            Password
+          </label>
           <div className="auth-input-relative-wrap">
+            <Lock size={18} className="auth-input-leading-icon" />
             <input
               id="login-password"
               type={showPassword ? 'text' : 'password'}
-              className="auth-modern-input has-right-btn"
-              placeholder="Password"
+              className="auth-modern-input has-left-icon has-right-btn"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
@@ -169,10 +147,31 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
           </div>
         </div>
 
-        {/* Submit Button (Dark Pill) */}
+        {/* Remember Me & Forgot Password in one clean aligned row */}
+        <div className="auth-options-row">
+          <label className="auth-clean-checkbox-label">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="auth-clean-checkbox"
+            />
+            <span className="auth-checkbox-text">Remember me</span>
+          </label>
+
+          <button
+            type="button"
+            className="auth-forgot-link"
+            onClick={() => setErrorMessage('Please contact your trip organizer for a password reset.')}
+          >
+            Forgot Password?
+          </button>
+        </div>
+
+        {/* Emerald Action Button */}
         <button
           type="submit"
-          className="auth-black-pill-btn"
+          className="auth-emerald-pill-btn"
           disabled={isLoading}
         >
           {isLoading ? (
@@ -181,42 +180,31 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
               <span>Signing In...</span>
             </>
           ) : (
-            <span>Log In</span>
+            <>
+              <span>Log In</span>
+              <ArrowRight size={17} />
+            </>
           )}
         </button>
 
-        {/* Remember me row */}
-        <div className="auth-checkbox-row">
-          <label className="auth-clean-checkbox-label">
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="auth-clean-checkbox"
-            />
-            <span className="auth-checkbox-text">
-              Remember my session
-            </span>
-          </label>
-        </div>
+        {/* 1-Tap Quick Demo Fill Pill */}
+        <button
+          type="button"
+          className="auth-demo-shortcut-btn"
+          onClick={handleFillDemo}
+          title="Auto-fill sample credentials for quick demo"
+        >
+          <Sparkles size={16} className="auth-demo-icon" />
+          <span>Quick Demo Fill (yogesh@example.com)</span>
+        </button>
 
         {/* Divider */}
         <div className="auth-or-divider">
-          <span>or</span>
+          <span>or continue with</span>
         </div>
 
-        {/* Social / Alternative buttons */}
-        <div className="auth-social-grid">
-          <button
-            type="button"
-            className="auth-social-btn"
-            onClick={handleFillDemo}
-            title="Auto-fill sample credentials for quick demo"
-          >
-            <Sparkles size={16} className="text-emerald" />
-            <span>Quick Demo Fill</span>
-          </button>
-
+        {/* Social SSO Button */}
+        <div className="auth-social-single-wrap">
           <button
             type="button"
             className="auth-social-btn"
@@ -229,6 +217,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
             </svg>
             <span>Continue with Google</span>
+          </button>
+        </div>
+
+        {/* Bottom Switch Link */}
+        <div className="auth-bottom-switch-row">
+          <span>Don't have an account yet?</span>
+          <button
+            type="button"
+            className="auth-bold-link"
+            onClick={onSwitchToSignup}
+          >
+            Create an Account
           </button>
         </div>
       </form>

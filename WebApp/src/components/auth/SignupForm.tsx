@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, RotateCw, KeyRound } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, RotateCw, KeyRound, User, Mail, Lock, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface SignupFormProps {
@@ -274,38 +274,44 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
               <label htmlFor="signup-firstname" className="auth-field-label">
                 First Name
               </label>
-              <input
-                id="signup-firstname"
-                type="text"
-                className="auth-modern-input"
-                placeholder="John"
-                value={firstName}
-                onChange={(e) => {
-                  setFirstName(e.target.value);
-                  if (errorMessage) setErrorMessage(null);
-                }}
-                required
-                disabled={isLoading}
-              />
+              <div className="auth-input-relative-wrap">
+                <User size={17} className="auth-input-leading-icon" />
+                <input
+                  id="signup-firstname"
+                  type="text"
+                  className="auth-modern-input has-left-icon"
+                  placeholder="John"
+                  value={firstName}
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
             </div>
 
             <div className="auth-field-group">
               <label htmlFor="signup-lastname" className="auth-field-label">
                 Last Name
               </label>
-              <input
-                id="signup-lastname"
-                type="text"
-                className="auth-modern-input"
-                placeholder="Doe"
-                value={lastName}
-                onChange={(e) => {
-                  setLastName(e.target.value);
-                  if (errorMessage) setErrorMessage(null);
-                }}
-                required
-                disabled={isLoading}
-              />
+              <div className="auth-input-relative-wrap">
+                <User size={17} className="auth-input-leading-icon" />
+                <input
+                  id="signup-lastname"
+                  type="text"
+                  className="auth-modern-input has-left-icon"
+                  placeholder="Doe"
+                  value={lastName}
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
             </div>
           </div>
 
@@ -314,20 +320,23 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
             <label htmlFor="signup-email" className="auth-field-label">
               Email Address
             </label>
-            <input
-              id="signup-email"
-              type="email"
-              className="auth-modern-input"
-              placeholder="Email Address"
-              value={emailId}
-              onChange={(e) => {
-                setEmailId(e.target.value);
-                if (errorMessage) setErrorMessage(null);
-              }}
-              autoComplete="email"
-              required
-              disabled={isLoading}
-            />
+            <div className="auth-input-relative-wrap">
+              <Mail size={18} className="auth-input-leading-icon" />
+              <input
+                id="signup-email"
+                type="email"
+                className="auth-modern-input has-left-icon"
+                placeholder="name@example.com"
+                value={emailId}
+                onChange={(e) => {
+                  setEmailId(e.target.value);
+                  if (errorMessage) setErrorMessage(null);
+                }}
+                autoComplete="email"
+                required
+                disabled={isLoading}
+              />
+            </div>
           </div>
 
           {/* Password */}
@@ -336,11 +345,12 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
               Password
             </label>
             <div className="auth-input-relative-wrap">
+              <Lock size={18} className="auth-input-leading-icon" />
               <input
                 id="signup-password"
                 type={showPassword ? 'text' : 'password'}
-                className="auth-modern-input has-right-btn"
-                placeholder="Password"
+                className="auth-modern-input has-left-icon has-right-btn"
+                placeholder="At least 6 characters"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
@@ -362,10 +372,10 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
             </div>
           </div>
 
-          {/* Create Account Dark Pill Button */}
+          {/* Create Account Emerald Pill Button */}
           <button
             type="submit"
-            className="auth-black-pill-btn"
+            className="auth-emerald-pill-btn"
             disabled={isLoading}
           >
             {isLoading ? (
@@ -374,7 +384,10 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                 <span>Sending Code...</span>
               </>
             ) : (
-              <span>Create Account</span>
+              <>
+                <span>Create Account</span>
+                <ArrowRight size={17} />
+              </>
             )}
           </button>
 
