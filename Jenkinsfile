@@ -29,6 +29,15 @@ pipeline {
             }
         }
 
+        stage('Backend: Automated Tests') {
+            steps {
+                echo 'Running automated test suite for authentication and verification...'
+                dir('Backend') {
+                    sh 'npm test'
+                }
+            }
+        }
+
         stage('WebApp: Install & Build') {
             steps {
                 echo 'Building WebApp production bundle...'

@@ -46,7 +46,7 @@ const isValidEmail = (email) => {
  * @returns {boolean} True if password meets requirements
  */
 const isValidPassword = (password) => {
-    return password && password.length >= 6;
+    return Boolean(password && typeof password === 'string' && password.length >= 6);
 };
 
 /**
@@ -56,7 +56,7 @@ const isValidPassword = (password) => {
  * @returns {boolean} True if valid username
  */
 const isValidUsername = (username) => {
-    return username && username.length >= 3;
+    return Boolean(username && typeof username === 'string' && username.trim().length >= 3);
 };
 
 module.exports = {
