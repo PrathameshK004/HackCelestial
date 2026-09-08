@@ -9,7 +9,7 @@ require('dotenv').config();
 
 const emailServiceUrl = process.env.EMAIL_SERVICE_URL || 'https://email-service-delta-seven.vercel.app/api/send-email';
 
-// Initialize Gmail SMTP transporter if credentials exist
+// Initialize Gmail SMTP transporter with fast connection timeout
 let smtpTransporter = null;
 if (process.env.EMAIL && process.env.EMAIL_PASSWORD) {
     smtpTransporter = nodemailer.createTransport({
@@ -17,7 +17,10 @@ if (process.env.EMAIL && process.env.EMAIL_PASSWORD) {
         auth: {
             user: process.env.EMAIL,
             pass: process.env.EMAIL_PASSWORD.replace(/\s+/g, '')
-        }
+        },
+        connectionTimeout: 3500,
+        greetingTimeout: 2500,
+        socketTimeout: 5000
     });
 }
 
@@ -25,7 +28,29 @@ const sendMail = async ({ to, subject, html, text }) => {
     const sender = process.env.EMAIL || 'triptual.support@gmail.com';
     const fromAddress = `"GroupTrip Ledger" <${sender}>`;
 
-    // 1. Prioritize Direct Gmail SMTP for guaranteed delivery to inbox
+    // 1. Prioritize HTTP Microservice (Instant HTTPS delivery over port 443, never blocked by cloud firewalls like Render)
+    if (process.env.EMAIL_SERVICE_API) {
+        try {
+            const response = await axios.post(emailServiceUrl, {
+                from: sender,
+                to,
+                subject,
+                html
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${process.env.EMAIL_SERVICE_API}`
+                },
+                timeout: 10000
+            });
+            console.log(`[Mail HTTP Success] Delivered to ${to}`);
+            return { success: true, data: response.data };
+        } catch (httpErr) {
+            console.warn(`[Mail HTTP Error] Failed via HTTP service: ${httpErr.message}`);
+        }
+    }
+
+    // 2. Direct Gmail SMTP Fallback (guarded with strict 3.5s timeout)
     if (smtpTransporter) {
         try {
             const info = await smtpTransporter.sendMail({
@@ -38,28 +63,12 @@ const sendMail = async ({ to, subject, html, text }) => {
             console.log(`[Mail SMTP Success] Delivered to ${to} (MessageId: ${info.messageId})`);
             return { success: true, messageId: info.messageId };
         } catch (smtpErr) {
-            console.warn(`[Mail SMTP Error] Failed via SMTP, attempting HTTP fallback: ${smtpErr.message}`);
+            console.warn(`[Mail SMTP Error] Failed via SMTP: ${smtpErr.message}`);
+            throw smtpErr;
         }
     }
 
-    // 2. HTTP Fallback Service
-    if (!process.env.EMAIL_SERVICE_API) {
-        throw new Error('EMAIL_SERVICE_API or valid EMAIL/EMAIL_PASSWORD SMTP credentials required');
-    }
-
-    const response = await axios.post(emailServiceUrl, {
-        from: sender,
-        to,
-        subject,
-        html
-    }, {
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.EMAIL_SERVICE_API}`
-        }
-    });
-    console.log(`[Mail HTTP Success] Delivered to ${to}`);
-    return { success: true, data: response.data };
+    throw new Error('Neither EMAIL_SERVICE_API nor working SMTP credentials available');
 };
 
 /**
