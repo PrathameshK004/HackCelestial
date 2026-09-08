@@ -37,9 +37,17 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
 
   if (!isOpen) return null;
 
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-  const inviteUrl = createdGroup?.inviteUrl || `${currentOrigin}/join/${createdGroup?.inviteCode || 'TRIP-DEMO'}`;
-  const shareLinks = createdGroup?.shareLinks || {
+  const LIVE_APP_DOMAIN = 'https://hack-celestial-one.vercel.app';
+  const liveOrigin = typeof window !== 'undefined' && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')
+    ? window.location.origin
+    : LIVE_APP_DOMAIN;
+
+  const rawInviteUrl = createdGroup?.inviteUrl || `${liveOrigin}/join/${createdGroup?.inviteCode || 'TRIP-DEMO'}`;
+  const inviteUrl = rawInviteUrl
+    .replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, LIVE_APP_DOMAIN)
+    .replace(/^capacitor:\/\/localhost/i, LIVE_APP_DOMAIN);
+
+  const shareLinks = {
     whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(`Join our trip "${tripData.groupName}" to ${tripData.destination} on Triptual: ${inviteUrl}`)}`,
     telegram: `https://t.me/share/url?url=${encodeURIComponent(inviteUrl)}&text=${encodeURIComponent(`Join our trip to ${tripData.destination}!`)}`,
     sms: `sms:?body=${encodeURIComponent(`Join our trip "${tripData.groupName}" to ${tripData.destination}: ${inviteUrl}`)}`,

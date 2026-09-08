@@ -41,7 +41,6 @@ export function buildUpiDeepLink(details: UpiPaymentDetails): string {
     amount,
     currency = 'INR',
     note = 'Trip Shared Expense',
-    txnRef,
     app = 'generic',
     isNative = false
   } = details;

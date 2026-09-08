@@ -49,7 +49,11 @@ export const MyGroupsTab: React.FC<MyGroupsTabProps> = ({
   });
 
   const handleCopyInvite = (group: GroupCardItem) => {
-    const inviteUrl = `https://grouptrip-ledger.app/join/${group.inviteCode}`;
+    const LIVE_APP_DOMAIN = 'https://hack-celestial-one.vercel.app';
+    const liveOrigin = typeof window !== 'undefined' && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')
+      ? window.location.origin
+      : LIVE_APP_DOMAIN;
+    const inviteUrl = `${liveOrigin}/join/${group.inviteCode}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopiedGroupId(group.id);
     setTimeout(() => setCopiedGroupId(null), 2500);

@@ -29,7 +29,15 @@ export const TravelersSection: React.FC<TravelersSectionProps> = ({
   const [copiedId, setCopiedId] = useState<string | number | null>(null);
 
   const handleCopyInviteLink = (traveler: Traveler) => {
-    const inviteUrl = traveler.inviteUrl || (window.location.origin + '/join/' + (traveler.inviteCode || 'TRIP-PENDING'));
+    const LIVE_APP_DOMAIN = 'https://hack-celestial-one.vercel.app';
+    const liveOrigin = typeof window !== 'undefined' && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')
+      ? window.location.origin
+      : LIVE_APP_DOMAIN;
+    const rawInviteUrl = traveler.inviteUrl || `${liveOrigin}/join/${traveler.inviteCode || 'TRIP-PENDING'}`;
+    const inviteUrl = rawInviteUrl
+      .replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, LIVE_APP_DOMAIN)
+      .replace(/^capacitor:\/\/localhost/i, LIVE_APP_DOMAIN);
+
     navigator.clipboard.writeText(inviteUrl);
     setCopiedId(traveler.id);
     setTimeout(() => setCopiedId(null), 2500);

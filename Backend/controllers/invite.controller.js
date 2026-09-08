@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { pool } = require('../utils/db.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const { sendEmail } = require('../utils/mail.util');
+const { getLiveAppUrl } = require('../utils/url.util');
 
 module.exports = {
     createGroupInvite,
@@ -48,7 +49,7 @@ async function createGroupInvite(req, res) {
             VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, NOW())
         `, [crypto.randomUUID(), groupId, inviteCode, userId || null, email ? email.trim().toLowerCase() : null, role, expiresAt]);
 
-        const baseUrl = req.get('origin') || process.env.APP_URL || 'http://localhost:3000';
+        const baseUrl = getLiveAppUrl(req);
         const inviteUrl = `${baseUrl}/join/${inviteCode}`;
 
         // Send Email if requested

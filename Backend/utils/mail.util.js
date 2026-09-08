@@ -171,6 +171,11 @@ const sendOfficialInviteEmail = async ({
     inviteUrl,
     inviteCode
 }) => {
+    const liveDomain = (process.env.APP_URL || process.env.FRONTEND_URL || 'https://hack-celestial-one.vercel.app').trim().replace(/\/+$/, '');
+    const cleanInviteUrl = (inviteUrl || `${liveDomain}/join/${inviteCode || ''}`)
+        .replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, liveDomain)
+        .replace(/^capacitor:\/\/localhost/i, liveDomain);
+
     const formattedDates = formatTripDates(startDate, endDate);
 
     const htmlContent = `
@@ -235,7 +240,7 @@ const sendOfficialInviteEmail = async ({
 
                     <!-- Call to Action Button -->
                     <div style="text-align: center; margin: 16px 0 10px 0;">
-                        <a href="${inviteUrl}" style="background-color: #059669; color: #ffffff; padding: 10px 24px; text-decoration: none; border-radius: 9999px; font-weight: 700; font-size: 13px; display: inline-block; box-shadow: 0 3px 10px rgba(5, 150, 105, 0.3);">
+                        <a href="${cleanInviteUrl}" style="background-color: #059669; color: #ffffff; padding: 10px 24px; text-decoration: none; border-radius: 9999px; font-weight: 700; font-size: 13px; display: inline-block; box-shadow: 0 3px 10px rgba(5, 150, 105, 0.3);">
                             Review & Accept Invitation →
                         </a>
                     </div>
@@ -248,7 +253,7 @@ const sendOfficialInviteEmail = async ({
 
                     <p style="font-size: 10.5px; color: #94a3b8; word-break: break-all; margin: 0; text-align: center; line-height: 1.4;">
                         Or open this link directly in your browser:<br>
-                        <a href="${inviteUrl}" style="color: #059669; font-weight: 500; text-decoration: underline;">${inviteUrl}</a>
+                        <a href="${cleanInviteUrl}" style="color: #059669; font-weight: 500; text-decoration: underline;">${cleanInviteUrl}</a>
                     </p>
                 </div>
 
