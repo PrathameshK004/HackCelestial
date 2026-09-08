@@ -4,12 +4,21 @@ const { pool } = require('../utils/db.util');
 
 const toUser = (row) => row && new User({
     _id: row.id,
+    id: row.id,
+    userId: row.id,
     username: row.username,
     emailId: row.email_id,
     password: row.password_hash,
     isTemp: row.is_temp,
     code: row.code_hash,
-    codeExpiry: row.code_expiry
+    codeExpiry: row.code_expiry,
+    phone: row.phone || null,
+    upiId: row.upi_id || null,
+    avatar: row.avatar || null,
+    travelStyle: row.travel_style || 'Boutique',
+    currency: row.currency || 'INR',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
 });
 
 class User {
@@ -40,8 +49,8 @@ class User {
         }
 
         const result = await pool.query(`
-            INSERT INTO users (id, username, email_id, password_hash, is_temp, code_hash, code_expiry)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO users (id, username, email_id, password_hash, is_temp, code_hash, code_expiry, phone, upi_id, avatar, travel_style, currency)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (id) DO UPDATE SET
                 username = EXCLUDED.username,
                 email_id = EXCLUDED.email_id,
@@ -49,9 +58,27 @@ class User {
                 is_temp = EXCLUDED.is_temp,
                 code_hash = EXCLUDED.code_hash,
                 code_expiry = EXCLUDED.code_expiry,
+                phone = COALESCE(EXCLUDED.phone, users.phone),
+                upi_id = COALESCE(EXCLUDED.upi_id, users.upi_id),
+                avatar = COALESCE(EXCLUDED.avatar, users.avatar),
+                travel_style = COALESCE(EXCLUDED.travel_style, users.travel_style),
+                currency = COALESCE(EXCLUDED.currency, users.currency),
                 updated_at = NOW()
             RETURNING *
-        `, [this._id, this.username, email, passwordHash, this.isTemp || false, codeHash, this.codeExpiry || null]);
+        `, [
+            this._id, 
+            this.username, 
+            email, 
+            passwordHash, 
+            this.isTemp || false, 
+            codeHash, 
+            this.codeExpiry || null,
+            this.phone !== undefined ? this.phone : null,
+            this.upiId !== undefined ? this.upiId : null,
+            this.avatar !== undefined ? this.avatar : null,
+            this.travelStyle !== undefined ? this.travelStyle : null,
+            this.currency !== undefined ? this.currency : 'INR'
+        ]);
 
         Object.assign(this, toUser(result.rows[0]));
         return this;

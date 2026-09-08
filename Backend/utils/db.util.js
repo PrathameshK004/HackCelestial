@@ -32,7 +32,15 @@ const initializeDatabase = async () => {
         )
     `);
 
-    // 2. Refresh Tokens Table
+    // Ensure user profile columns exist
+    await pool.query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS upi_id VARCHAR(255);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS travel_style VARCHAR(50) DEFAULT 'Boutique';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'INR';
+    `);
+
     await pool.query(`
         CREATE TABLE IF NOT EXISTS refresh_tokens (
             id UUID PRIMARY KEY,

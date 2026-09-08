@@ -3,9 +3,10 @@ import { Compass } from 'lucide-react';
 import { AuthBrandShowcase } from '../components/auth/AuthBrandShowcase';
 import { LoginForm } from '../components/auth/LoginForm';
 import { SignupForm } from '../components/auth/SignupForm';
+import { ForgotPasswordForm } from '../components/auth/ForgotPasswordForm';
 
 interface AuthPageProps {
-  initialMode?: 'login' | 'signup';
+  initialMode?: 'login' | 'signup' | 'forgot';
   onAuthSuccess?: () => void;
 }
 
@@ -13,7 +14,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   initialMode = 'login',
   onAuthSuccess 
 }) => {
-  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>(initialMode);
 
   return (
     <div className="auth-fullscreen-navy-canvas">
@@ -38,37 +39,45 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
             </div>
 
-            {/* Segmented Mode Switcher (Log In / Sign Up) */}
-            <div className="auth-segmented-pill-switcher" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'login'}
-                className={`auth-segment-tab ${mode === 'login' ? 'active' : ''}`}
-                onClick={() => setMode('login')}
-              >
-                Log In
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'signup'}
-                className={`auth-segment-tab ${mode === 'signup' ? 'active' : ''}`}
-                onClick={() => setMode('signup')}
-              >
-                Create Account
-              </button>
-            </div>
+            {/* Segmented Mode Switcher (Log In / Create Account) - shown when not in recovery */}
+            {mode !== 'forgot' && (
+              <div className="auth-segmented-pill-switcher" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'login'}
+                  className={`auth-segment-tab ${mode === 'login' ? 'active' : ''}`}
+                  onClick={() => setMode('login')}
+                >
+                  Log In
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'signup'}
+                  className={`auth-segment-tab ${mode === 'signup' ? 'active' : ''}`}
+                  onClick={() => setMode('signup')}
+                >
+                  Create Account
+                </button>
+              </div>
+            )}
 
             {mode === 'login' ? (
               <LoginForm
                 onSwitchToSignup={() => setMode('signup')}
+                onForgotPassword={() => setMode('forgot')}
                 onSuccessRedirect={onAuthSuccess}
               />
-            ) : (
+            ) : mode === 'signup' ? (
               <SignupForm
                 onSwitchToLogin={() => setMode('login')}
                 onSuccessRedirect={onAuthSuccess}
+              />
+            ) : (
+              <ForgotPasswordForm
+                onSwitchToLogin={() => setMode('login')}
+                onSuccess={() => setMode('login')}
               />
             )}
           </div>

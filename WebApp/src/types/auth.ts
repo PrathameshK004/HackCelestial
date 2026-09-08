@@ -1,8 +1,13 @@
 export interface User {
   userId: string;
+  id?: string;
   username: string;
   emailId: string;
+  phone?: string;
   upiId?: string;
+  avatar?: string;
+  travelStyle?: string;
+  currency?: string;
 }
 
 export interface PasswordChangePayload {

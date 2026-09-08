@@ -4,10 +4,15 @@ import { useAuth } from '../../context/AuthContext';
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
+  onForgotPassword?: () => void;
   onSuccessRedirect?: () => void;
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSuccessRedirect }) => {
+export const LoginForm: React.FC<LoginFormProps> = ({ 
+  onSwitchToSignup, 
+  onForgotPassword,
+  onSuccessRedirect 
+}) => {
   const { login } = useAuth();
 
   const [emailId, setEmailId] = useState('');
@@ -162,7 +167,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSucces
           <button
             type="button"
             className="auth-forgot-link"
-            onClick={() => setErrorMessage('Please contact your trip organizer for a password reset.')}
+            onClick={onForgotPassword}
           >
             Forgot Password?
           </button>

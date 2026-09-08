@@ -19,6 +19,11 @@ module.exports = {
     getUserById,
     createUser,
     updateUser,
+    updateProfile,
+    changePassword,
+    forgotPassword,
+    verifyResetOtp,
+    resetPassword,
     deleteUser,
     logoutUser,
     refreshAccessToken,
@@ -109,7 +114,21 @@ async function getUserById(req, res) {
             return sendError(res, "User not found", null, 404);
         }
 
-        return sendSuccess(res, "User fetched successfully", user);
+        const safeUser = {
+            id: user._id,
+            userId: user._id,
+            username: user.username,
+            emailId: user.emailId,
+            phone: user.phone || null,
+            upiId: user.upiId || null,
+            avatar: user.avatar || null,
+            travelStyle: user.travelStyle || 'Boutique',
+            currency: user.currency || 'INR',
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+        };
+
+        return sendSuccess(res, "User fetched successfully", safeUser);
     } catch (err) {
         console.error("Internal server error:", err.message);
         return sendError(res, "Internal Server Error", err, 500);
@@ -233,28 +252,238 @@ async function createTempUser(req, res) {
 }
 
 /**
- * Update user information
+ * Update user profile information (Full Name, Phone, UPI ID, Avatar, Travel Style, Currency)
+ * Automatically synchronizes changes to group_members ledger in real-time.
  */
-async function updateUser(req, res) {
-    const userId = req.params.userId;
-    const updatedUserData = req.body;
+async function updateProfile(req, res) {
+    const userId = req.userKey || req.params.userId;
+    const { username, phone, upiId, avatar, travelStyle, currency } = req.body;
 
     try {
         const user = await User.findById(userId);
 
-        if (!user) {
+        if (!user || user.isTemp) {
             return sendError(res, "User not found", null, 404);
         }
 
-        user.username = updatedUserData.username || user.username;
-        user.emailId = updatedUserData.emailId || user.emailId;
+        if (username && username.trim()) {
+            user.username = username.trim();
+        }
+        if (phone !== undefined) {
+            user.phone = phone ? phone.trim() : null;
+        }
+        if (upiId !== undefined) {
+            user.upiId = upiId ? upiId.trim() : null;
+        }
+        if (avatar !== undefined) {
+            user.avatar = avatar || null;
+        }
+        if (travelStyle !== undefined) {
+            user.travelStyle = travelStyle || 'Boutique';
+        }
+        if (currency !== undefined) {
+            user.currency = currency || 'INR';
+        }
 
         await user.save();
 
-        return sendSuccess(res, "User updated successfully", user);
+        // Real-time synchronization across all groups the user is part of:
+        try {
+            await pool.query(
+                `UPDATE group_members 
+                 SET name = $1, upi_id = $2 
+                 WHERE user_id = $3 OR LOWER(email) = LOWER($4)`,
+                [user.username, user.upiId || null, user._id, user.emailId]
+            );
+        } catch (syncErr) {
+            console.warn("Group member profile sync warning:", syncErr.message);
+        }
+
+        const safeUser = {
+            id: user._id,
+            userId: user._id,
+            username: user.username,
+            emailId: user.emailId,
+            phone: user.phone || null,
+            upiId: user.upiId || null,
+            avatar: user.avatar || null,
+            travelStyle: user.travelStyle || 'Boutique',
+            currency: user.currency || 'INR',
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+        };
+
+        return sendSuccess(res, "Profile updated successfully", safeUser);
     } catch (err) {
-        console.error(err);
-        return sendError(res, "Internal server error", err, 500);
+        console.error("Update Profile Error:", err);
+        return sendError(res, "Internal server error updating profile", err, 500);
+    }
+}
+
+/**
+ * Update user information (supports both /profile and /:userId routes)
+ */
+async function updateUser(req, res) {
+    return updateProfile(req, res);
+}
+
+/**
+ * Change user password while authenticated
+ */
+async function changePassword(req, res) {
+    const userId = req.userKey || req.params.userId;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+        return sendError(res, "Current password and new password are required", null, 400);
+    }
+
+    if (newPassword.length < 6) {
+        return sendError(res, "New password must be at least 6 characters long", null, 400);
+    }
+
+    if (currentPassword === newPassword) {
+        return sendError(res, "New password must be different from current password", null, 400);
+    }
+
+    try {
+        const user = await User.findById(userId);
+
+        if (!user || user.isTemp) {
+            return sendError(res, "User not found", null, 404);
+        }
+
+        const isMatch = await verifyPassword(currentPassword, user.password);
+        if (!isMatch) {
+            return sendError(res, "Incorrect current password. Please try again.", null, 400);
+        }
+
+        // Set and hash new password
+        user.password = newPassword;
+        await user.save();
+
+        return sendSuccess(res, "Password updated successfully");
+    } catch (err) {
+        console.error("Change Password Error:", err);
+        return sendError(res, "Internal server error changing password", err, 500);
+    }
+}
+
+/**
+ * Request password reset OTP
+ */
+async function forgotPassword(req, res) {
+    const emailId = (req.body.emailId || req.body.email || '').trim().toLowerCase();
+
+    if (!emailId) {
+        return sendError(res, "Email address is required", null, 400);
+    }
+
+    try {
+        const user = await User.findOne({ emailId });
+
+        if (!user || user.isTemp) {
+            return sendError(res, "No registered account found with this email address.", null, 404);
+        }
+
+        const otp = generateOTP();
+        user.code = otp;
+        user.codeExpiry = getOTPExpiry();
+        await user.save();
+
+        await sendOTPEmail(emailId, otp, user.username, "Password Reset");
+
+        return sendSuccess(res, "Verification code sent to your email for password reset.", {
+            emailId: user.emailId
+        });
+    } catch (err) {
+        console.error("Forgot Password Error:", err);
+        return sendError(res, "Failed to process forgot password request", err, 500);
+    }
+}
+
+/**
+ * Verify OTP entered for password reset
+ */
+async function verifyResetOtp(req, res) {
+    const emailId = (req.body.emailId || req.body.email || '').trim().toLowerCase();
+    const code = (req.body.code || '').toString().trim();
+
+    if (!emailId || !code) {
+        return sendError(res, "Email and OTP code are required", null, 400);
+    }
+
+    try {
+        const user = await User.findOne({ emailId });
+
+        if (!user || user.isTemp) {
+            return sendError(res, "User not found", null, 404);
+        }
+
+        if (isOTPExpired(user.codeExpiry)) {
+            return sendError(res, "Verification code has expired. Please request a new one.", null, 400);
+        }
+
+        const isValid = await verifyOTP(code, user.code);
+        if (!isValid) {
+            return sendError(res, "Invalid verification code. Please check your email.", null, 400);
+        }
+
+        return sendSuccess(res, "Code verified successfully", {
+            emailId: user.emailId,
+            verified: true
+        });
+    } catch (err) {
+        console.error("Verify Reset OTP Error:", err);
+        return sendError(res, "Error verifying OTP", err, 500);
+    }
+}
+
+/**
+ * Reset password using verified OTP code
+ */
+async function resetPassword(req, res) {
+    const emailId = (req.body.emailId || req.body.email || '').trim().toLowerCase();
+    const code = (req.body.code || '').toString().trim();
+    const newPassword = req.body.newPassword;
+
+    if (!emailId || !code || !newPassword) {
+        return sendError(res, "Email, OTP code, and new password are required", null, 400);
+    }
+
+    if (newPassword.length < 6) {
+        return sendError(res, "New password must be at least 6 characters long", null, 400);
+    }
+
+    try {
+        const user = await User.findOne({ emailId });
+
+        if (!user || user.isTemp) {
+            return sendError(res, "User not found", null, 404);
+        }
+
+        if (isOTPExpired(user.codeExpiry)) {
+            return sendError(res, "Verification code has expired. Please request a new one.", null, 400);
+        }
+
+        const isValid = await verifyOTP(code, user.code);
+        if (!isValid) {
+            return sendError(res, "Invalid verification code. Please check your latest email.", null, 400);
+        }
+
+        // Set and hash new password, clear code
+        user.password = newPassword;
+        user.code = null;
+        user.codeExpiry = null;
+        await user.save();
+
+        // Invalidate active refresh tokens for security
+        await pool.query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL', [user._id]);
+
+        return sendSuccess(res, "Password reset successfully! You can now log in with your new password.");
+    } catch (err) {
+        console.error("Reset Password Error:", err);
+        return sendError(res, "Failed to reset password", err, 500);
     }
 }
 
@@ -307,7 +536,14 @@ async function validateLogin(req, res) {
 
         const responseData = {
             userId: user._id,
+            id: user._id,
             username: user.username,
+            emailId: user.emailId,
+            phone: user.phone || null,
+            upiId: user.upiId || null,
+            avatar: user.avatar || null,
+            travelStyle: user.travelStyle || 'Boutique',
+            currency: user.currency || 'INR',
             accessToken: token,
             refreshToken: refreshToken
         };
@@ -363,8 +599,14 @@ async function googleLogin(req, res) {
 
         return sendSuccess(res, 'Google login successful', {
             userId: user._id,
+            id: user._id,
             username: user.username,
             emailId: user.emailId,
+            phone: user.phone || null,
+            upiId: user.upiId || null,
+            avatar: user.avatar || null,
+            travelStyle: user.travelStyle || 'Boutique',
+            currency: user.currency || 'INR',
             accessToken,
             refreshToken
         });

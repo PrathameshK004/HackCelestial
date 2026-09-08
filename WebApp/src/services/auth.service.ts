@@ -1,5 +1,6 @@
 import { apiRequest } from './apiClient';
 import { 
+  User,
   AuthResponse, 
   LoginPayload, 
   RegisterTempPayload, 
@@ -132,6 +133,13 @@ export const authService = {
   async changePassword(payload: PasswordChangePayload): Promise<AuthResponse> {
     return request<AuthResponse>('/users/change-password', {
       method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateProfile(payload: Partial<User>): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/profile', {
+      method: 'PUT',
       body: JSON.stringify(payload),
     });
   },

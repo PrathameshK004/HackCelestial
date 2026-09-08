@@ -159,9 +159,9 @@ function validateOtpReq(req, res, next) {
     return sendError(res, 'Purpose must be a string.', null, 400);
   }
 
-  const validPurposes = ["Sign Up"];
+  const validPurposes = ["Sign Up", "Forgot Password", "Password Reset", "Reset Password", "Verification"];
   if (!validPurposes.includes(purpose)) {
-    return sendError(res, 'Purpose must be "Sign Up".', null, 400);
+    return sendError(res, 'Invalid OTP purpose. Allowed purposes: "Sign Up", "Forgot Password", "Password Reset", "Verification".', null, 400);
   }
 
   next(); 
