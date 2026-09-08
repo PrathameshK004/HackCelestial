@@ -15,3 +15,6 @@ Authentication uses a 15-minute access token and a 7-day rotating refresh token.
 Use `POST /api/users/refresh` to rotate the refresh token and issue a new access token. `POST /api/users/logout` revokes the current refresh token. The access token can be sent as a Bearer token or is read from the `accessToken` cookie.
 
 The API listens on port `4000` by default.
+
+
+New lines added by yogesh
