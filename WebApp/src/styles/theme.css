@@ -2984,3 +2984,543 @@ a {
     display: none;
   }
 }
+
+/* ==========================================================================
+   Git-Style Mobile & Desktop Header Inbox Icon & Notification Drawer
+   ========================================================================== */
+
+.git-inbox-header-btn {
+  position: relative !important;
+  cursor: pointer;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  transition: all var(--transition-fast);
+}
+
+.git-inbox-header-btn:hover {
+  background: var(--bg-surface-warm);
+  color: #0969da;
+  border-color: rgba(9, 105, 218, 0.4);
+}
+
+.git-inbox-header-btn.active {
+  background: rgba(9, 105, 218, 0.08);
+  color: #0969da;
+  border-color: #0969da;
+}
+
+/* Classic GitHub Blue Notification Indicator Dot */
+.git-inbox-unread-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #0969da;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(9, 105, 218, 0.35);
+  animation: gitPulse 2.4s infinite ease-in-out;
+}
+
+@keyframes gitPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.85;
+  }
+}
+
+/* Git Inbox Portal & Backdrop */
+.git-inbox-portal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.git-inbox-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeInBackdrop 0.2s ease-out;
+}
+
+/* Git Inbox Container (Slide-in Drawer) */
+.git-inbox-container {
+  position: relative;
+  width: min(390px, 92vw);
+  height: 100vh;
+  height: 100dvh;
+  background: #ffffff;
+  border-left: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  z-index: 100000;
+  animation: drawerSlideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Header */
+.git-inbox-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.git-inbox-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.git-inbox-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.git-inbox-title-icon {
+  color: #0969da;
+}
+
+.git-inbox-count-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1.5px 6px;
+  border-radius: 9999px;
+  background: rgba(9, 105, 218, 0.1);
+  color: #0969da;
+}
+
+.git-inbox-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.git-inbox-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: 1px solid rgba(203, 213, 225, 0.7);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-inbox-action-btn:hover {
+  background: rgba(241, 245, 249, 0.8);
+  color: #0969da;
+  border-color: #0969da;
+}
+
+.git-inbox-close-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-inbox-close-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+/* Filter Bar */
+.git-inbox-filter-bar {
+  display: flex;
+  gap: 5px;
+}
+
+.git-inbox-filter-pill {
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  background: #f1f5f9;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-inbox-filter-pill:hover {
+  color: #0f172a;
+  background: #e2e8f0;
+}
+
+.git-inbox-filter-pill.active {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+/* Body / List */
+.git-inbox-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: #f8fafc;
+}
+
+.git-inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Notification Item Card */
+.git-inbox-item {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.git-inbox-item:hover {
+  border-color: rgba(9, 105, 218, 0.35);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+  transform: translateY(-1px);
+}
+
+.git-inbox-item.unread {
+  border-left: 3px solid #0969da;
+  background: #ffffff;
+}
+
+.git-inbox-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.git-inbox-item-category {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.git-inbox-cat-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.git-inbox-cat-icon.trip {
+  color: #059669;
+}
+.git-inbox-cat-icon.expense {
+  color: #d97706;
+}
+.git-inbox-cat-icon.security {
+  color: #0969da;
+}
+.git-inbox-cat-icon.system {
+  color: #64748b;
+}
+
+.git-inbox-item-time {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.62rem;
+  color: #94a3b8;
+}
+
+.git-inbox-item-content {
+  margin-bottom: 3px;
+}
+
+.git-inbox-item-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.35;
+}
+
+.git-inbox-unread-bullet {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #0969da;
+  flex-shrink: 0;
+}
+
+.git-inbox-item-desc {
+  font-size: 0.70rem;
+  color: #475569;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.git-inbox-item-footer {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(226, 232, 240, 0.7);
+}
+
+.git-inbox-link-pill {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #0969da;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Empty State */
+.git-inbox-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 16px;
+}
+
+.git-inbox-empty-circle {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(9, 105, 218, 0.08);
+  color: #0969da;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.git-inbox-empty-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px;
+}
+
+.git-inbox-empty-desc {
+  font-size: 0.72rem;
+  color: #64748b;
+  max-width: 240px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* Footer */
+.git-inbox-footer {
+  padding: 10px 16px;
+  background: #ffffff;
+  border-top: 1px solid rgba(226, 232, 240, 0.85);
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.git-inbox-clear-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.git-inbox-clear-all-btn:hover {
+  color: #dc2626;
+}
+
+/* Invitations Tab & Actions */
+.git-inbox-pill-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 0 5px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #0969da;
+  color: #ffffff;
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.git-inbox-filter-pill.active .git-inbox-pill-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.git-inbox-invite-card {
+  border-left: 3px solid #059669 !important;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(5, 150, 105, 0.06);
+}
+
+.git-inbox-invite-card:hover {
+  border-color: rgba(5, 150, 105, 0.4);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.08);
+}
+
+.git-inbox-role-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  background: #f0fdf4;
+  color: #059669;
+  border: 1px solid #bbf7d0;
+  text-transform: uppercase;
+}
+
+.git-inbox-invite-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 6px 0 10px;
+  padding: 5px 8px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #f1f5f9;
+}
+
+.git-inbox-meta-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.64rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.git-inbox-invite-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(241, 245, 249, 0.9);
+}
+
+.git-inbox-btn-accept {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: #059669;
+  color: #ffffff;
+  border: 1px solid #059669;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(5, 150, 105, 0.2);
+}
+
+.git-inbox-btn-accept:hover:not(:disabled) {
+  background: #047857;
+  border-color: #047857;
+  transform: translateY(-0.5px);
+}
+
+.git-inbox-btn-accept:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.git-inbox-btn-accept:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.git-inbox-btn-deny {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: #ffffff;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-inbox-btn-deny:hover:not(:disabled) {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+  transform: translateY(-0.5px);
+}
+
+.git-inbox-btn-deny:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.git-inbox-btn-deny:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.git-inbox-section-block {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+
+.git-inbox-section-subhead {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #059669;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  padding-left: 2px;
+}
+
+

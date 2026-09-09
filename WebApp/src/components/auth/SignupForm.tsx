@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, RotateCw, KeyRound, User, Mail, Lock, ArrowRight } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, RotateCw, KeyRound, Phone } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface SignupFormProps {
@@ -13,17 +13,38 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
   // Step 1: Input details, Step 2: OTP Verification
   const [step, setStep] = useState<1 | 2>(1);
 
-  // Form Fields
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  // Form Fields matching reference layout
+  const [fullName, setFullName] = useState('');
   const [emailId, setEmailId] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [agreeTerms, setAgreeTerms] = useState(true);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Dynamic Password Security Score
+  const passwordStrength = useMemo(() => {
+    if (!password) return { score: 0, label: '', color: '#e2e8f0' };
+    let score = 0;
+    if (password.length >= 6) score++;
+    if (password.length >= 8) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[A-Z]/.test(password) || /[^A-Za-z0-9]/.test(password)) score++;
+
+    switch (score) {
+      case 1:
+        return { score: 1, label: 'Weak', color: '#ef4444' };
+      case 2:
+        return { score: 2, label: 'Fair', color: '#f59e0b' };
+      case 3:
+        return { score: 3, label: 'Good', color: '#0284c7' };
+      case 4:
+      default:
+        return { score: 4, label: 'Strong', color: '#059669' };
+    }
+  }, [password]);
 
   // OTP State (4 digits matching backend OTP generator)
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '']);
-  const [quickOtp, setQuickOtp] = useState<string | null>(null);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Resend Timer (30s fast-cycle)
@@ -61,10 +82,9 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
-
-    if (!fullName || fullName.length < 3) {
-      setErrorMessage('Please enter your First and Last name (at least 3 characters)');
+    const cleanName = fullName.trim();
+    if (!cleanName || cleanName.length < 2) {
+      setErrorMessage('Please enter your full name');
       return;
     }
 
@@ -84,8 +104,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
       return;
     }
 
-    if (!agreeTerms) {
-      setErrorMessage('Please agree to the Terms & Condition');
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match');
       return;
     }
 
@@ -93,7 +113,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
 
     try {
       const res = await registerTemp({
-        username: fullName,
+        username: cleanName,
         emailId: emailId.trim().toLowerCase(),
         password,
       });
@@ -102,22 +122,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
         setStep(2);
         setResendTimer(30);
         setCanResend(false);
-
-        const code = res.otp ? String(res.otp) : (res.data?.otp ? String(res.data.otp) : null);
-        if (code) {
-          setQuickOtp(code);
-          const digits = code.slice(0, 4).split('');
-          setOtpDigits(digits);
-          setSuccessMessage(`Verification code dispatched! Quick-fill activated (${code})`);
-          setTimeout(() => {
-            otpInputRefs.current[3]?.focus();
-          }, 100);
-        } else {
-          setSuccessMessage(`We sent a 4-digit verification code to ${emailId}`);
-          setTimeout(() => {
-            otpInputRefs.current[0]?.focus();
-          }, 100);
-        }
+        setOtpDigits(['', '', '', '']);
+        setSuccessMessage(`A 4-digit verification code has been sent to ${emailId.trim().toLowerCase()}`);
+        setTimeout(() => {
+          otpInputRefs.current[0]?.focus();
+        }, 100);
       } else {
         setErrorMessage(res.message || 'Failed to initiate account creation. Please try again.');
       }
@@ -187,14 +196,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
       if (res.success) {
         setResendTimer(30);
         setCanResend(false);
-        const code = res.otp ? String(res.otp) : null;
-        if (code) {
-          setQuickOtp(code);
-          setOtpDigits(code.slice(0, 4).split(''));
-          setSuccessMessage(`Fresh code sent! Quick-fill: ${code}`);
-        } else {
-          setSuccessMessage('A fresh verification code was sent to your email.');
-        }
+        setOtpDigits(['', '', '', '']);
+        setSuccessMessage(`A fresh verification code was sent to ${emailId.trim().toLowerCase()}`);
+        setTimeout(() => {
+          otpInputRefs.current[0]?.focus();
+        }, 100);
       } else {
         setErrorMessage(res.message || 'Could not resend code. Please try again.');
       }
@@ -218,11 +224,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
     }
 
     setIsLoading(true);
-    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+    const cleanName = fullName.trim();
 
     try {
       const res = await verifyAndRegister({
-        username: fullName,
+        username: cleanName,
         emailId: emailId.trim().toLowerCase(),
         password,
         code: fullCode,
@@ -253,10 +259,10 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
 
   return (
     <div className="auth-modern-form-pane">
-      {/* Top back navigation */}
+      {/* Desktop Top back navigation */}
       <button 
         type="button" 
-        className="auth-minimal-back-btn" 
+        className="auth-minimal-back-btn desktop-only-back-btn" 
         onClick={step === 2 ? () => setStep(1) : onSwitchToLogin}
         title={step === 2 ? 'Back to details' : 'Back to login'}
       >
@@ -266,20 +272,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
       {/* Main Title & Subtitle */}
       <div className="auth-modern-header">
         <h1 className="auth-modern-title">
-          {step === 1 ? 'Create an Account' : 'Verify Email'}
+          {step === 1 ? 'Sign Up' : 'Verify Email'}
         </h1>
         <p className="auth-modern-subtitle">
           {step === 1 ? (
-            <>
-              Already have an account?{' '}
-              <button 
-                type="button" 
-                className="auth-bold-link" 
-                onClick={onSwitchToLogin}
-              >
-                Log in
-              </button>
-            </>
+            'Create your account to get started with TripMate.'
           ) : (
             `Enter the 4-digit code sent to ${emailId}`
           )}
@@ -303,89 +300,49 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
       {step === 1 ? (
         /* STEP 1: REGISTRATION DETAILS */
         <form onSubmit={handleStep1Submit} className="auth-modern-form" noValidate>
-          {/* First Name & Last Name Grid */}
-          <div className="auth-name-grid">
-            <div className="auth-field-group">
-              <label htmlFor="signup-firstname" className="auth-field-label">
-                First Name
-              </label>
-              <div className="auth-input-relative-wrap">
-                <User size={17} className="auth-input-leading-icon" />
-                <input
-                  id="signup-firstname"
-                  type="text"
-                  className="auth-modern-input has-left-icon"
-                  placeholder="John"
-                  value={firstName}
-                  onChange={(e) => {
-                    setFirstName(e.target.value);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-            </div>
-
-            <div className="auth-field-group">
-              <label htmlFor="signup-lastname" className="auth-field-label">
-                Last Name
-              </label>
-              <div className="auth-input-relative-wrap">
-                <User size={17} className="auth-input-leading-icon" />
-                <input
-                  id="signup-lastname"
-                  type="text"
-                  className="auth-modern-input has-left-icon"
-                  placeholder="Doe"
-                  value={lastName}
-                  onChange={(e) => {
-                    setLastName(e.target.value);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-            </div>
+          {/* Full Name Pill Input */}
+          <div className="auth-field-group">
+            <input
+              id="signup-fullname"
+              type="text"
+              className="auth-modern-input auth-pill-input"
+              placeholder="Full Name"
+              value={fullName}
+              onChange={(e) => {
+                setFullName(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              required
+              disabled={isLoading}
+            />
           </div>
 
-          {/* Email Address */}
+          {/* Email Address Pill Input */}
           <div className="auth-field-group">
-            <label htmlFor="signup-email" className="auth-field-label">
-              Email Address
-            </label>
-            <div className="auth-input-relative-wrap">
-              <Mail size={18} className="auth-input-leading-icon" />
-              <input
-                id="signup-email"
-                type="email"
-                className="auth-modern-input has-left-icon"
-                placeholder="name@example.com"
-                value={emailId}
-                onChange={(e) => {
-                  setEmailId(e.target.value);
-                  if (errorMessage) setErrorMessage(null);
-                }}
-                autoComplete="email"
-                required
-                disabled={isLoading}
-              />
-            </div>
+            <input
+              id="signup-email"
+              type="email"
+              className="auth-modern-input auth-pill-input"
+              placeholder="Email Address"
+              value={emailId}
+              onChange={(e) => {
+                setEmailId(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              autoComplete="email"
+              required
+              disabled={isLoading}
+            />
           </div>
 
-          {/* Password */}
+          {/* Password Pill Input */}
           <div className="auth-field-group">
-            <label htmlFor="signup-password" className="auth-field-label">
-              Password
-            </label>
             <div className="auth-input-relative-wrap">
-              <Lock size={18} className="auth-input-leading-icon" />
               <input
                 id="signup-password"
                 type={showPassword ? 'text' : 'password'}
-                className="auth-modern-input has-left-icon has-right-btn"
-                placeholder="At least 6 characters"
+                className="auth-modern-input auth-pill-input has-right-btn"
+                placeholder="Password (Min 6 characters)"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
@@ -402,15 +359,75 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                 tabIndex={-1}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+              </button>
+            </div>
+
+            {/* Interactive Password Security Meter */}
+            {password.length > 0 && (
+              <div className="auth-password-strength-wrap">
+                <div className="auth-strength-bars">
+                  {[1, 2, 3, 4].map((level) => (
+                    <div
+                      key={level}
+                      className="auth-strength-bar"
+                      style={{
+                        backgroundColor: level <= passwordStrength.score ? passwordStrength.color : '#e2e8f0',
+                      }}
+                    />
+                  ))}
+                </div>
+                <div className="auth-strength-meta-row">
+                  <span className="auth-strength-label" style={{ color: passwordStrength.color }}>
+                    Security: <strong>{passwordStrength.label}</strong>
+                  </span>
+                  <span className="auth-strength-hint">
+                    {passwordStrength.score < 2
+                      ? 'Min 6 characters'
+                      : passwordStrength.score < 3
+                      ? 'Add numbers/uppercase'
+                      : passwordStrength.score < 4
+                      ? 'Add special characters'
+                      : 'Robust password'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Confirm Password Pill Input */}
+          <div className="auth-field-group">
+            <div className="auth-input-relative-wrap">
+              <input
+                id="signup-confirmpassword"
+                type={showConfirmPassword ? 'text' : 'password'}
+                className="auth-modern-input auth-pill-input has-right-btn"
+                placeholder="Confirm Password"
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  if (errorMessage) setErrorMessage(null);
+                }}
+                autoComplete="new-password"
+                required
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                className="auth-eye-toggle-btn"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                tabIndex={-1}
+                aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+              >
+                {showConfirmPassword ? <EyeOff size={19} /> : <Eye size={19} />}
               </button>
             </div>
           </div>
 
-          {/* Continue / Create Account Emerald Pill Button */}
+          {/* Create Account Primary Action Pill Button */}
           <button
             type="submit"
-            className="auth-emerald-pill-btn"
+            className="auth-blue-pill-btn"
             disabled={isLoading}
           >
             {isLoading ? (
@@ -419,38 +436,20 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                 <span>Sending Code...</span>
               </>
             ) : (
-              <>
-                <span>Continue & Send OTP</span>
-                <ArrowRight size={17} />
-              </>
+              <span>Create Account</span>
             )}
           </button>
-
-          {/* Terms Checkbox */}
-          <div className="auth-checkbox-row">
-            <label className="auth-clean-checkbox-label">
-              <input
-                type="checkbox"
-                checked={agreeTerms}
-                onChange={(e) => setAgreeTerms(e.target.checked)}
-                className="auth-clean-checkbox"
-              />
-              <span className="auth-checkbox-text">
-                I agree to the <span className="auth-bold-underline">Terms & Condition</span>
-              </span>
-            </label>
-          </div>
 
           {/* Divider */}
           <div className="auth-or-divider">
             <span>or</span>
           </div>
 
-          {/* Social login buttons */}
+          {/* Social login buttons: Google & Phone side-by-side */}
           <div className="auth-social-grid">
             <button
               type="button"
-              className="auth-social-btn"
+              className="auth-social-pill-btn"
               onClick={() => setErrorMessage('Google SSO is configured for production domain.')}
             >
               <svg className="social-svg-icon" viewBox="0 0 24 24" width="18" height="18">
@@ -459,18 +458,28 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
               </svg>
-              <span>Continue with Google</span>
+              <span>Google</span>
             </button>
 
             <button
               type="button"
-              className="auth-social-btn"
-              onClick={() => setErrorMessage('Facebook SSO is configured for production domain.')}
+              className="auth-social-pill-btn"
+              onClick={() => setErrorMessage('Phone verification is enabled in the mobile app.')}
             >
-              <svg className="social-svg-icon" viewBox="0 0 24 24" width="18" height="18" fill="#1877F2">
-                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-              </svg>
-              <span>Continue with Facebook</span>
+              <Phone size={16} />
+              <span>Phone</span>
+            </button>
+          </div>
+
+          {/* Bottom Switch Link */}
+          <div className="auth-bottom-switch-row">
+            <span>Already have an account?</span>
+            <button 
+              type="button" 
+              className="auth-bold-link" 
+              onClick={onSwitchToLogin}
+            >
+              Sign In
             </button>
           </div>
         </form>
@@ -490,35 +499,6 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
               </button>
             </div>
 
-            {quickOtp && (
-              <div
-                className="auth-quick-fill-chip"
-                onClick={() => {
-                  setOtpDigits(quickOtp.slice(0, 4).split(''));
-                  submitVerification(quickOtp);
-                }}
-                title="Click to auto-verify immediately"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  backgroundColor: '#f0fdf4',
-                  border: '1px solid #bbf7d0',
-                  color: '#15803d',
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  margin: '6px 0 12px',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                }}
-              >
-                <span>⚡ Fast-Track OTP: <strong>{quickOtp}</strong></span>
-                <span style={{ textDecoration: 'underline', opacity: 0.85 }}>(1-Click Verify)</span>
-              </div>
-            )}
-
             {/* 4 Digit Grid */}
             <div className="auth-otp-grid auth-otp-grid-4">
               {otpDigits.map((digit, idx) => (
@@ -527,6 +507,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                   ref={(el) => (otpInputRefs.current[idx] = el)}
                   type="text"
                   inputMode="numeric"
+                  autoComplete="off"
                   maxLength={1}
                   className={`auth-otp-box ${digit ? 'filled' : ''}`}
                   value={digit}

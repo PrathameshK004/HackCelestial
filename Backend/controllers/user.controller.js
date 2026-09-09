@@ -115,7 +115,6 @@ async function sendOTP(req, res) {
         
         return sendSuccess(res, "OTP sent successfully", {
             emailId: cleanEmail,
-            otp,
             expiresIn: 300
         });
     } catch (error) {
@@ -309,10 +308,9 @@ async function createTempUser(req, res) {
             console.error(`[Background Email Error] Failed sending OTP to ${emailId}:`, emailErr.message);
         });
 
-        // 5. Immediate response to client (<250ms) with OTP for rapid completion (<30s flow)
+        // 5. Response to client without exposing OTP
         return sendSuccess(res, "Temporary user created and OTP sent", { 
             emailId,
-            otp,
             expiresIn: 300 
         }, 200);
     } catch (error) {
@@ -477,7 +475,6 @@ async function forgotPassword(req, res) {
 
         return sendSuccess(res, "Verification code sent to your email for password reset.", {
             emailId: user.email_id,
-            otp,
             expiresIn: 300
         });
     } catch (err) {

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, ArrowLeft, ArrowRight, RotateCw, KeyRound, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, ArrowLeft, RotateCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface ForgotPasswordFormProps {
@@ -231,43 +231,34 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
         /* STEP 1: ENTER EMAIL */
         <form onSubmit={handleRequestOtp} className="auth-modern-form" noValidate>
           <div className="auth-field-group">
-            <label htmlFor="forgot-email" className="auth-field-label">
-              Registered Email Address
-            </label>
-            <div className="auth-input-relative-wrap">
-              <Mail size={18} className="auth-input-leading-icon" />
-              <input
-                id="forgot-email"
-                type="email"
-                className="auth-modern-input has-left-icon"
-                placeholder="name@example.com"
-                value={emailId}
-                onChange={(e) => {
-                  setEmailId(e.target.value);
-                  if (errorMessage) setErrorMessage(null);
-                }}
-                autoComplete="email"
-                required
-                disabled={isLoading}
-              />
-            </div>
+            <input
+              id="forgot-email"
+              type="email"
+              className="auth-modern-input auth-pill-input"
+              placeholder="Email Address"
+              value={emailId}
+              onChange={(e) => {
+                setEmailId(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              autoComplete="email"
+              required
+              disabled={isLoading}
+            />
           </div>
 
           <button
             type="submit"
-            className="auth-emerald-pill-btn"
+            className="auth-blue-pill-btn"
             disabled={isLoading}
           >
             {isLoading ? (
               <>
                 <Loader2 size={18} className="spin-animation" />
-                <span>Sending Verification Code...</span>
+                <span>Sending Code...</span>
               </>
             ) : (
-              <>
-                <span>Send Verification Code</span>
-                <ArrowRight size={17} />
-              </>
+              <span>Send Verification Code</span>
             )}
           </button>
 
@@ -361,16 +352,12 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
 
           {/* Confirm New Password */}
           <div className="auth-field-group">
-            <label htmlFor="reset-confirm-password" className="auth-field-label">
-              Confirm New Password
-            </label>
             <div className="auth-input-relative-wrap">
-              <ShieldCheck size={18} className="auth-input-leading-icon" />
               <input
                 id="reset-confirm-password"
                 type={showConfirmPassword ? 'text' : 'password'}
-                className="auth-modern-input has-left-icon has-right-btn"
-                placeholder="Re-enter your new password"
+                className="auth-modern-input auth-pill-input has-right-btn"
+                placeholder="Confirm New Password"
                 value={confirmPassword}
                 onChange={(e) => {
                   setConfirmPassword(e.target.value);
@@ -387,11 +374,11 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
                 tabIndex={-1}
                 aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
               >
-                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showConfirmPassword ? <EyeOff size={19} /> : <Eye size={19} />}
               </button>
             </div>
             {newPassword && confirmPassword && newPassword === confirmPassword && (
-              <span style={{ fontSize: '0.74rem', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '0.74rem', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', paddingLeft: '14px' }}>
                 <CheckCircle2 size={13} /> Passwords match
               </span>
             )}
@@ -419,7 +406,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
           {/* Reset Action Button */}
           <button
             type="submit"
-            className="auth-emerald-pill-btn"
+            className="auth-blue-pill-btn"
             disabled={isLoading}
           >
             {isLoading ? (
@@ -428,10 +415,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
                 <span>Updating Password...</span>
               </>
             ) : (
-              <>
-                <KeyRound size={17} />
-                <span>Reset Password & Sign In</span>
-              </>
+              <span>Reset Password & Sign In</span>
             )}
           </button>
         </form>

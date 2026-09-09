@@ -31,11 +31,12 @@ import {
   Car,
   ShoppingBag,
   Receipt,
+  Inbox,
   X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { groupService } from '../services/group.service';
-import { GroupSummary, SettlementData } from '../types/group';
+import { GroupSummary, SettlementData, PendingInvitation } from '../types/group';
 import { GroupMenuPage } from './GroupMenuPage';
 import { ProfilePage } from './ProfilePage';
 import { PaymentsPage } from './PaymentsPage';
@@ -46,6 +47,7 @@ import { AboutPage } from './AboutPage';
 import { QuickExpenseModal } from '../components/home/QuickExpenseModal';
 import { JoinGroupModal } from '../components/home/JoinGroupModal';
 import { SettleUpModal } from '../components/settlement/SettleUpModal';
+import { GitInboxDrawer, InboxNotification } from '../components/common/GitInboxDrawer';
 import {
   GroupCardItem,
   SimplifiedTransfer
@@ -312,6 +314,128 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const [settleTransferData, setSettleTransferData] = useState<SimplifiedTransfer | null>(null);
   const [splitTab, setSplitTab] = useState<'transfers' | 'expenses'>('transfers');
 
+  // Git-style Inbox Notifications State
+  const [isInboxOpen, setIsInboxOpen] = useState(false);
+  const [notifications, setNotifications] = useState<InboxNotification[]>([
+    {
+      id: 'notif-1',
+      title: 'Security Verified',
+      description: 'Zero plaintext OTP leak vulnerability eliminated. Direct SMTP delivery active.',
+      timestamp: 'Just now',
+      isRead: false,
+      category: 'security'
+    },
+    {
+      id: 'notif-2',
+      title: 'Personalized Stays Available',
+      description: 'Explore curated stays in Barcelona, San Francisco, and Banff.',
+      timestamp: '20m ago',
+      isRead: false,
+      category: 'trip',
+      actionTab: 'explore'
+    },
+    {
+      id: 'notif-3',
+      title: 'Automated Bill Splitter',
+      description: 'Real-time ledger engine ready to balance shared group expenses.',
+      timestamp: '2h ago',
+      isRead: true,
+      category: 'expense',
+      actionTab: 'expenses'
+    }
+  ]);
+
+  const [pendingInvitations, setPendingInvitations] = useState<PendingInvitation[]>([]);
+  const [isProcessingInviteCode, setIsProcessingInviteCode] = useState<string | null>(null);
+
+  const unreadInboxCount = useMemo(() => {
+    const unreadNotifs = notifications.filter((n) => !n.isRead).length;
+    return unreadNotifs + pendingInvitations.length;
+  }, [notifications, pendingInvitations]);
+
+  const loadPendingInvitations = async () => {
+    try {
+      const res = await groupService.getMyPendingInvitations();
+      if (res.data && Array.isArray(res.data)) {
+        setPendingInvitations(res.data);
+      } else {
+        setPendingInvitations([]);
+      }
+    } catch (err: any) {
+      console.warn('Could not load pending invitations:', err.message);
+      setPendingInvitations([]);
+    }
+  };
+
+  const handleAcceptInvite = async (inviteCode: string, groupName: string) => {
+    setIsProcessingInviteCode(inviteCode);
+    try {
+      await groupService.acceptInvite(inviteCode);
+      setPendingInvitations((prev) => prev.filter((inv) => inv.inviteCode !== inviteCode));
+      await loadGroups();
+      setNotifications((prev) => [
+        {
+          id: `accepted-${inviteCode}-${Date.now()}`,
+          title: `Joined "${groupName}"`,
+          description: 'Your trip membership has been approved. You now have access to shared expenses and plans.',
+          timestamp: 'Just now',
+          isRead: false,
+          category: 'trip',
+          actionTab: 'trips'
+        },
+        ...prev
+      ]);
+    } catch (err: any) {
+      console.error('Failed to accept invite:', err);
+      alert(err.message || 'Failed to accept invitation. It may have expired or already been processed.');
+    } finally {
+      setIsProcessingInviteCode(null);
+    }
+  };
+
+  const handleRejectInvite = async (inviteCode: string, groupName: string) => {
+    if (!window.confirm(`Decline the invitation to join "${groupName}"?`)) return;
+    setIsProcessingInviteCode(inviteCode);
+    try {
+      await groupService.rejectInvite(inviteCode);
+      setPendingInvitations((prev) => prev.filter((inv) => inv.inviteCode !== inviteCode));
+      setNotifications((prev) => [
+        {
+          id: `declined-${inviteCode}-${Date.now()}`,
+          title: `Declined Invitation: "${groupName}"`,
+          description: 'The invitation has been declined.',
+          timestamp: 'Just now',
+          isRead: true,
+          category: 'system'
+        },
+        ...prev
+      ]);
+    } catch (err: any) {
+      console.error('Failed to decline invite:', err);
+      alert(err.message || 'Failed to decline invitation.');
+    } finally {
+      setIsProcessingInviteCode(null);
+    }
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  };
+
+  const handleSelectNotification = (item: InboxNotification) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+    );
+    if (item.actionTab) {
+      setDockTab(item.actionTab);
+      setIsInboxOpen(false);
+    }
+  };
+
+  const handleClearAllNotifications = () => {
+    setNotifications([]);
+  };
+
   const profileMenuRef = React.useRef<HTMLDivElement>(null);
 
   // Close profile dropdown on outside click
@@ -382,7 +506,14 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
   useEffect(() => {
     loadGroups();
+    loadPendingInvitations();
   }, []);
+
+  useEffect(() => {
+    if (isInboxOpen) {
+      loadPendingInvitations();
+    }
+  }, [isInboxOpen]);
 
   useEffect(() => {
     if (selectedExpenseGroupId) {
@@ -1229,6 +1360,20 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
             {/* Right: Action Icons & Profile Dropdown */}
             <div className="yondr-header-right">
+              {/* Git-Style Inbox Icon Button */}
+              <button
+                type="button"
+                className={`btn-icon-circle git-inbox-header-btn ${isInboxOpen ? 'active' : ''}`}
+                onClick={() => setIsInboxOpen(!isInboxOpen)}
+                title="Inbox & Notifications"
+                aria-label="Open notifications inbox"
+              >
+                <Inbox size={18} strokeWidth={2} />
+                {unreadInboxCount > 0 && (
+                  <span className="git-inbox-unread-dot" aria-label={`${unreadInboxCount} unread notifications`} />
+                )}
+              </button>
+
               <div className="profile-menu-anchor" ref={profileMenuRef}>
                 {/* Mobile Hamburger Menu Button */}
                 <button
@@ -2276,6 +2421,20 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
           }}
         />
       )}
+
+      {/* Git-Style Notifications & Activity Inbox Drawer */}
+      <GitInboxDrawer
+        isOpen={isInboxOpen}
+        onClose={() => setIsInboxOpen(false)}
+        notifications={notifications}
+        pendingInvitations={pendingInvitations}
+        onMarkAllAsRead={handleMarkAllNotificationsRead}
+        onSelectNotification={handleSelectNotification}
+        onClearAll={handleClearAllNotifications}
+        onAcceptInvite={handleAcceptInvite}
+        onRejectInvite={handleRejectInvite}
+        isProcessingInviteCode={isProcessingInviteCode}
+      />
 
       {/* Standard Mobile Side Drawer (Mounted directly to document.body for zero right-side gap) */}
       {isProfileMenuOpen && typeof document !== 'undefined' && createPortal(

@@ -167,7 +167,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { 
         success: true, 
         message: response.message || 'Verification code sent to your email',
-        otp: rawData?.otp,
         data: rawData
       };
     } catch (err: any) {
@@ -237,7 +236,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { 
         success: true, 
         message: response.message || 'New OTP sent to your email',
-        otp: rawData?.otp
+        data: rawData
       };
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to resend OTP' };

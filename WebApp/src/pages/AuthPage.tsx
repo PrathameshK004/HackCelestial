@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Compass } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, User } from 'lucide-react';
 import { AuthBrandShowcase } from '../components/auth/AuthBrandShowcase';
 import { LoginForm } from '../components/auth/LoginForm';
 import { SignupForm } from '../components/auth/SignupForm';
@@ -18,30 +18,62 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
   return (
     <div className="auth-fullscreen-navy-canvas">
-      {/* Centered Main Card */}
+      {/* Ambient background glow elements (desktop) */}
+      <div className="auth-bg-ambient-orb orb-1" />
+      <div className="auth-bg-ambient-orb orb-2" />
+
+      {/* Mobile Top Hero Header with Image & Floating Navigation (Matching provided layout) */}
+      <div className="auth-mobile-hero-header">
+        <img
+          src="/auth-hero.jpg"
+          alt="Triptual Travel"
+          className="auth-mobile-hero-bg-img"
+        />
+        <div className="auth-mobile-hero-overlay" />
+
+        {/* Floating Top Navigation: Back Button & Mode Pill */}
+        <div className="auth-mobile-hero-nav">
+          <button
+            type="button"
+            className="auth-mobile-nav-back-btn"
+            onClick={() => {
+              if (mode === 'forgot') setMode('login');
+              else if (mode === 'signup') setMode('login');
+              else if (window.history.length > 1) window.history.back();
+            }}
+            title="Go back"
+            aria-label="Go back"
+          >
+            <ArrowLeft size={20} />
+          </button>
+
+          {mode !== 'forgot' && (
+            <button
+              type="button"
+              className="auth-mobile-hero-role-pill"
+              onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+              title={`Switch to ${mode === 'login' ? 'Sign Up' : 'Log In'}`}
+            >
+              <User size={15} />
+              <span>{mode === 'login' ? 'Sign Up' : 'Log In'}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Card */}
       <div className="auth-card-modal-container">
         <div className="auth-card-modal-inner">
-          {/* Left Column: Visual Hero Banner (Desktop) */}
+          {/* Left Column: Visual Hero Banner (Desktop only) */}
           <div className="auth-hero-column">
             <AuthBrandShowcase />
           </div>
 
           {/* Right Column: Form View */}
           <div className="auth-form-column-modern">
-            {/* Mobile Top Brand Header */}
-            <div className="auth-mobile-brand-banner">
-              <div className="auth-mobile-brand-icon-wrap">
-                <Compass size={22} className="auth-mobile-brand-icon" />
-              </div>
-              <div className="auth-mobile-brand-text">
-                <span className="auth-mobile-brand-pill">Trip Ledger</span>
-                <h2 className="auth-mobile-brand-title">GroupTrip Ledger</h2>
-              </div>
-            </div>
-
-            {/* Segmented Mode Switcher (Log In / Create Account) - shown when not in recovery */}
+            {/* Desktop Segmented Mode Switcher */}
             {mode !== 'forgot' && (
-              <div className="auth-segmented-pill-switcher" role="tablist">
+              <div className="auth-segmented-pill-switcher desktop-only-switcher" role="tablist">
                 <button
                   type="button"
                   role="tab"
@@ -80,6 +112,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 onSuccess={() => setMode('login')}
               />
             )}
+
+            {/* Bank-Grade Security & Trust Indicator */}
+            <div className="auth-trust-badge-row">
+              <ShieldCheck size={13} className="auth-trust-icon" />
+              <span>256-Bit Bank Encryption · Zero Plaintext Storage</span>
+            </div>
           </div>
         </div>
       </div>
