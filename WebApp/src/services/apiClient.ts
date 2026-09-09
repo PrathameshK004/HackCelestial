@@ -4,17 +4,19 @@
  */
 
 export const getApiBase = (): string => {
-  const envUrl = (import.meta as any).env?.VITE_API_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
-    return envUrl.trim().replace(/\/+$/, '');
-  }
-
+  // 1. When running on localhost / dev machine, always route to local backend via /api proxy
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0';
     if (isLocalhost) {
       return '/api';
     }
+  }
+
+  // 2. Production or explicit custom API URL
+  const envUrl = (import.meta as any).env?.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.trim().replace(/\/+$/, '');
   }
 
   return 'https://hackcelestial-api.onrender.com/api';
