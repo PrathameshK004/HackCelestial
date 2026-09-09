@@ -3,25 +3,26 @@
  * Handles robust OTP generation and verification
  */
 
+const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
 /**
- * Generate a random 4-digit OTP
+ * Generate a random 4-digit OTP using cryptographically secure random numbers
  * @returns {number} Generated OTP
  */
 const generateOTP = () => {
-    return Math.floor(1000 + Math.random() * 9000);
+    return crypto.randomInt(1000, 10000);
 };
 
 /**
- * Hash the OTP before storing in database
+ * Hash the OTP before storing in database using fast salt rounds (8)
+ * for ephemeral verification codes.
  * @param {number|string} otp - OTP to hash
  * @returns {Promise<string>} Hashed OTP
  */
 const hashOTP = async (otp) => {
     try {
-        const salt = await bcrypt.genSalt(10);
-        return await bcrypt.hash(otp.toString().trim(), salt);
+        return await bcrypt.hash(otp.toString().trim(), 8);
     } catch (error) {
         console.error("OTP Hashing Error:", error.message);
         throw error;
@@ -60,11 +61,11 @@ const isOTPExpired = (expiryTime) => {
 };
 
 /**
- * Get OTP expiry time (10 minutes validity for industry-standard grace period)
+ * Get OTP expiry time (5 minutes validity matching email template)
  * @returns {Date} Expiry timestamp
  */
 const getOTPExpiry = () => {
-    return new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    return new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 };
 
 module.exports = {

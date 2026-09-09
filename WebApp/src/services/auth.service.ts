@@ -39,6 +39,20 @@ export const authService = {
   },
 
   /**
+   * Direct 1-step user registration with instant authentication
+   */
+  async register(payload: { username: string; emailId: string; password: string }): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/registerUser', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: payload.username.trim(),
+        emailId: payload.emailId.trim().toLowerCase(),
+        password: payload.password,
+      }),
+    });
+  },
+
+  /**
    * Register temporary user & trigger OTP send
    */
   async registerTempUser(payload: RegisterTempPayload): Promise<AuthResponse> {

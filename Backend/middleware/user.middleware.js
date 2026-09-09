@@ -38,14 +38,14 @@ function validateUserId(req, res, next) {
 }
 
 /**
- * Validate new user data (with OTP verification)
+ * Validate new user data for direct 1-step registration
  */
 async function validateNewUser(req, res, next) {
-  const { username, emailId, password, code } = req.body;
+  const { username, emailId, password } = req.body;
 
   // Check required fields
-  if (!username || !emailId || !password || !code) {
-    return sendError(res, 'Username, Email, Password and OTP are required fields.', null, 400);
+  if (!username || !emailId || !password) {
+    return sendError(res, 'Username, Email and Password are required fields.', null, 400);
   }
 
   // Validate email format
@@ -66,7 +66,7 @@ async function validateNewUser(req, res, next) {
   try {
     const existingUser = await User.findOne({ emailId: emailId });
     if (existingUser && !existingUser.isTemp) {
-      return sendError(res, 'Email already exists.', null, 400);
+      return sendError(res, 'An account with this email already exists.', null, 400);
     }
   } catch (err) {
     return sendError(res, 'Error checking for existing user.', err, 500);

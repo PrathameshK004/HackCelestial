@@ -27,14 +27,17 @@ class User {
     }
 
     async save() {
-        const passwordHash = typeof this.password === 'string' && this.password.startsWith('$2')
-            ? this.password
-            : await bcrypt.hash(String(this.password), 10);
-        const codeHash = !this.code
-            ? null
-            : typeof this.code === 'string' && this.code.startsWith('$2')
-                ? this.code
-                : await bcrypt.hash(this.code.toString(), 10);
+        const hashPasswordPromise = (typeof this.password === 'string' && this.password.startsWith('$2'))
+            ? Promise.resolve(this.password)
+            : bcrypt.hash(String(this.password), 10);
+
+        const hashCodePromise = !this.code
+            ? Promise.resolve(null)
+            : (typeof this.code === 'string' && this.code.startsWith('$2'))
+                ? Promise.resolve(this.code)
+                : bcrypt.hash(this.code.toString().trim(), 8);
+
+        const [passwordHash, codeHash] = await Promise.all([hashPasswordPromise, hashCodePromise]);
 
         const email = (this.emailId || '').trim().toLowerCase();
 

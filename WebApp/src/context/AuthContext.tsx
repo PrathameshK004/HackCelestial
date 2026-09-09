@@ -15,9 +15,10 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
-  registerTemp: (data: RegisterTempPayload) => Promise<{ success: boolean; message?: string }>;
+  register: (data: { username: string; emailId: string; password: string }) => Promise<{ success: boolean; message?: string; user?: User }>;
+  registerTemp: (data: RegisterTempPayload) => Promise<{ success: boolean; message?: string; otp?: string | number; data?: any }>;
   verifyAndRegister: (data: RegisterUserPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
-  resendOtp: (emailId: string, purpose?: string) => Promise<{ success: boolean; message?: string }>;
+  resendOtp: (emailId: string, purpose?: string) => Promise<{ success: boolean; message?: string; otp?: string | number }>;
   loginWithGoogle: (credential: string) => Promise<{ success: boolean; message?: string; user?: User }>;
   updateProfile: (data: Partial<User>) => Promise<{ success: boolean; message?: string; user?: User }>;
   changePassword: (data: PasswordChangePayload) => Promise<{ success: boolean; message?: string }>;
@@ -32,113 +33,54 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 import { USER_STORAGE_KEY, TOKEN_STORAGE_KEY, REFRESH_TOKEN_KEY } from '../services/apiClient';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem(USER_STORAGE_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  });
-
-  const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
-  });
-
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Validate session on initial boot and attach cross-tab / real-time listeners
+  // Synchronize auth state from localStorage on startup
   useEffect(() => {
-    const checkSession = async () => {
-      const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-      const savedUser = localStorage.getItem(USER_STORAGE_KEY);
+    const initializeAuth = () => {
+      try {
+        const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+        const storedUser = localStorage.getItem(USER_STORAGE_KEY);
 
-      if (savedToken && savedUser) {
-        try {
-          const res = await authService.checkAuth(savedToken);
-          if (res.data?.isAuthenticated) {
-            setUser(JSON.parse(savedUser));
-            setToken(savedToken);
-          } else {
-            setUser(JSON.parse(savedUser));
-            setToken(savedToken);
-          }
-        } catch (err) {
-          console.warn('Session check note:', err);
-          if ((err as any)?.status === 401) {
-            localStorage.removeItem(USER_STORAGE_KEY);
-            localStorage.removeItem(TOKEN_STORAGE_KEY);
-            localStorage.removeItem(REFRESH_TOKEN_KEY);
-            setUser(null);
-            setToken(null);
-          } else {
-            try {
-              setUser(JSON.parse(savedUser));
-              setToken(savedToken);
-            } catch {
-              setUser(null);
-            }
-          }
+        if (storedToken && storedUser) {
+          setToken(storedToken);
+          setUser(JSON.parse(storedUser));
         }
+      } catch (err) {
+        console.error('Failed to parse cached auth state:', err);
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        localStorage.removeItem(USER_STORAGE_KEY);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
-    checkSession();
+    initializeAuth();
 
-    // Listen for session expiry
+    // Listen to session expiry events dispatched by apiClient
     const handleSessionExpired = () => {
       setUser(null);
       setToken(null);
     };
 
-    // Real-time custom event listener for in-window updates
-    const handleUserUpdated = (e: Event) => {
-      const customEvent = e as CustomEvent<User>;
-      if (customEvent.detail) {
-        setUser(customEvent.detail);
-      }
-    };
-
     window.addEventListener('auth:session-expired', handleSessionExpired);
-    window.addEventListener('auth:user-updated', handleUserUpdated);
-
-    // Cross-tab real-time sync with BroadcastChannel
-    let bc: BroadcastChannel | null = null;
-    try {
-      bc = new BroadcastChannel('triptual_auth_channel');
-      bc.onmessage = (event) => {
-        if (event.data?.type === 'USER_UPDATED' && event.data.user) {
-          setUser(event.data.user);
-        } else if (event.data?.type === 'LOGOUT') {
-          setUser(null);
-          setToken(null);
-        }
-      };
-    } catch {
-      // BroadcastChannel optional
-    }
-
     return () => {
       window.removeEventListener('auth:session-expired', handleSessionExpired);
-      window.removeEventListener('auth:user-updated', handleUserUpdated);
-      if (bc) bc.close();
     };
   }, []);
 
-  const saveAuthSession = (userData: User, accessToken?: string, refreshToken?: string) => {
-    setUser(userData);
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
+  const saveAuthSession = (newUser: User, newAccessToken?: string, newRefreshToken?: string) => {
+    setUser(newUser);
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
 
-    if (accessToken) {
-      setToken(accessToken);
-      localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
+    if (newAccessToken) {
+      setToken(newAccessToken);
+      localStorage.setItem(TOKEN_STORAGE_KEY, newAccessToken);
     }
-    if (refreshToken) {
-      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    if (newRefreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, newRefreshToken);
     }
   };
 
@@ -148,16 +90,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
-
-    try {
-      const bc = new BroadcastChannel('triptual_auth_channel');
-      bc.postMessage({ type: 'LOGOUT' });
-      bc.close();
-    } catch {}
   };
 
   /**
-   * Handle user login
+   * Log into platform
    */
   const login = async (credentials: LoginPayload) => {
     try {
@@ -167,20 +103,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           userId: response.data.userId,
           id: response.data.userId,
           username: response.data.username,
-          emailId: credentials.emailId,
-          phone: (response.data as any).phone || undefined,
-          upiId: (response.data as any).upiId || undefined,
-          avatar: (response.data as any).avatar || undefined,
+          emailId: response.data.emailId || credentials.emailId,
+          phone: (response.data as any).phone || null,
+          upiId: (response.data as any).upiId || null,
+          avatar: (response.data as any).avatar || null,
           travelStyle: (response.data as any).travelStyle || 'Boutique',
-          currency: (response.data as any).currency || 'INR',
+          currency: (response.data as any).currency || 'INR'
         };
 
         saveAuthSession(loggedUser, response.data.accessToken, response.data.refreshToken);
-        return { success: true, message: response.message || 'Login successful', user: loggedUser };
+        return { 
+          success: true, 
+          message: response.message || 'Logged in successfully',
+          user: loggedUser 
+        };
       }
       return { success: false, message: response.message || 'Login failed' };
     } catch (err: any) {
       return { success: false, message: err.message || 'Invalid email or password' };
+    }
+  };
+
+  /**
+   * Direct 1-Step Registration with Instant Authentication (Industry Standard)
+   */
+  const register = async (data: { username: string; emailId: string; password: string }) => {
+    try {
+      const response = await authService.register(data);
+      if (response.data) {
+        const rawData = response.data as any;
+        const newUser: User = {
+          userId: rawData.userId || rawData.id,
+          id: rawData.userId || rawData.id,
+          username: rawData.username,
+          emailId: rawData.emailId || data.emailId,
+          phone: rawData.phone || null,
+          upiId: rawData.upiId || null,
+          avatar: rawData.avatar || null,
+          travelStyle: rawData.travelStyle || 'Boutique',
+          currency: rawData.currency || 'INR'
+        };
+
+        saveAuthSession(newUser, rawData.accessToken, rawData.refreshToken);
+        return {
+          success: true,
+          message: response.message || 'Account created successfully!',
+          user: newUser
+        };
+      }
+      return { success: false, message: response.message || 'Registration failed' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Registration failed. Please try again.' };
     }
   };
 
@@ -190,38 +163,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const registerTemp = async (data: RegisterTempPayload) => {
     try {
       const response = await authService.registerTempUser(data);
-      return { success: true, message: response.message || 'Verification code sent to your email' };
+      const rawData = response.data as any;
+      return { 
+        success: true, 
+        message: response.message || 'Verification code sent to your email',
+        otp: rawData?.otp,
+        data: rawData
+      };
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to start registration' };
     }
   };
 
   /**
-   * Verify OTP and complete registration, then auto-login
+   * Verify OTP and complete registration, then auto-login in 1 seamless step
    */
   const verifyAndRegister = async (data: RegisterUserPayload) => {
     try {
       const response = await authService.verifyAndRegisterUser(data);
       if (response.data) {
+        const rawData = response.data as any;
         const newUser: User = {
-          userId: response.data.userId,
-          id: response.data.userId,
-          username: response.data.username,
-          emailId: response.data.emailId || data.emailId,
+          userId: rawData.userId || rawData.id,
+          id: rawData.userId || rawData.id,
+          username: rawData.username,
+          emailId: rawData.emailId || data.emailId,
+          phone: rawData.phone || null,
+          upiId: rawData.upiId || null,
+          avatar: rawData.avatar || null,
+          travelStyle: rawData.travelStyle || 'Boutique',
+          currency: rawData.currency || 'INR'
         };
 
-        try {
-          const loginRes = await authService.login({
-            emailId: data.emailId,
-            password: data.password,
-          });
-          if (loginRes.data) {
-            saveAuthSession(newUser, loginRes.data.accessToken, loginRes.data.refreshToken);
-          } else {
+        // If accessToken was directly returned by verifyAndRegister, log in immediately!
+        if (rawData.accessToken) {
+          saveAuthSession(newUser, rawData.accessToken, rawData.refreshToken);
+        } else {
+          // Fallback login
+          try {
+            const loginRes = await authService.login({
+              emailId: data.emailId,
+              password: data.password,
+            });
+            if (loginRes.data) {
+              saveAuthSession(newUser, loginRes.data.accessToken, loginRes.data.refreshToken);
+            } else {
+              saveAuthSession(newUser);
+            }
+          } catch {
             saveAuthSession(newUser);
           }
-        } catch {
-          saveAuthSession(newUser);
         }
 
         return { 
@@ -242,7 +233,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const resendOtp = async (emailId: string, purpose: string = 'Sign Up') => {
     try {
       const response = await authService.sendOtp({ emailId, purpose });
-      return { success: true, message: response.message || 'New OTP sent to your email' };
+      const rawData = response.data as any;
+      return { 
+        success: true, 
+        message: response.message || 'New OTP sent to your email',
+        otp: rawData?.otp
+      };
     } catch (err: any) {
       return { success: false, message: err.message || 'Failed to resend OTP' };
     }
@@ -406,6 +402,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!user,
         isLoading,
         login,
+        register,
         registerTemp,
         verifyAndRegister,
         resendOtp,

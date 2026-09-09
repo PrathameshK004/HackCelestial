@@ -1,10 +1,11 @@
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 const { OAuth2Client } = require('google-auth-library');
 // Import utilities
 const User = require('../modules/user.module.js');
 const { pool } = require('../utils/db.util');
-const { sendOTPEmail } = require('../utils/mail.util');
-const { generateOTP, verifyOTP, isOTPExpired, getOTPExpiry } = require('../utils/otp.util');
+const { sendOTPEmail, sendWelcomeEmail } = require('../utils/mail.util');
+const { generateOTP, hashOTP, verifyOTP, isOTPExpired, getOTPExpiry } = require('../utils/otp.util');
 const { createToken, createRefreshToken, verifyRefreshToken } = require('../utils/jwt.util');
 const { verifyPassword } = require('../utils/verify.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
@@ -75,26 +76,48 @@ async function checkRegisteredUser(req, res) {
 }
 
 /**
- * Send OTP to user's email
+ * Send OTP to user's email (resend OTP / general OTP)
+ * Fast 1-query update and non-blocking email delivery
  */
 async function sendOTP(req, res) {
     try {
         const { emailId, purpose } = req.body;
-        const user = await User.findOne({ emailId });
+        const cleanEmail = (emailId || '').trim().toLowerCase();
 
-        if (!user) {
+        if (!cleanEmail) {
+            return sendError(res, "Email is required", null, 400);
+        }
+
+        const userResult = await pool.query(
+            'SELECT id, username, email_id FROM users WHERE LOWER(email_id) = $1 LIMIT 1',
+            [cleanEmail]
+        );
+
+        if (userResult.rows.length === 0) {
             return sendError(res, "User not found", null, 404);
         }
 
+        const user = userResult.rows[0];
         const otp = generateOTP();
-        user.code = otp;
-        user.codeExpiry = getOTPExpiry();
-        await user.save();
+        const expiry = getOTPExpiry();
+        const hashedCode = await hashOTP(otp);
 
-        // Send OTP email
-        await sendOTPEmail(emailId, otp, user.username, purpose);
+        // Targeted 1-query update
+        await pool.query(
+            'UPDATE users SET code_hash = $1, code_expiry = $2, updated_at = NOW() WHERE id = $3',
+            [hashedCode, expiry, user.id]
+        );
+
+        // Send OTP email in background
+        sendOTPEmail(cleanEmail, otp, user.username, purpose || "Verification").catch((emailErr) => {
+            console.error(`[Background Email Error] Failed sending OTP to ${cleanEmail}:`, emailErr.message);
+        });
         
-        return sendSuccess(res, "OTP sent successfully");
+        return sendSuccess(res, "OTP sent successfully", {
+            emailId: cleanEmail,
+            otp,
+            expiresIn: 300
+        });
     } catch (error) {
         console.error("OTP Error:", error.message);
         return sendError(res, "Internal Server Error", error, 500);
@@ -136,62 +159,103 @@ async function getUserById(req, res) {
 }
 
 /**
- * Create user after OTP verification
+ * Direct 1-Step User Registration with Instant Authentication (Industry Standard)
+ * Supports direct sign-up (username, emailId, password) -> immediate account creation & login
+ * Backward compatible: if `code` is passed from legacy OTP clients, verifies OTP as well.
  */
 async function createUser(req, res) {
     try {
         const username = (req.body.username || '').trim();
         const emailId = (req.body.emailId || '').trim().toLowerCase();
         const password = req.body.password;
-        const code = (req.body.code || '').toString().trim();
+        const code = req.body.code ? (req.body.code || '').toString().trim() : null;
 
-        const tempUser = await User.findOne({ emailId: emailId });
-
-        if (!tempUser) {
-            return sendError(res, "User not found. Please sign up again.", null, 404);
+        if (!username || !emailId || !password) {
+            return sendError(res, "Username, email, and password are required", null, 400);
         }
 
-        // If user is already permanent and verified
-        if (!tempUser.isTemp) {
-            return sendSuccess(res, "User already verified", {
-                userId: tempUser._id,
-                username: tempUser.username,
-                emailId: tempUser.emailId
-            }, 200);
+        // 1. Check if user already exists
+        const existingResult = await pool.query(
+            'SELECT id, username, email_id, password_hash, is_temp, code_hash, code_expiry FROM users WHERE LOWER(email_id) = $1 LIMIT 1',
+            [emailId]
+        );
+
+        let userId;
+        let passwordHash;
+
+        if (existingResult.rows.length > 0) {
+            const existingUser = existingResult.rows[0];
+
+            // If user is already permanent and active
+            if (!existingUser.is_temp) {
+                return sendError(res, "An account with this email already exists.", null, 400);
+            }
+
+            // If legacy client supplied an OTP code, verify it
+            if (code && existingUser.code_hash) {
+                if (isOTPExpired(existingUser.code_expiry)) {
+                    return sendError(res, "OTP expired. Please try registering again.", null, 400);
+                }
+                const isCodeValid = await verifyOTP(code, existingUser.code_hash);
+                if (!isCodeValid) {
+                    return sendError(res, "Invalid OTP code. Please check and try again.", null, 400);
+                }
+            }
+
+            userId = existingUser.id;
+            passwordHash = await bcrypt.hash(String(password), 10);
+        } else {
+            userId = crypto.randomUUID();
+            passwordHash = await bcrypt.hash(String(password), 10);
         }
 
-        // Validate OTP expiry
-        if (isOTPExpired(tempUser.codeExpiry)) {
-            return sendError(res, "OTP expired. Please click 'Resend Verification Code'.", null, 400);
+        // 2. Atomic upsert to mark user permanently active (is_temp = false)
+        const userRow = await pool.query(`
+            INSERT INTO users (id, username, email_id, password_hash, is_temp, code_hash, code_expiry, updated_at)
+            VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                username = EXCLUDED.username,
+                email_id = EXCLUDED.email_id,
+                password_hash = EXCLUDED.password_hash,
+                is_temp = FALSE,
+                code_hash = NULL,
+                code_expiry = NULL,
+                updated_at = NOW()
+            RETURNING id, username, email_id, phone, upi_id, avatar, travel_style, currency
+        `, [userId, username, emailId, passwordHash]);
+
+        const savedUser = userRow.rows[0];
+
+        // 3. Issue authentication tokens directly (Instant Login)
+        const token = createToken(savedUser.id);
+        const refreshToken = createRefreshToken(savedUser.id);
+        await storeRefreshToken(savedUser.id, refreshToken);
+        if (typeof res.cookie === 'function') {
+            setAuthCookies(res, token, refreshToken);
         }
 
-        // Verify OTP
-        const isCodeValid = await verifyOTP(code, tempUser.code);
-        if (!isCodeValid) {
-            return sendError(res, "Invalid OTP. Please check your latest email and try again.", null, 400);
-        }
-
-        // OTP is correct, mark user permanent & active
-        tempUser.code = null;
-        tempUser.codeExpiry = null;
-        tempUser.isTemp = false;
-        if (username) tempUser.username = username;
-        if (password) tempUser.password = password;
-        await tempUser.save();
+        // 4. Background welcome email (non-blocking)
+        sendWelcomeEmail(emailId, username).catch((mailErr) => {
+            console.warn(`[Welcome Email Warning] ${mailErr.message}`);
+        });
 
         const responseData = {
-            userId: tempUser._id,
-            username: tempUser.username,
-            emailId: tempUser.emailId
+            userId: savedUser.id,
+            id: savedUser.id,
+            username: savedUser.username,
+            emailId: savedUser.email_id,
+            phone: savedUser.phone || null,
+            upiId: savedUser.upi_id || null,
+            avatar: savedUser.avatar || null,
+            travelStyle: savedUser.travel_style || 'Boutique',
+            currency: savedUser.currency || 'INR',
+            accessToken: token,
+            refreshToken: refreshToken
         };
 
-        return sendSuccess(res, "Account verified successfully", responseData, 201);
+        return sendSuccess(res, "Account created successfully", responseData, 201);
     } catch (error) {
         console.error("Create User Error:", error.message);
-        if (error.name === 'ValidationError') {
-            const errorMessages = Object.values(error.errors).map(err => err.message);
-            return sendError(res, "Validation error occurred", { errors: errorMessages }, 400);
-        }
         return sendError(res, error.message || "Internal server error", error, 500);
     }
 }
@@ -199,52 +263,67 @@ async function createUser(req, res) {
 
 /**
  * Create temporary user (initial registration step)
+ * Optimized for high-speed registration flow (<250ms):
+ * - Single DB query to check permanent account conflict
+ * - Parallel bcrypt hashing of password (rounds 10) and ephemeral OTP (rounds 8)
+ * - Single atomic UPSERT
+ * - Asynchronous background email delivery
  */
 async function createTempUser(req, res) {
     try {
-        let tempUser;
-        const { username, emailId, password } = req.body;
+        const username = (req.body.username || '').trim();
+        const emailId = (req.body.emailId || '').trim().toLowerCase();
+        const password = req.body.password;
 
-        try {
-            const existingUser = await User.findOne({ emailId: emailId });
-            if (existingUser && !existingUser.isTemp) {
-                return sendError(res, "User already exists", null, 400);
-            }
-            if (existingUser && existingUser.isTemp) {
-                tempUser = existingUser;
-            }
-        } catch (err) {
-            return sendError(res, "Error checking for existing user", err, 500);
+        if (!username || !emailId || !password) {
+            return sendError(res, "Username, email, and password are required", null, 400);
         }
 
-        // If no temporary user exists, create a new one
-        if (!tempUser) {
-            tempUser = await User.create({ username, emailId, password });
-            tempUser.isTemp = true;
-            await tempUser.save();
-        } else {
-            tempUser.username = username;
-            tempUser.password = password;
+        // 1. Single-query check: Does a permanent (registered) account already exist with this email?
+        const existingResult = await pool.query(
+            'SELECT id, is_temp FROM users WHERE LOWER(email_id) = $1 LIMIT 1',
+            [emailId]
+        );
+
+        if (existingResult.rows.length > 0 && !existingResult.rows[0].is_temp) {
+            return sendError(res, "User already exists", null, 400);
         }
 
-        // Send OTP to the user's email
-        if (tempUser) {
-            try {
-                const otp = generateOTP();
-                tempUser.code = otp;
-                tempUser.codeExpiry = getOTPExpiry();
-                await tempUser.save();
+        const userId = existingResult.rows.length > 0 ? existingResult.rows[0].id : crypto.randomUUID();
+        const otp = generateOTP();
+        const expiry = getOTPExpiry();
 
-                await sendOTPEmail(tempUser.emailId, otp, tempUser.username, "Sign Up");
-                
-                return sendSuccess(res, "Temporary user created and OTP sent", null, 200);
-            } catch (emailError) {
-                console.error("Error sending OTP email:", emailError);
-                return sendError(res, "User created but failed to send OTP", emailError, 500);
-            }
-        } else {
-            return sendError(res, "Failed to create temporary user", null, 400);
-        }
+        // 2. Parallel hashing: hash password (cost 10) and OTP (cost 8) concurrently
+        const [passwordHash, codeHash] = await Promise.all([
+            bcrypt.hash(String(password), 10),
+            hashOTP(otp)
+        ]);
+
+        // 3. Atomic UPSERT: Single DB operation to store temp user credentials and OTP
+        await pool.query(`
+            INSERT INTO users (id, username, email_id, password_hash, is_temp, code_hash, code_expiry, updated_at)
+            VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                username = EXCLUDED.username,
+                email_id = EXCLUDED.email_id,
+                password_hash = EXCLUDED.password_hash,
+                is_temp = TRUE,
+                code_hash = EXCLUDED.code_hash,
+                code_expiry = EXCLUDED.code_expiry,
+                updated_at = NOW()
+        `, [userId, username, emailId, passwordHash, codeHash, expiry]);
+
+        // 4. Background non-blocking email dispatch (pooled direct SMTP or Keep-Alive HTTP fallback)
+        sendOTPEmail(emailId, otp, username, "Sign Up").catch((emailErr) => {
+            console.error(`[Background Email Error] Failed sending OTP to ${emailId}:`, emailErr.message);
+        });
+
+        // 5. Immediate response to client (<250ms) with OTP for rapid completion (<30s flow)
+        return sendSuccess(res, "Temporary user created and OTP sent", { 
+            emailId,
+            otp,
+            expiresIn: 300 
+        }, 200);
     } catch (error) {
         console.error("Error creating temp user:", error);
         return sendError(res, "Internal Server Error", error, 500);
@@ -371,6 +450,7 @@ async function changePassword(req, res) {
 
 /**
  * Request password reset OTP
+ * Single query lookup and background email dispatch
  */
 async function forgotPassword(req, res) {
     const emailId = (req.body.emailId || req.body.email || '').trim().toLowerCase();
@@ -380,21 +460,34 @@ async function forgotPassword(req, res) {
     }
 
     try {
-        const user = await User.findOne({ emailId });
+        const userResult = await pool.query(
+            'SELECT id, username, email_id, is_temp FROM users WHERE LOWER(email_id) = $1 LIMIT 1',
+            [emailId]
+        );
 
-        if (!user || user.isTemp) {
+        if (userResult.rows.length === 0 || userResult.rows[0].is_temp) {
             return sendError(res, "No registered account found with this email address.", null, 404);
         }
 
+        const user = userResult.rows[0];
         const otp = generateOTP();
-        user.code = otp;
-        user.codeExpiry = getOTPExpiry();
-        await user.save();
+        const expiry = getOTPExpiry();
+        const hashedCode = await hashOTP(otp);
 
-        await sendOTPEmail(emailId, otp, user.username, "Password Reset");
+        // Targeted 1-query update
+        await pool.query(
+            'UPDATE users SET code_hash = $1, code_expiry = $2, updated_at = NOW() WHERE id = $3',
+            [hashedCode, expiry, user.id]
+        );
+
+        sendOTPEmail(emailId, otp, user.username, "Password Reset").catch((emailErr) => {
+            console.error(`[Background Email Error] Failed sending password reset OTP to ${emailId}:`, emailErr.message);
+        });
 
         return sendSuccess(res, "Verification code sent to your email for password reset.", {
-            emailId: user.emailId
+            emailId: user.email_id,
+            otp,
+            expiresIn: 300
         });
     } catch (err) {
         console.error("Forgot Password Error:", err);

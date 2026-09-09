@@ -3,17 +3,36 @@
  * Handles all email sending operations
  */
 
+const https = require('https');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const emailServiceUrl = process.env.EMAIL_SERVICE_URL || 'https://email-service-delta-seven.vercel.app/api/send-email';
 
-// Initialize Gmail SMTP transporter with fast connection timeout
+// Keep-Alive HTTPS agent to reuse SSL sockets across microservice calls
+const httpsAgent = new https.Agent({
+    keepAlive: true,
+    maxSockets: 10,
+    keepAliveMsecs: 30000
+});
+
+const httpClient = axios.create({
+    httpsAgent,
+    timeout: 8000
+});
+
+// Initialize Gmail SMTP transporter with pooled connection
 let smtpTransporter = null;
+let isSmtpVerified = null; // null = pending check, true = verified working, false = blocked/failed
+
 if (process.env.EMAIL && process.env.EMAIL_PASSWORD) {
     smtpTransporter = nodemailer.createTransport({
         service: 'gmail',
+        pool: true,
+        maxConnections: 3,
+        maxMessages: 100,
+        rateLimit: 5,
         auth: {
             user: process.env.EMAIL,
             pass: process.env.EMAIL_PASSWORD.replace(/\s+/g, '')
@@ -22,53 +41,92 @@ if (process.env.EMAIL && process.env.EMAIL_PASSWORD) {
         greetingTimeout: 2500,
         socketTimeout: 5000
     });
+
+    // Proactively verify SMTP on startup. If outbound 587/465 is blocked (e.g. Render free tier),
+    // mark false immediately so subsequent requests route straight to the HTTP microservice without delay.
+    smtpTransporter.verify((err) => {
+        if (err) {
+            console.warn(`[Mail] Direct SMTP check unverified (port blocked or invalid credentials): ${err.message}. Defaulting to HTTP microservice.`);
+            isSmtpVerified = false;
+        } else {
+            console.log('[Mail] Direct SMTP connection pool verified & active.');
+            isSmtpVerified = true;
+        }
+    });
 }
+
+const sendViaSmtp = async ({ to, subject, html, text, fromAddress }) => {
+    if (!smtpTransporter) {
+        throw new Error('SMTP transporter not initialized');
+    }
+    const info = await smtpTransporter.sendMail({
+        from: fromAddress,
+        to,
+        subject,
+        html,
+        text: text || undefined
+    });
+    console.log(`[Mail SMTP Success] Delivered to ${to} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId };
+};
+
+const sendViaHttp = async ({ to, subject, html, sender }) => {
+    if (!process.env.EMAIL_SERVICE_API) {
+        throw new Error('EMAIL_SERVICE_API not configured');
+    }
+    const response = await httpClient.post(emailServiceUrl, {
+        from: sender,
+        to,
+        subject,
+        html
+    }, {
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.EMAIL_SERVICE_API}`
+        }
+    });
+    console.log(`[Mail HTTP Success] Delivered to ${to}`);
+    return { success: true, data: response.data };
+};
 
 const sendMail = async ({ to, subject, html, text }) => {
     const sender = process.env.EMAIL || 'triptual.support@gmail.com';
     const fromAddress = `"GroupTrip Ledger" <${sender}>`;
 
-    // 1. Prioritize HTTP Microservice (Instant HTTPS delivery over port 443, never blocked by cloud firewalls like Render)
+    // 1. If SMTP is verified or pending first check, use fast pooled direct SMTP (~1.2-1.5s)
+    if (smtpTransporter && isSmtpVerified !== false) {
+        try {
+            return await sendViaSmtp({ to, subject, html, text, fromAddress });
+        } catch (smtpErr) {
+            console.warn(`[Mail SMTP Error] Failed via SMTP: ${smtpErr.message}. Falling back to HTTP microservice.`);
+            isSmtpVerified = false; // Mark failed to prevent subsequent timeouts
+        }
+    }
+
+    // 2. HTTP Microservice with Keep-Alive connection
     if (process.env.EMAIL_SERVICE_API) {
         try {
-            const response = await axios.post(emailServiceUrl, {
-                from: sender,
-                to,
-                subject,
-                html
-            }, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${process.env.EMAIL_SERVICE_API}`
-                },
-                timeout: 10000
-            });
-            console.log(`[Mail HTTP Success] Delivered to ${to}`);
-            return { success: true, data: response.data };
+            return await sendViaHttp({ to, subject, html, sender });
         } catch (httpErr) {
             console.warn(`[Mail HTTP Error] Failed via HTTP service: ${httpErr.message}`);
+            // If SMTP was never attempted (isSmtpVerified was false), try SMTP as last resort
+            if (smtpTransporter && isSmtpVerified === false) {
+                try {
+                    return await sendViaSmtp({ to, subject, html, text, fromAddress });
+                } catch (lastSmtpErr) {
+                    console.warn(`[Mail Final SMTP Error] ${lastSmtpErr.message}`);
+                }
+            }
+            throw httpErr;
         }
     }
 
-    // 2. Direct Gmail SMTP Fallback (guarded with strict 3.5s timeout)
+    // 3. Fallback to direct SMTP if HTTP service API is not configured
     if (smtpTransporter) {
-        try {
-            const info = await smtpTransporter.sendMail({
-                from: fromAddress,
-                to,
-                subject,
-                html,
-                text: text || undefined
-            });
-            console.log(`[Mail SMTP Success] Delivered to ${to} (MessageId: ${info.messageId})`);
-            return { success: true, messageId: info.messageId };
-        } catch (smtpErr) {
-            console.warn(`[Mail SMTP Error] Failed via SMTP: ${smtpErr.message}`);
-            throw smtpErr;
-        }
+        return await sendViaSmtp({ to, subject, html, text, fromAddress });
     }
 
-    throw new Error('Neither EMAIL_SERVICE_API nor working SMTP credentials available');
+    throw new Error('Neither working direct SMTP nor EMAIL_SERVICE_API available');
 };
 
 /**
@@ -295,8 +353,44 @@ const sendEmail = async (emailId, subject, htmlContent) => {
     }
 };
 
+/**
+ * Send Welcome Email upon direct registration
+ */
+const sendWelcomeEmail = async (emailId, username) => {
+    try {
+        await sendMail({
+            to: emailId,
+            subject: 'Welcome to GroupTrip Ledger!',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 20px; border-radius: 8px; background-color: #f9f9f9; border: 1px solid #ddd;">
+                    <div style="text-align: center; background-color: #030711; padding: 15px; border-radius: 8px 8px 0 0;">
+                        <h2 style="color: #ffffff; margin: 10px 0;">Welcome to GroupTrip Ledger!</h2>
+                    </div>
+                    <div style="background-color: #ffffff; padding: 20px; border-radius: 0 0 8px 8px;">
+                        <p style="font-size: 16px;">Hi <strong>${username}</strong>,</p>
+                        <p>Your account has been successfully created. You're all set to start planning trips, logging shared expenses, and settling balances effortlessly.</p>
+                        <div style="text-align: center; margin: 25px 0;">
+                            <a href="${process.env.FRONTEND_URL || 'https://hack-celestial-one.vercel.app'}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Go to Your Dashboard</a>
+                        </div>
+                        <p style="color: gray; font-size: 13px;">
+                            If you have questions or feedback, reply directly to this email.<br>
+                            Happy travels,<br>The GroupTrip Ledger Team
+                        </p>
+                    </div>
+                </div>
+            `,
+            text: `Hi ${username},\n\nWelcome to GroupTrip Ledger! Your account has been created successfully.\n\nHappy travels!`
+        });
+        return { success: true };
+    } catch (err) {
+        console.warn(`[Welcome Email Error] ${err.message}`);
+        return { success: false, error: err.message };
+    }
+};
+
 module.exports = {
     sendOTPEmail,
     sendEmail,
-    sendOfficialInviteEmail
+    sendOfficialInviteEmail,
+    sendWelcomeEmail
 };
