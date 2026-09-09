@@ -38,14 +38,14 @@ function validateUserId(req, res, next) {
 }
 
 /**
- * Validate new user data for direct 1-step registration
+ * Validate new user registration data (with required OTP verification code)
  */
 async function validateNewUser(req, res, next) {
-  const { username, emailId, password } = req.body;
+  const { username, emailId, password, code } = req.body;
 
   // Check required fields
-  if (!username || !emailId || !password) {
-    return sendError(res, 'Username, Email and Password are required fields.', null, 400);
+  if (!username || !emailId || !password || !code) {
+    return sendError(res, 'Username, Email, Password and OTP code are required fields.', null, 400);
   }
 
   // Validate email format

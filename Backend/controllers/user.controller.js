@@ -159,74 +159,65 @@ async function getUserById(req, res) {
 }
 
 /**
- * Direct 1-Step User Registration with Instant Authentication (Industry Standard)
- * Supports direct sign-up (username, emailId, password) -> immediate account creation & login
- * Backward compatible: if `code` is passed from legacy OTP clients, verifies OTP as well.
+ * Complete Registration and Activate Account after OTP verification
+ * Gated strictly by valid OTP: profile is NOT activated without verifying code.
  */
 async function createUser(req, res) {
     try {
         const username = (req.body.username || '').trim();
         const emailId = (req.body.emailId || '').trim().toLowerCase();
         const password = req.body.password;
-        const code = req.body.code ? (req.body.code || '').toString().trim() : null;
+        const code = (req.body.code || '').toString().trim();
 
-        if (!username || !emailId || !password) {
-            return sendError(res, "Username, email, and password are required", null, 400);
+        if (!username || !emailId || !password || !code) {
+            return sendError(res, "Username, email, password, and OTP code are required", null, 400);
         }
 
-        // 1. Check if user already exists
+        // 1. Look up pending registration
         const existingResult = await pool.query(
             'SELECT id, username, email_id, password_hash, is_temp, code_hash, code_expiry FROM users WHERE LOWER(email_id) = $1 LIMIT 1',
             [emailId]
         );
 
-        let userId;
-        let passwordHash;
-
-        if (existingResult.rows.length > 0) {
-            const existingUser = existingResult.rows[0];
-
-            // If user is already permanent and active
-            if (!existingUser.is_temp) {
-                return sendError(res, "An account with this email already exists.", null, 400);
-            }
-
-            // If legacy client supplied an OTP code, verify it
-            if (code && existingUser.code_hash) {
-                if (isOTPExpired(existingUser.code_expiry)) {
-                    return sendError(res, "OTP expired. Please try registering again.", null, 400);
-                }
-                const isCodeValid = await verifyOTP(code, existingUser.code_hash);
-                if (!isCodeValid) {
-                    return sendError(res, "Invalid OTP code. Please check and try again.", null, 400);
-                }
-            }
-
-            userId = existingUser.id;
-            passwordHash = await bcrypt.hash(String(password), 10);
-        } else {
-            userId = crypto.randomUUID();
-            passwordHash = await bcrypt.hash(String(password), 10);
+        if (existingResult.rows.length === 0) {
+            return sendError(res, "No pending registration found for this email. Please sign up first.", null, 404);
         }
 
-        // 2. Atomic upsert to mark user permanently active (is_temp = false)
+        const existingUser = existingResult.rows[0];
+
+        // 2. If user is already permanently active
+        if (!existingUser.is_temp) {
+            return sendError(res, "Account is already verified and active. Please sign in.", null, 400);
+        }
+
+        // 3. Validate OTP Expiry
+        if (isOTPExpired(existingUser.code_expiry)) {
+            return sendError(res, "Verification code has expired. Please click 'Resend Code'.", null, 400);
+        }
+
+        // 4. Strictly verify OTP code
+        const isCodeValid = await verifyOTP(code, existingUser.code_hash);
+        if (!isCodeValid) {
+            return sendError(res, "Invalid verification code. Please check your email and try again.", null, 400);
+        }
+
+        // 5. OTP is VALID: Only now activate the profile permanently (is_temp = false)
+        const passwordHash = password ? await bcrypt.hash(String(password), 10) : existingUser.password_hash;
         const userRow = await pool.query(`
-            INSERT INTO users (id, username, email_id, password_hash, is_temp, code_hash, code_expiry, updated_at)
-            VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NOW())
-            ON CONFLICT (id) DO UPDATE SET
-                username = EXCLUDED.username,
-                email_id = EXCLUDED.email_id,
-                password_hash = EXCLUDED.password_hash,
+            UPDATE users SET
+                username = $1,
+                password_hash = $2,
                 is_temp = FALSE,
                 code_hash = NULL,
                 code_expiry = NULL,
                 updated_at = NOW()
+            WHERE id = $3
             RETURNING id, username, email_id, phone, upi_id, avatar, travel_style, currency
-        `, [userId, username, emailId, passwordHash]);
+        `, [username, passwordHash, existingUser.id]);
 
         const savedUser = userRow.rows[0];
 
-        // 3. Issue authentication tokens directly (Instant Login)
+        // 6. Issue authentication tokens (Instant Login upon verification)
         const token = createToken(savedUser.id);
         const refreshToken = createRefreshToken(savedUser.id);
         await storeRefreshToken(savedUser.id, refreshToken);
@@ -234,7 +225,7 @@ async function createUser(req, res) {
             setAuthCookies(res, token, refreshToken);
         }
 
-        // 4. Background welcome email (non-blocking)
+        // 7. Background welcome email (non-blocking)
         sendWelcomeEmail(emailId, username).catch((mailErr) => {
             console.warn(`[Welcome Email Warning] ${mailErr.message}`);
         });
@@ -253,7 +244,7 @@ async function createUser(req, res) {
             refreshToken: refreshToken
         };
 
-        return sendSuccess(res, "Account created successfully", responseData, 201);
+        return sendSuccess(res, "Account verified and created successfully", responseData, 201);
     } catch (error) {
         console.error("Create User Error:", error.message);
         return sendError(res, error.message || "Internal server error", error, 500);

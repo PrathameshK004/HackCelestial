@@ -85,28 +85,28 @@ test('High-speed registration OTP workflow & DB persistence', async () => {
         await createUser(wrongVerify.req, wrongVerify.res);
         assert.strictEqual(wrongVerify.getStatus(), 400, 'Wrong OTP should return 400');
 
-        // Test direct 1-step registration (Industry Standard)
-        const directEmail = `direct_signup_${Date.now()}@example.com`;
-        const startDirect = performance.now();
-        const directReqRes = createMockReqRes({
-            username: 'Direct User',
-            emailId: directEmail,
-            password: 'SecurePassword123!'
+        // Test createUser verification with valid OTP
+        const validOtp = getData().data.otp;
+        const startVerify = performance.now();
+        const validVerify = createMockReqRes({
+            username: testUsername,
+            emailId: testEmail,
+            password: testPassword,
+            code: validOtp
         });
-        await createUser(directReqRes.req, directReqRes.res);
-        const directElapsed = performance.now() - startDirect;
-        console.log(`[Benchmark] Direct 1-step createUser response time: ${directElapsed.toFixed(2)}ms`);
+        await createUser(validVerify.req, validVerify.res);
+        const verifyElapsed = performance.now() - startVerify;
+        console.log(`[Benchmark] createUser (OTP verification & activation) response time: ${verifyElapsed.toFixed(2)}ms`);
 
-        assert.strictEqual(directReqRes.getStatus(), 201, 'Direct createUser must respond with 201');
-        const directData = directReqRes.getData().data;
-        assert.ok(directData.accessToken, 'Must return accessToken');
-        assert.ok(directData.refreshToken, 'Must return refreshToken');
+        assert.strictEqual(validVerify.getStatus(), 201, 'Valid OTP verification must respond with 201');
+        const verifyData = validVerify.getData().data;
+        assert.ok(verifyData.accessToken, 'Must return accessToken');
+        assert.ok(verifyData.refreshToken, 'Must return refreshToken');
 
-        const directDb = await pool.query('SELECT is_temp FROM users WHERE LOWER(email_id) = $1', [directEmail]);
-        assert.strictEqual(directDb.rows[0].is_temp, false, 'User must be permanently active');
+        const activeDb = await pool.query('SELECT is_temp FROM users WHERE LOWER(email_id) = $1', [testEmail]);
+        assert.strictEqual(activeDb.rows[0].is_temp, false, 'User must be permanently active after OTP verification');
 
-        // Cleanup direct and warm users
-        await pool.query('DELETE FROM users WHERE LOWER(email_id) = $1', [directEmail]);
+        // Cleanup warm user
         await pool.query('DELETE FROM users WHERE LOWER(email_id) = $1', [warmEmail]);
 
     } finally {
