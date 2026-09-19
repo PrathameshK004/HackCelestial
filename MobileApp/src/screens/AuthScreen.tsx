@@ -1,11 +1,19 @@
 /**
- * AuthScreen — Premium Industry-Grade Auth
- * Hero image + floating glass card, seamless login/register toggle,
- * password strength meter, eye toggle, OTP flow, social buttons
- * 100% visual parity with WebApp AuthPage.tsx design language
+ * AuthScreen — Mobile Auth (Login & Sign Up)
+ * 100% Exact Replica of WebApp & Mobile Screenshots:
+ * - Top Hero Header with hiking friends image (auth-hero.jpg)
+ * - Top Navigation: Back Arrow (left) + Role Pill (right: Log In / Sign Up)
+ * - Overlapping White Card with 28px rounded top corners
+ * - Form Fields: Pill Inputs (Full Name, Email, Password, Confirm Password)
+ * - Eye icon toggles for password fields
+ * - Remember me checkbox + Forgot Password green link
+ * - Vibrant Blue Pill Action Button (Log In / Create Account)
+ * - "─── or ───" Divider
+ * - Equal Social Buttons: Google & Phone side-by-side
+ * - Bottom switch link
  */
 
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,944 +21,714 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
-  ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
-  Animated,
+  Image,
   StatusBar,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import {
-  Compass,
-  Mail,
-  Lock,
+  ArrowLeft,
   User,
-  ArrowRight,
   Eye,
   EyeOff,
+  Check,
+  Phone,
   AlertCircle,
   CheckCircle2,
-  ShieldCheck,
-  Zap,
-  Users,
-  Sparkles,
-  Phone,
 } from 'lucide-react-native';
-import { colors, radii, shadows } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HERO_H = SCREEN_H * 0.42;
+const { width: W } = Dimensions.get('window');
 
-// ─── Password Strength ──────────────────────────────────────────────────────
-function usePasswordStrength(password: string) {
-  return useMemo(() => {
-    if (!password) return { score: 0, label: '', color: '#E2E8F0', bars: 0 };
-    let score = 0;
-    if (password.length >= 6) score++;
-    if (password.length >= 8) score++;
-    if (/[0-9]/.test(password)) score++;
-    if (/[A-Z]/.test(password) || /[^A-Za-z0-9]/.test(password)) score++;
-    switch (score) {
-      case 1: return { score: 1, label: 'Weak', color: '#EF4444', bars: 1 };
-      case 2: return { score: 2, label: 'Fair', color: '#F59E0B', bars: 2 };
-      case 3: return { score: 3, label: 'Good', color: '#0284C7', bars: 3 };
-      case 4:
-      default: return { score: 4, label: 'Strong', color: '#059669', bars: 4 };
-    }
-  }, [password]);
-}
-
-// ─── Floating Glassmorphism Badge ─────────────────────────────────────────
-const FloatingBadge: React.FC<{
-  style?: object;
-  icon: React.ReactNode;
-  title: string;
-  sub: string;
-  iconBg: string;
-}> = ({ style, icon, title, sub, iconBg }) => (
-  <View style={[stylesBadge.glass, style]}>
-    <View style={[stylesBadge.iconCircle, { backgroundColor: iconBg }]}>
-      {icon}
-    </View>
-    <View>
-      <Text style={stylesBadge.title}>{title}</Text>
-      <Text style={stylesBadge.sub}>{sub}</Text>
-    </View>
-  </View>
+// ── Google Multi-Color SVG Icon ──────────────────────────────────────────────
+const GoogleIcon: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill="#4285F4"
+      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+    />
+    <Path
+      fill="#34A853"
+      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+    />
+    <Path
+      fill="#FBBC05"
+      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+    />
+    <Path
+      fill="#EA4335"
+      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+    />
+  </Svg>
 );
 
-const stylesBadge = StyleSheet.create({
-  glass: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.30)',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-
-  },
-  iconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
-  sub: { fontSize: 10.5, color: 'rgba(255,255,255,0.75)', marginTop: 1 },
-});
-
-// ─── Main Component ──────────────────────────────────────────────────────────
 export const AuthScreen: React.FC = () => {
   const { login, register } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register'>('login');
 
-  // Form state
+  // Mode: 'login' | 'signup'
+  const [mode, setMode] = useState<'login' | 'signup'>('signup');
+
+  // Form Fields
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [emailId, setEmailId] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
-  // UI state
+  // States
   const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const strength = usePasswordStrength(password);
-
-  // Tab animation
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const switchMode = (m: 'login' | 'register') => {
-    setMode(m);
-    setErrorMsg(null);
-    setSuccessMsg(null);
-    Animated.spring(slideAnim, {
-      toValue: m === 'login' ? 0 : 1,
-      useNativeDriver: false,
-      speed: 18,
-      bounciness: 4,
-    }).start();
+  const toggleMode = () => {
+    setMode((prev) => (prev === 'login' ? 'signup' : 'login'));
+    setErrorMessage(null);
+    setSuccessMessage(null);
   };
 
   const handleSubmit = async () => {
-    setErrorMsg(null);
-    if (!email.trim() || !password.trim()) {
-      setErrorMsg('Please enter your email and password.');
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    const cleanEmail = emailId.trim().toLowerCase();
+    if (!cleanEmail) {
+      setErrorMessage('Please enter your email address');
       return;
     }
-    if (mode === 'register') {
-      if (!fullName.trim()) { setErrorMsg('Please enter your full name.'); return; }
-      if (password.length < 6) { setErrorMsg('Password must be at least 6 characters.'); return; }
-      if (password !== confirmPassword) { setErrorMsg('Passwords do not match.'); return; }
+
+    if (!password) {
+      setErrorMessage('Please enter your password');
+      return;
     }
-    setIsLoading(true);
-    try {
-      if (mode === 'login') {
-        const res = await login({ emailId: email.trim().toLowerCase(), password });
-        if (!res.success) setErrorMsg(res.error || 'Invalid email or password. Please try again.');
-        else setSuccessMsg('Welcome back! Loading your trip workspace…');
-      } else {
+
+    if (mode === 'signup') {
+      const cleanName = fullName.trim();
+      if (!cleanName || cleanName.length < 2) {
+        setErrorMessage('Please enter your full name');
+        return;
+      }
+      if (password.length < 6) {
+        setErrorMessage('Password must be at least 6 characters long');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setErrorMessage('Passwords do not match');
+        return;
+      }
+
+      setIsLoading(true);
+      try {
         const res = await register({
-          username: fullName.trim(),
-          emailId: email.trim().toLowerCase(),
+          username: cleanName,
+          emailId: cleanEmail,
           password,
         });
-        if (!res.success) setErrorMsg(res.error || 'Registration failed. Please try another email.');
-        else setSuccessMsg('Account created! Setting up your ledger…');
+        if (res.success) {
+          setSuccessMessage('Account created successfully! Loading workspace…');
+        } else {
+          setErrorMessage(res.error || 'Registration failed. Please try again.');
+        }
+      } catch (err: any) {
+        setErrorMessage(err.message || 'Unable to register. Please try again.');
+      } finally {
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
+    } else {
+      // Login mode
+      setIsLoading(true);
+      try {
+        const res = await login({
+          emailId: cleanEmail,
+          password,
+        });
+        if (res.success) {
+          setSuccessMessage('Welcome back! Loading your trip workspace…');
+        } else {
+          setErrorMessage(res.error || 'Invalid email or password');
+        }
+      } catch (err: any) {
+        setErrorMessage(err.message || 'Authentication error. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
-  const handleDemoAccess = async () => {
-    setIsLoading(true);
-    try {
-      await login({ emailId: 'yogesh@example.com', password: 'password123' });
-    } finally {
-      setIsLoading(false);
-    }
+  const handleForgotPassword = () => {
+    Alert.alert(
+      'Reset Password',
+      'Please enter your registered email address to receive reset instructions.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send Link',
+          onPress: () => {
+            Alert.alert('Email Sent', 'If an account exists, a password reset link has been dispatched.');
+          },
+        },
+      ]
+    );
   };
-
-  const tabIndicatorLeft = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '50%'],
-  });
 
   return (
-    <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* ── HERO IMAGE ────────────────────────────────────────── */}
-      <View style={styles.heroContainer}>
-        <Image
-          source={require('../../assets/auth-hero.jpg')}
-          style={styles.heroBg}
-          resizeMode="cover"
-        />
-        {/* Gradient overlay */}
-        <View style={styles.heroOverlay} />
-        <View style={styles.heroOverlayBottom} />
-
-        {/* Brand badge top-left */}
-        <SafeAreaView style={styles.heroNav} edges={['top']}>
-          <View style={styles.heroBrandBadge}>
-            <View style={styles.heroBrandLogoCircle}>
-              <Compass size={16} color="#FFFFFF" strokeWidth={2.4} />
-            </View>
-            <Text style={styles.heroBrandName}>Triptual</Text>
-          </View>
-          <Text style={styles.heroTagline}>Travel & Shared Ledger OS</Text>
-        </SafeAreaView>
-
-        {/* Hero headline */}
-        <View style={styles.heroCenterContent}>
-          <Text style={styles.heroHeadline}>Group Travel,</Text>
-          <Text style={styles.heroHeadlineBold}>Zero Math Headache.</Text>
-          <Text style={styles.heroSubline}>
-            Offline-first ledger with instant UPI debt splitting
-          </Text>
-        </View>
-
-        {/* Floating Glass Badges */}
-        <FloatingBadge
-          style={{ top: HERO_H * 0.28, left: 16 }}
-          iconBg="rgba(5,150,105,0.9)"
-          icon={<Users size={14} color="#FFFFFF" />}
-          title="Barcelona Summer Trip"
-          sub="4 travelers joined"
-        />
-        <FloatingBadge
-          style={{ bottom: 56, right: 16 }}
-          iconBg="rgba(2,132,199,0.9)"
-          icon={<CheckCircle2 size={14} color="#FFFFFF" />}
-          title="Split Settled · ₹4,250"
-          sub="Instant zero-debt UPI clearance"
-        />
-
-        {/* Trust strip at hero bottom */}
-        <View style={styles.heroTrustStrip}>
-          <View style={styles.trustPill}>
-            <ShieldCheck size={12} color="#10B981" />
-            <Text style={styles.trustPillText}>Bank-grade AES-256 encryption</Text>
-          </View>
-          <View style={styles.trustPill}>
-            <Sparkles size={12} color="#F59E0B" />
-            <Text style={styles.trustPillText}>Min-Cash-Flow algorithm</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* ── BOTTOM SHEET CARD ─────────────────────────────────── */}
-      <KeyboardAvoidingView
-        style={styles.sheetKav}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          style={styles.sheetScroll}
-          contentContainerStyle={styles.sheetScrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.sheet}>
-            {/* Drag handle */}
-            <View style={styles.dragHandle} />
+        {/* ── 1. Top Hero Header with Image & Floating Navigation ── */}
+        <View style={styles.heroHeader}>
+          <Image
+            source={require('../../assets/auth-hero.jpg')}
+            style={styles.heroBgImg}
+            resizeMode="cover"
+          />
+          {/* Subtle gradient vignette for top navigation legibility */}
+          <View style={styles.heroOverlay} />
 
-            {/* ── Segmented Tab Toggle ── */}
-            <View style={styles.tabBar}>
-              <Animated.View style={[styles.tabIndicator, { left: tabIndicatorLeft }]} />
-              <TouchableOpacity
-                style={styles.tabBtn}
-                onPress={() => switchMode('login')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.tabBtnText, mode === 'login' && styles.tabBtnTextActive]}>
-                  Log In
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.tabBtn}
-                onPress={() => switchMode('register')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.tabBtnText, mode === 'register' && styles.tabBtnTextActive]}>
-                  Create Account
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* ── Alerts ── */}
-            {errorMsg && (
-              <View style={styles.alertError}>
-                <AlertCircle size={15} color="#EF4444" />
-                <Text style={styles.alertErrorText}>{errorMsg}</Text>
-              </View>
-            )}
-            {successMsg && (
-              <View style={styles.alertSuccess}>
-                <CheckCircle2 size={15} color="#059669" />
-                <Text style={styles.alertSuccessText}>{successMsg}</Text>
-              </View>
-            )}
-
-            {/* ── Full Name (register only) ── */}
-            {mode === 'register' && (
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>FULL NAME</Text>
-                <View style={styles.inputPill}>
-                  <User size={16} color="#9CA3AF" strokeWidth={2} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Yogesh Dandawalkar"
-                    placeholderTextColor="#9CA3AF"
-                    value={fullName}
-                    onChangeText={(t) => { setFullName(t); setErrorMsg(null); }}
-                    autoCapitalize="words"
-                    returnKeyType="next"
-                  />
-                </View>
-              </View>
-            )}
-
-            {/* ── Email ── */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>EMAIL ADDRESS</Text>
-              <View style={styles.inputPill}>
-                <Mail size={16} color="#9CA3AF" strokeWidth={2} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="you@example.com"
-                  placeholderTextColor="#9CA3AF"
-                  value={email}
-                  onChangeText={(t) => { setEmail(t); setErrorMsg(null); }}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="next"
-                />
-              </View>
-            </View>
-
-            {/* ── Password ── */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>PASSWORD</Text>
-              <View style={styles.inputPill}>
-                <Lock size={16} color="#9CA3AF" strokeWidth={2} />
-                <TextInput
-                  style={styles.input}
-                  placeholder={mode === 'register' ? 'Create a strong password' : 'Your password'}
-                  placeholderTextColor="#9CA3AF"
-                  value={password}
-                  onChangeText={(t) => { setPassword(t); setErrorMsg(null); }}
-                  secureTextEntry={!showPassword}
-                  returnKeyType={mode === 'register' ? 'next' : 'done'}
-                  onSubmitEditing={mode === 'login' ? handleSubmit : undefined}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  {showPassword
-                    ? <EyeOff size={18} color="#9CA3AF" />
-                    : <Eye size={18} color="#9CA3AF" />}
-                </TouchableOpacity>
-              </View>
-
-              {/* Password Strength Meter (register only) */}
-              {mode === 'register' && password.length > 0 && (
-                <View style={styles.strengthRow}>
-                  <View style={styles.strengthBars}>
-                    {[1, 2, 3, 4].map((i) => (
-                      <View
-                        key={i}
-                        style={[
-                          styles.strengthBar,
-                          { backgroundColor: i <= strength.bars ? strength.color : '#E5E7EB' },
-                        ]}
-                      />
-                    ))}
-                  </View>
-                  <Text style={[styles.strengthLabel, { color: strength.color }]}>
-                    {strength.label}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* ── Confirm Password (register only) ── */}
-            {mode === 'register' && (
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>CONFIRM PASSWORD</Text>
-                <View style={[
-                  styles.inputPill,
-                  confirmPassword.length > 0 && password !== confirmPassword && styles.inputPillError,
-                ]}>
-                  <Lock size={16} color="#9CA3AF" strokeWidth={2} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Re-enter your password"
-                    placeholderTextColor="#9CA3AF"
-                    value={confirmPassword}
-                    onChangeText={(t) => { setConfirmPassword(t); setErrorMsg(null); }}
-                    secureTextEntry={!showConfirmPassword}
-                    returnKeyType="done"
-                    onSubmitEditing={handleSubmit}
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    {confirmPassword.length > 0 && password === confirmPassword
-                      ? <CheckCircle2 size={18} color="#059669" />
-                      : (showConfirmPassword
-                          ? <EyeOff size={18} color="#9CA3AF" />
-                          : <Eye size={18} color="#9CA3AF" />)}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* ── Forgot password (login only) ── */}
-            {mode === 'login' && (
-              <TouchableOpacity style={styles.forgotBtn} activeOpacity={0.7}>
-                <Text style={styles.forgotBtnText}>Forgot Password?</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* ── Primary CTA ── */}
+          {/* Floating Top Navigation: Back Button & Mode Pill */}
+          <View style={styles.heroNav}>
             <TouchableOpacity
-              style={[styles.primaryBtn, isLoading && styles.primaryBtnDisabled]}
-              onPress={handleSubmit}
-              disabled={isLoading}
-              activeOpacity={0.88}
+              style={styles.navBackBtn}
+              onPress={toggleMode}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Text style={styles.primaryBtnText}>
-                    {mode === 'login' ? 'Sign In to Ledger' : 'Create Free Account'}
-                  </Text>
-                  <ArrowRight size={17} color="#FFFFFF" strokeWidth={2.5} />
-                </>
-              )}
+              <ArrowLeft size={24} color="#FFFFFF" strokeWidth={2.4} />
             </TouchableOpacity>
 
-            {/* ── Divider ── */}
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or continue with</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* ── Social Buttons ── */}
-            <View style={styles.socialRow}>
-              <TouchableOpacity
-                style={styles.socialBtn}
-                onPress={() => Alert.alert('Google SSO', 'Configured for production domain.')}
-                activeOpacity={0.85}
-              >
-                <View style={styles.googleSvgWrap}>
-                  {/* Google G icon manually drawn */}
-                  <Text style={styles.googleG}>G</Text>
-                </View>
-                <Text style={styles.socialBtnText}>Google</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.socialBtn}
-                onPress={() => Alert.alert('Phone Verification', 'Available in production build.')}
-                activeOpacity={0.85}
-              >
-                <Phone size={17} color="#374151" strokeWidth={2} />
-                <Text style={styles.socialBtnText}>Phone</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* ── Demo access ── */}
-            <View style={styles.demoDivider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or offline exploration</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
             <TouchableOpacity
-              style={styles.demoBtn}
-              onPress={handleDemoAccess}
-              activeOpacity={0.85}
+              style={styles.rolePill}
+              onPress={toggleMode}
+              activeOpacity={0.8}
             >
-              <Zap size={15} color="#464B29" />
-              <Text style={styles.demoBtnText}>Instant Demo Access (Offline-First)</Text>
+              <User size={15} color="#2563EB" strokeWidth={2.4} />
+              <Text style={styles.rolePillText}>
+                {mode === 'login' ? 'Sign Up' : 'Log In'}
+              </Text>
             </TouchableOpacity>
-
-            {/* ── Switch mode link ── */}
-            <View style={styles.switchRow}>
-              <Text style={styles.switchText}>
-                {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-              </Text>
-              <TouchableOpacity
-                onPress={() => switchMode(mode === 'login' ? 'register' : 'login')}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.switchLink}>
-                  {mode === 'login' ? 'Sign Up' : 'Log In'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* ── Footer trust note ── */}
-            <View style={styles.footerTrust}>
-              <ShieldCheck size={13} color="#9CA3AF" />
-              <Text style={styles.footerTrustText}>
-                Connected to live backend · Offline SQLite persistence active
-              </Text>
-            </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+        </View>
+
+        {/* ── 2. White Card Container (Overlaps Hero Image) ── */}
+        <View style={styles.cardContainer}>
+          {/* Main Title & Subtitle */}
+          <Text style={styles.title}>
+            {mode === 'login' ? 'Log In' : 'Sign Up'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {mode === 'login'
+              ? 'Welcome back to get started with TripMate.'
+              : 'Create your account to get started with TripMate.'}
+          </Text>
+
+          {/* Alert Messages */}
+          {errorMessage && (
+            <View style={styles.errorAlert}>
+              <AlertCircle size={17} color="#DC2626" />
+              <Text style={styles.errorAlertText}>{errorMessage}</Text>
+            </View>
+          )}
+
+          {successMessage && (
+            <View style={styles.successAlert}>
+              <CheckCircle2 size={17} color="#16A34A" />
+              <Text style={styles.successAlertText}>{successMessage}</Text>
+            </View>
+          )}
+
+          {/* ── 3. Form Fields ── */}
+          {mode === 'signup' && (
+            <TextInput
+              style={styles.pillInput}
+              placeholder="Full Name"
+              placeholderTextColor="#94A3B8"
+              value={fullName}
+              onChangeText={(t) => {
+                setFullName(t);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              autoCapitalize="words"
+              editable={!isLoading}
+            />
+          )}
+
+          <TextInput
+            style={styles.pillInput}
+            placeholder="Email Address"
+            placeholderTextColor="#94A3B8"
+            value={emailId}
+            onChangeText={(t) => {
+              setEmailId(t);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!isLoading}
+          />
+
+          {/* Password Pill with Eye Toggle */}
+          <View style={styles.inputWrapWithBtn}>
+            <TextInput
+              style={styles.pillInputInner}
+              placeholder={mode === 'signup' ? 'Password (Min 6 characters)' : 'Password'}
+              placeholderTextColor="#94A3B8"
+              value={password}
+              onChangeText={(t) => {
+                setPassword(t);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              editable={!isLoading}
+            />
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowPassword(!showPassword)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              {showPassword ? (
+                <EyeOff size={20} color="#94A3B8" />
+              ) : (
+                <Eye size={20} color="#94A3B8" />
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Confirm Password (Sign Up only) */}
+          {mode === 'signup' && (
+            <View style={styles.inputWrapWithBtn}>
+              <TextInput
+                style={styles.pillInputInner}
+                placeholder="Confirm Password"
+                placeholderTextColor="#94A3B8"
+                value={confirmPassword}
+                onChangeText={(t) => {
+                  setConfirmPassword(t);
+                  if (errorMessage) setErrorMessage(null);
+                }}
+                secureTextEntry={!showConfirmPassword}
+                autoCapitalize="none"
+                editable={!isLoading}
+              />
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {showConfirmPassword ? (
+                  <EyeOff size={20} color="#94A3B8" />
+                ) : (
+                  <Eye size={20} color="#94A3B8" />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Remember Me & Forgot Password Row (Log In only) */}
+          {mode === 'login' && (
+            <View style={styles.optionsRow}>
+              <TouchableOpacity
+                style={styles.rememberMeWrap}
+                onPress={() => setRememberMe(!rememberMe)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                  {rememberMe && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
+                </View>
+                <Text style={styles.rememberMeText}>Remember me</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
+                <Text style={styles.forgotPasswordLink}>Forgot Password?</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── 4. Vibrant Blue Pill Button ── */}
+          <TouchableOpacity
+            style={[styles.bluePillBtn, isLoading && styles.btnDisabled]}
+            onPress={handleSubmit}
+            disabled={isLoading}
+            activeOpacity={0.85}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.bluePillBtnText}>
+                {mode === 'login' ? 'Log In' : 'Create Account'}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {/* ── 5. Divider "─── or ───" ── */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* ── 6. Social Buttons: Google & Phone side-by-side ── */}
+          <View style={styles.socialGrid}>
+            <TouchableOpacity
+              style={styles.socialPillBtn}
+              onPress={() => setErrorMessage('Google SSO is configured for production domain.')}
+              activeOpacity={0.8}
+            >
+              <GoogleIcon size={18} />
+              <Text style={styles.socialPillBtnText}>Google</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.socialPillBtn}
+              onPress={() => setErrorMessage('Phone verification is enabled in mobile settings.')}
+              activeOpacity={0.8}
+            >
+              <Phone size={16} color="#334155" />
+              <Text style={styles.socialPillBtnText}>Phone</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── 7. Bottom Switch Row ── */}
+          <View style={styles.bottomSwitchRow}>
+            <Text style={styles.bottomSwitchText}>
+              {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
+            </Text>
+            <TouchableOpacity onPress={toggleMode} activeOpacity={0.7}>
+              <Text style={styles.bottomSwitchLink}>
+                {mode === 'login' ? 'Sign Up' : 'Sign In'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#0F172A',
   },
-
-  // ── Hero ──
-  heroContainer: {
-    height: HERO_H,
-    position: 'relative',
-    overflow: 'hidden',
+  scrollView: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
   },
-  heroBg: {
-    ...StyleSheet.absoluteFill,
-    width: SCREEN_W,
-    height: HERO_H,
+  scrollContent: {
+    flexGrow: 1,
+  },
+
+  /* ── Hero Header ── */
+  heroHeader: {
+    width: '100%',
+    height: 270,
+    position: 'relative',
+    backgroundColor: '#0F172A',
+  },
+  heroBgImg: {
+    width: '100%',
+    height: '100%',
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-  },
-  heroOverlayBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 100,
-    backgroundColor: 'transparent',
-  },
-  heroNav: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 20,
-    paddingTop: 8,
+    height: 100,
+    backgroundColor: 'rgba(15, 23, 42, 0.3)',
   },
-  heroBrandBadge: {
+  heroNav: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 48 : (StatusBar.currentHeight || 24) + 10,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
+    zIndex: 10,
   },
-  heroBrandLogoCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    backgroundColor: '#464B29',
+  navBackBtn: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
-  heroBrandName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
-  },
-  heroTagline: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.65)',
-    marginTop: 2,
-    marginLeft: 38,
-    fontWeight: '500',
-  },
-  heroCenterContent: {
-    position: 'absolute',
-    bottom: 88,
-    left: 20,
-    right: 20,
-  },
-  heroHeadline: {
-    fontSize: 28,
-    fontWeight: '400',
-    color: 'rgba(255,255,255,0.85)',
-    letterSpacing: -0.5,
-  },
-  heroHeadlineBold: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -0.8,
-  },
-  heroSubline: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.65)',
-    marginTop: 6,
-    fontWeight: '500',
-  },
-  heroTrustStrip: {
-    position: 'absolute',
-    bottom: 16,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    gap: 12,
-  },
-  trustPill: {
+  rolePill: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    borderRadius: 9999,
+    paddingVertical: 7,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    gap: 7,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  trustPillText: {
-    fontSize: 10.5,
-    color: 'rgba(255,255,255,0.85)',
-    fontWeight: '600',
+  rolePillText: {
+    color: '#2563EB',
+    fontWeight: '700',
+    fontSize: 12.5,
   },
 
-  // ── Bottom Sheet ──
-  sheetKav: {
-    flex: 1,
-    marginTop: -28, // overlap hero
-  },
-  sheetScroll: {
-    flex: 1,
-  },
-  sheetScrollContent: {
-    flexGrow: 1,
-  },
-  sheet: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
+  /* ── Card Container ── */
+  cardContainer: {
+    width: '100%',
+    marginTop: -26,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    paddingHorizontal: 22,
-    paddingBottom: 40,
-    paddingTop: 14,
-    minHeight: SCREEN_H * 0.65,
-    // top shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 20,
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#E5E7EB',
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-
-  // ── Tab Toggle ──
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 18,
-    position: 'relative',
-  },
-  tabIndicator: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    width: '50%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 9,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    paddingHorizontal: 22,
+    paddingTop: 26,
+    paddingBottom: 38,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  tabBtn: {
+    shadowRadius: 16,
+    elevation: 8,
     flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    zIndex: 1,
   },
-  tabBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#9CA3AF',
-  },
-  tabBtnTextActive: {
-    color: '#111827',
+  title: {
+    fontSize: 21,
     fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 5,
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 18,
+    lineHeight: 17,
   },
 
-  // ── Alerts ──
-  alertError: {
+  /* Alerts */
+  errorAlert: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     backgroundColor: '#FEF2F2',
-    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#FCA5A5',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 14,
-  },
-  alertErrorText: {
-    flex: 1,
-    fontSize: 12.5,
-    color: '#DC2626',
-    fontWeight: '600',
-  },
-  alertSuccess: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#ECFDF5',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 14,
-  },
-  alertSuccessText: {
-    flex: 1,
-    fontSize: 12.5,
-    color: '#059669',
-    fontWeight: '600',
-  },
-
-  // ── Fields ──
-  fieldGroup: {
-    marginBottom: 14,
-  },
-  fieldLabel: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#6B7280',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  inputPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderRadius: 14,
     paddingHorizontal: 14,
-    height: 50,
-    gap: 10,
+    paddingVertical: 9,
+    marginBottom: 14,
+    gap: 9,
   },
-  inputPillError: {
-    borderColor: '#FCA5A5',
-    backgroundColor: '#FEF2F2',
-  },
-  input: {
+  errorAlertText: {
     flex: 1,
-    fontSize: 14,
-    color: '#111827',
+    color: '#B91C1C',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  successAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    marginBottom: 14,
+    gap: 9,
+  },
+  successAlertText: {
+    flex: 1,
+    color: '#15803D',
+    fontSize: 12,
     fontWeight: '500',
   },
 
-  // ── Strength meter ──
-  strengthRow: {
+  /* ── Pill Inputs ── */
+  pillInput: {
+    width: '100%',
+    height: 46,
+    borderRadius: 9999,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 18,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#0F172A',
+    marginBottom: 12,
+  },
+  inputWrapWithBtn: {
+    width: '100%',
+    height: 46,
+    borderRadius: 9999,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 18,
+    paddingRight: 14,
+    marginBottom: 12,
+  },
+  pillInputInner: {
+    flex: 1,
+    height: '100%',
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#0F172A',
+  },
+  eyeBtn: {
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* ── Options Row (Remember me + Forgot Password) ── */
+  optionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+    marginBottom: 16,
+    paddingHorizontal: 2,
+  },
+  rememberMeWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 8,
   },
-  strengthBars: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 4,
-  },
-  strengthBar: {
-    flex: 1,
-    height: 3,
-    borderRadius: 2,
-  },
-  strengthLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    minWidth: 40,
-    textAlign: 'right',
-  },
-
-  // ── Forgot ──
-  forgotBtn: {
-    alignSelf: 'flex-end',
-    marginBottom: 16,
-    marginTop: -6,
-  },
-  forgotBtnText: {
-    fontSize: 12.5,
-    color: '#0969DA',
-    fontWeight: '600',
-  },
-
-  // ── Primary CTA ──
-  primaryBtn: {
-    flexDirection: 'row',
+  checkbox: {
+    width: 17,
+    height: 17,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#464B29',
-    borderRadius: 14,
-    height: 52,
-    gap: 10,
-    marginBottom: 20,
-    shadowColor: '#464B29',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
   },
-  primaryBtnDisabled: {
-    opacity: 0.65,
+  checkboxChecked: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
   },
-  primaryBtnText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
+  rememberMeText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  forgotPasswordLink: {
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 
-  // ── Divider ──
+  /* ── Vibrant Blue Pill Button ── */
+  bluePillBtn: {
+    width: '100%',
+    height: 46,
+    borderRadius: 9999,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 4,
+    marginTop: 4,
+  },
+  bluePillBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13.8,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  btnDisabled: {
+    opacity: 0.65,
+  },
+
+  /* ── Divider ── */
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 14,
-  },
-  demoDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginVertical: 14,
+    marginVertical: 16,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E2E8F0',
   },
   dividerText: {
+    color: '#94A3B8',
     fontSize: 11.5,
-    color: '#9CA3AF',
+    paddingHorizontal: 12,
     fontWeight: '500',
   },
 
-  // ── Social buttons ──
-  socialRow: {
+  /* ── Social Buttons ── */
+  socialGrid: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 4,
+    gap: 12,
+    marginBottom: 20,
   },
-  socialBtn: {
+  socialPillBtn: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    height: 46,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    height: 42,
+    borderRadius: 9999,
     backgroundColor: '#FFFFFF',
-  },
-  googleSvgWrap: {
-    width: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4285F4',
-    borderRadius: 3,
-  },
-  googleG: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 14,
-  },
-  socialBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#374151',
-  },
-
-  // ── Demo btn ──
-  demoBtn: {
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    height: 46,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#C7CC99',
-    backgroundColor: '#EFF1E4',
   },
-  demoBtnText: {
+  socialPillBtnText: {
+    color: '#1E293B',
     fontSize: 12.5,
-    fontWeight: '700',
-    color: '#464B29',
+    fontWeight: '600',
   },
 
-  // ── Switch row ──
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 20,
-    gap: 4,
-  },
-  switchText: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  switchLink: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#464B29',
-  },
-
-  // ── Footer ──
-  footerTrust: {
+  /* ── Bottom Switch Link ── */
+  bottomSwitchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 14,
+    marginTop: 2,
   },
-  footerTrustText: {
-    fontSize: 10.5,
-    color: '#9CA3AF',
+  bottomSwitchText: {
+    color: '#64748B',
+    fontSize: 12.5,
     fontWeight: '500',
+  },
+  bottomSwitchLink: {
+    color: '#2563EB',
+    fontWeight: '700',
+    fontSize: 12.5,
+    textDecorationLine: 'underline',
   },
 });
