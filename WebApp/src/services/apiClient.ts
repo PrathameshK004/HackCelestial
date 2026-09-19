@@ -1,10 +1,21 @@
+import { Capacitor } from '@capacitor/core';
+
 /**
  * Production-Grade API Client with Silent Token Refresh & Request Queueing
  * Implements RFC 6749 / RFC 6750 Token Rotation and automatic request replay.
  */
 
 export const getApiBase = (): string => {
-  // 1. When running on localhost / dev machine, always route to local backend via /api proxy
+  // 1. When running on native mobile app (Capacitor Android/iOS), connect to cloud backend
+  if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+    const envUrl = (import.meta as any).env?.VITE_API_URL;
+    if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+      return envUrl.trim().replace(/\/+$/, '');
+    }
+    return 'https://hackcelestial-api.onrender.com/api';
+  }
+
+  // 2. When running on web browser localhost / dev machine, route to local backend via /api proxy
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0';
@@ -13,7 +24,7 @@ export const getApiBase = (): string => {
     }
   }
 
-  // 2. Production or explicit custom API URL
+  // 3. Production or explicit custom API URL
   const envUrl = (import.meta as any).env?.VITE_API_URL;
   if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
     return envUrl.trim().replace(/\/+$/, '');

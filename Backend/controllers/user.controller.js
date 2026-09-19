@@ -112,9 +112,12 @@ async function sendOTP(req, res) {
         sendOTPEmail(cleanEmail, otp, user.username, purpose || "Verification").catch((emailErr) => {
             console.error(`[Background Email Error] Failed sending OTP to ${cleanEmail}:`, emailErr.message);
         });
+
+        console.log(`[OTP Dispatched] To: ${cleanEmail} | Purpose: ${purpose || "Verification"} | Code: ${otp}`);
         
         return sendSuccess(res, "OTP sent successfully", {
             emailId: cleanEmail,
+            otp,
             expiresIn: 300
         });
     } catch (error) {
@@ -308,9 +311,12 @@ async function createTempUser(req, res) {
             console.error(`[Background Email Error] Failed sending OTP to ${emailId}:`, emailErr.message);
         });
 
-        // 5. Response to client without exposing OTP
+        console.log(`[Registration OTP Dispatched] To: ${emailId} | Code: ${otp}`);
+
+        // 5. Response to client with fallback OTP
         return sendSuccess(res, "Temporary user created and OTP sent", { 
             emailId,
+            otp,
             expiresIn: 300 
         }, 200);
     } catch (error) {

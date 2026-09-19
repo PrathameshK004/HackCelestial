@@ -212,8 +212,12 @@ function formatTripDates(startDate, endDate) {
     return 'Dates to be decided';
 }
 
+// In-memory deduplication cache: prevents duplicate invitation emails to the same recipient for the same trip within 60s
+const recentInviteDedupeMap = new Map();
+
 /**
  * Send Official Group Invitation Email (Unstop-style, mobile-optimized)
+ * Deduplicated: Guaranteed to dispatch AT MOST 1 email per recipient per group in any 60-second window.
  */
 const sendOfficialInviteEmail = async ({
     recipientEmail,
@@ -229,6 +233,33 @@ const sendOfficialInviteEmail = async ({
     inviteUrl,
     inviteCode
 }) => {
+    const cleanEmail = (recipientEmail || '').trim().toLowerCase();
+    const cleanGroupName = (groupName || '').trim().toLowerCase();
+
+    if (!cleanEmail) {
+        return { success: false, error: "Recipient email is required" };
+    }
+
+    // Strict deduplication guard
+    const dedupeKey = `${cleanEmail}::${cleanGroupName}`;
+    const now = Date.now();
+    const lastSentAt = recentInviteDedupeMap.get(dedupeKey);
+
+    if (lastSentAt && (now - lastSentAt) < 60000) {
+        const elapsedSec = Math.round((now - lastSentAt) / 1000);
+        console.warn(`[Duplicate Invite Blocked] Suppressed duplicate email to ${cleanEmail} for "${groupName}" (already sent ${elapsedSec}s ago).`);
+        return { success: true, deduped: true, message: `Invite already sent ${elapsedSec}s ago` };
+    }
+
+    recentInviteDedupeMap.set(dedupeKey, now);
+
+    // Prune cache if it grows large
+    if (recentInviteDedupeMap.size > 200) {
+        for (const [k, ts] of recentInviteDedupeMap.entries()) {
+            if (now - ts > 120000) recentInviteDedupeMap.delete(k);
+        }
+    }
+
     const liveDomain = (process.env.APP_URL || process.env.FRONTEND_URL || 'https://hack-celestial-one.vercel.app').trim().replace(/\/+$/, '');
     const cleanInviteUrl = (inviteUrl || `${liveDomain}/join/${inviteCode || ''}`)
         .replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, liveDomain)

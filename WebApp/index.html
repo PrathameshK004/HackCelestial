@@ -4,13 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23059669' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><polygon points='16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76'/></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GroupTrip Ledger — Create Group</title>
+    <title>Triptual — Smart Group Travel &amp; Expense Ledger</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   </head>
-  <body>
-    <div id="root"></div>
+  <body style="margin: 0; background-color: #080c16;">
+    <div id="root">
+      <!-- Instant Native-feel Splash Screen (Renders before JS executes) -->
+      <div style="position: fixed; inset: 0; background: radial-gradient(circle at 50% 30%, #0d1527 0%, #080c16 65%, #05070d 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; user-select: none; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;">
+        <div style="width: 110px; height: 110px; border-radius: 50%; padding: 3px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.9), rgba(5, 150, 105, 0.8), rgba(217, 119, 6, 0.4)); box-shadow: 0 12px 36px -6px rgba(0, 0, 0, 0.6), 0 0 24px rgba(245, 158, 11, 0.25); margin-bottom: 24px;">
+          <img src="/triptual-logo.png" alt="Triptual" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;" />
+        </div>
+        <h1 style="font-size: 1.85rem; font-weight: 800; letter-spacing: 0.24em; text-indent: 0.24em; color: #ffffff; margin: 0 0 6px 0;">TRIPTUAL</h1>
+        <p style="font-size: 0.85rem; font-weight: 500; color: #94a3b8; letter-spacing: 0.02em; margin: 0;">Smart Group Travel &amp; Expense Ledger</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

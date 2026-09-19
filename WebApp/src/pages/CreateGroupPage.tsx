@@ -290,6 +290,7 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
   };
 
   const submitWithData = async (dataToSubmit: TripFormData) => {
+    if (isSubmitting) return;
     setIsSubmitting(true);
     try {
       const response = await groupService.createGroup(dataToSubmit);
@@ -314,6 +315,7 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
   };
 
   const handleConfirmAndSubmit = async () => {
+    if (isSubmitting) return;
     // If more than 6 members and not yet paid, open payment modal
     if (formData.travelers.length > 6 && formData.payment?.status !== 'PAID') {
       setIsPaymentModalOpen(true);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CreateGroupPage, AuthPage, JoinTripPage, HomePage } from './pages';
-import { Compass, Loader2 } from 'lucide-react';
+import { SplashScreen } from './components/common/SplashScreen';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -9,6 +9,20 @@ const AppContent: React.FC = () => {
   const [isAuthModeForInvite, setIsAuthModeForInvite] = useState(false);
   const [activeView, setActiveView] = useState<'create-group' | 'dashboard'>('dashboard');
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(undefined);
+  const [showSplash, setShowSplash] = useState(true);
+  const [isSplashExiting, setIsSplashExiting] = useState(false);
+
+  // Natural splash screen hold on startup for native app feel
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsSplashExiting(true);
+      setTimeout(() => {
+        setShowSplash(false);
+      }, 450);
+    }, 1800);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   // Helper to extract invite code from pathname, query or hash
   const extractInviteCode = (): string | null => {
@@ -43,21 +57,8 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  if (isLoading) {
-    return (
-      <div className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <div className="brand-icon-box brand-icon-pulse">
-            <Compass size={28} strokeWidth={2.4} />
-          </div>
-          <div className="auth-loading-text">
-            <h3>GroupTrip Ledger</h3>
-            <p>Initializing secure session...</p>
-          </div>
-          <Loader2 size={24} className="spin-animation text-emerald" />
-        </div>
-      </div>
-    );
+  if (showSplash || isLoading) {
+    return <SplashScreen isExiting={isSplashExiting && !isLoading} />;
   }
 
   // 1. User clicked an invite link and needs to log in first

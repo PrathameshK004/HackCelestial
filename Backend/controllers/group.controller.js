@@ -178,6 +178,10 @@ async function createGroup(req, res) {
 
         const inviteExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days valid
         const pendingInviteEmails = [];
+        const processedEmails = new Set();
+        if (organizerEmail) {
+            processedEmails.add(organizerEmail.trim().toLowerCase());
+        }
 
         for (const traveler of travelers) {
             const email = (traveler.email || '').trim().toLowerCase();
@@ -185,7 +189,9 @@ async function createGroup(req, res) {
             const role = traveler.role || 'Traveler';
             const avatarBg = traveler.avatarBg || '#0284c7';
 
-            if (!email || email === organizerEmail.toLowerCase()) continue;
+            // Skip empty emails, organizer's own email, or already processed duplicate emails
+            if (!email || processedEmails.has(email)) continue;
+            processedEmails.add(email);
 
             // Check if traveler is registered on platform
             const regCheck = await client.query(

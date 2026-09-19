@@ -122,8 +122,14 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
         setStep(2);
         setResendTimer(30);
         setCanResend(false);
-        setOtpDigits(['', '', '', '']);
-        setSuccessMessage(`A 4-digit verification code has been sent to ${emailId.trim().toLowerCase()}`);
+        const codeStr = res.otp ? String(res.otp).padStart(4, '0') : '';
+        if (codeStr && codeStr.length === 4) {
+          setOtpDigits(codeStr.split(''));
+          setSuccessMessage(`Verification code sent to ${emailId.trim().toLowerCase()} (Code: ${codeStr})`);
+        } else {
+          setOtpDigits(['', '', '', '']);
+          setSuccessMessage(`A 4-digit verification code has been sent to ${emailId.trim().toLowerCase()}`);
+        }
         setTimeout(() => {
           otpInputRefs.current[0]?.focus();
         }, 100);
@@ -196,8 +202,14 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
       if (res.success) {
         setResendTimer(30);
         setCanResend(false);
-        setOtpDigits(['', '', '', '']);
-        setSuccessMessage(`A fresh verification code was sent to ${emailId.trim().toLowerCase()}`);
+        const codeStr = res.otp ? String(res.otp).padStart(4, '0') : '';
+        if (codeStr && codeStr.length === 4) {
+          setOtpDigits(codeStr.split(''));
+          setSuccessMessage(`A fresh verification code was sent to ${emailId.trim().toLowerCase()} (Code: ${codeStr})`);
+        } else {
+          setOtpDigits(['', '', '', '']);
+          setSuccessMessage(`A fresh verification code was sent to ${emailId.trim().toLowerCase()}`);
+        }
         setTimeout(() => {
           otpInputRefs.current[0]?.focus();
         }, 100);

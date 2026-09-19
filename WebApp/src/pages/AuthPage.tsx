@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, ArrowLeft, User } from 'lucide-react';
+import { ArrowLeft, User } from 'lucide-react';
 import { AuthBrandShowcase } from '../components/auth/AuthBrandShowcase';
 import { LoginForm } from '../components/auth/LoginForm';
 import { SignupForm } from '../components/auth/SignupForm';
@@ -112,12 +112,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 onSuccess={() => setMode('login')}
               />
             )}
-
-            {/* Bank-Grade Security & Trust Indicator */}
-            <div className="auth-trust-badge-row">
-              <ShieldCheck size={13} className="auth-trust-icon" />
-              <span>256-Bit Bank Encryption · Zero Plaintext Storage</span>
-            </div>
           </div>
         </div>
       </div>

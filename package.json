@@ -8,7 +8,8 @@
     "dev:backend": "cd Backend && npm run dev",
     "dev:frontend": "cd WebApp && npm run dev",
     "build": "cd WebApp && npm run build",
-    "build:frontend": "cd WebApp && npm run build"
+    "build:frontend": "cd WebApp && npm run build",
+    "dev:mobile": "cd MobileApp && npm start"
   },
   "keywords": [],
   "author": "",
