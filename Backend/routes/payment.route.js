@@ -12,4 +12,8 @@ router.post('/record', verifyToken, paymentController.recordUnifiedPayment);
 // Verify UPI payment callback and commit to group ledger
 router.post('/verify-status', verifyToken, paymentController.verifyPaymentStatus);
 
+// Razorpay Payment Gateway Endpoints
+router.post('/razorpay/create-order', verifyToken, paymentController.createRazorpayOrder);
+router.post('/razorpay/verify-payment', verifyToken, paymentController.verifyRazorpayPayment);
+
 module.exports = router;

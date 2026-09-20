@@ -276,6 +276,7 @@ async function createGroup(req, res) {
         }
 
         return sendSuccess(res, "Group created successfully", {
+            id: createdGroup.id,
             groupId: createdGroup.id,
             name: createdGroup.name,
             destination: createdGroup.destination,
@@ -374,6 +375,7 @@ async function getGroupById(req, res) {
         }));
 
         return sendSuccess(res, "Group fetched successfully", {
+            id: group.id,
             groupId: group.id,
             name: group.name,
             destination: group.destination,
@@ -424,7 +426,7 @@ async function getMyGroups(req, res) {
         const userEmail = userRes.rows[0]?.email_id || '';
 
         const groupsQuery = await pool.query(`
-            SELECT DISTINCT g.id, g.name, g.destination, g.start_date as "startDate", 
+            SELECT DISTINCT g.id, g.id as "groupId", g.name, g.destination, g.start_date as "startDate", 
                    g.end_date as "endDate", g.trip_type as "tripType", g.currency, 
                    g.expense_split as "expenseSplit", g.description, g.created_by as "createdBy", 
                    g.member_tier as "memberTier", g.payment_status as "paymentStatus",

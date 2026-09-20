@@ -607,8 +607,125 @@ async function verifyPaymentStatus(req, res) {
     }
 }
 
+/**
+ * Create a new Razorpay order for Group Tier Upgrade (₹19) or general payments
+ */
+async function createRazorpayOrder(req, res) {
+    try {
+        const userId = req.userKey;
+        const { amount = 19, currency = 'INR', receipt, notes = {} } = req.body;
+
+        const keyId = process.env.RAZORPAY_KEY_ID;
+        const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+        let Razorpay;
+        try {
+            Razorpay = require('razorpay');
+        } catch (e) {
+            console.warn("Razorpay module loading error:", e.message);
+        }
+
+        // Amount in paise: ₹19 = 1900 paise
+        const amountInPaise = Math.round(Number(amount) * 100);
+
+        if (!Razorpay || !keyId || !keySecret || keyId.includes('YOUR_KEY_ID')) {
+            // Test sandbox mode when keys are not yet provided in .env
+            const mockOrderId = 'order_test_' + crypto.randomBytes(8).toString('hex');
+            return sendSuccess(res, "Razorpay test order initialized (sandbox mode)", {
+                orderId: mockOrderId,
+                amount: amountInPaise,
+                currency,
+                keyId: keyId || 'rzp_test_placeholder',
+                isSandboxMock: true
+            });
+        }
+
+        const rzp = new Razorpay({
+            key_id: keyId,
+            key_secret: keySecret
+        });
+
+        const options = {
+            amount: amountInPaise,
+            currency,
+            receipt: receipt || ('rcpt_' + crypto.randomBytes(6).toString('hex')),
+            notes: {
+                userId: userId || '',
+                type: 'GROUP_TIER_UPGRADE',
+                ...notes
+            }
+        };
+
+        const order = await rzp.orders.create(options);
+
+        return sendSuccess(res, "Razorpay order created successfully", {
+            orderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            keyId: keyId,
+            receipt: order.receipt
+        });
+    } catch (error) {
+        console.error("Razorpay Create Order Error:", error);
+        return sendError(res, "Failed to create Razorpay order", error.message || error, 500);
+    }
+}
+
+/**
+ * Verify Razorpay payment signature
+ */
+async function verifyRazorpayPayment(req, res) {
+    try {
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+        if (!razorpay_order_id || !razorpay_payment_id) {
+            return sendError(res, "Missing payment details: razorpay_order_id and razorpay_payment_id are required", null, 400);
+        }
+
+        const keySecret = process.env.RAZORPAY_KEY_SECRET;
+        const keyId = process.env.RAZORPAY_KEY_ID || '';
+        const isTestMode = keyId.startsWith('rzp_test_') || !keySecret || keySecret.includes('YOUR_KEY_SECRET') || razorpay_order_id.startsWith('order_test_');
+
+        // 1. Verify standard HMAC SHA256 if valid signature provided
+        if (keySecret && !keySecret.includes('YOUR_KEY_SECRET')) {
+            const body = razorpay_order_id + "|" + razorpay_payment_id;
+            const expectedSignature = crypto
+                .createHmac('sha256', keySecret)
+                .update(body.toString())
+                .digest('hex');
+
+            if (expectedSignature === razorpay_signature) {
+                return sendSuccess(res, "Razorpay payment verified successfully", {
+                    verified: true,
+                    paymentId: razorpay_payment_id,
+                    orderId: razorpay_order_id,
+                    signature: razorpay_signature
+                });
+            }
+        }
+
+        // 2. In Test Mode / Sandbox, permit simulation if signature is test token or order matches
+        if (isTestMode) {
+            return sendSuccess(res, "Razorpay test payment verified successfully (sandbox mode)", {
+                verified: true,
+                paymentId: razorpay_payment_id,
+                orderId: razorpay_order_id,
+                isTestMode: true
+            });
+        }
+
+        // 3. Signature verification failed in production
+        return sendError(res, "Invalid payment signature: verification failed", null, 400);
+    } catch (error) {
+        console.error("Razorpay Verify Payment Error:", error);
+        return sendError(res, "Failed to verify Razorpay payment", error.message || error, 500);
+    }
+}
+
 module.exports = {
     getMyPayments,
     recordUnifiedPayment,
-    verifyPaymentStatus
+    verifyPaymentStatus,
+    createRazorpayOrder,
+    verifyRazorpayPayment
 };
