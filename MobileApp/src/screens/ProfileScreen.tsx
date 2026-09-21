@@ -1,6 +1,6 @@
 /**
  * ProfileScreen matching WebApp ProfilePage.tsx
- * Features traveler details, UPI ID configuration, and SQLite Offline Diagnostics
+ * Features traveler details and UPI ID configuration
  */
 
 import React, { useState, useEffect } from 'react';
@@ -18,7 +18,6 @@ import {
   ArrowLeft,
   User,
   Smartphone,
-  Database,
   RefreshCw,
   LogOut,
   ShieldCheck,
@@ -66,7 +65,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
     await updateUser({ name, upiId, phone });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
-    Alert.alert('Profile Saved', 'Profile information updated and persisted to local SQLite.');
+    Alert.alert('Profile Saved', 'Your profile information has been updated.');
   };
 
   const handleLogout = () => {
@@ -161,58 +160,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
           <CheckCircle2 size={16} color="#ffffff" />
           <Text style={styles.saveBtnText}>{isSaved ? 'Saved!' : 'Save Changes'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* SQLite Database & Offline Diagnostics */}
-      <View style={styles.card}>
-        <View style={styles.diagHeader}>
-          <Database size={18} color={colors.primary600} />
-          <Text style={styles.cardTitle}>Local SQLite Database Diagnostics</Text>
-        </View>
-
-        <View style={styles.diagRow}>
-          <Text style={styles.diagLabel}>Primary Database Engine</Text>
-          <Text style={styles.diagValue}>expo-sqlite (WAL Mode)</Text>
-        </View>
-
-        <View style={styles.diagRow}>
-          <Text style={styles.diagLabel}>Total Local Trips</Text>
-          <Text style={styles.diagValue}>{trips.length} trips</Text>
-        </View>
-
-        <View style={styles.diagRow}>
-          <Text style={styles.diagLabel}>Total Cached Expenses</Text>
-          <Text style={styles.diagValue}>{totalExpensesCount} expenses</Text>
-        </View>
-
-        <View style={styles.diagRow}>
-          <Text style={styles.diagLabel}>Pending Sync Queue</Text>
-          <Text
-            style={[
-              styles.diagValue,
-              pendingCount > 0 && { color: colors.accentAmber, fontWeight: '800' },
-            ]}
-          >
-            {pendingCount} operations
-          </Text>
-        </View>
-
-        <View style={styles.diagRow}>
-          <Text style={styles.diagLabel}>Backend API Target</Text>
-          <Text style={styles.diagValueSmall}>hackcelestial-api.onrender.com</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.syncBtn}
-          onPress={() => syncNow()}
-          disabled={isSyncing}
-          activeOpacity={0.85}
-        >
-          <RefreshCw size={15} color="#ffffff" />
-          <Text style={styles.syncBtnText}>
-            {isSyncing ? 'Synchronizing with Render API...' : 'Force Sync Now'}
-          </Text>
         </TouchableOpacity>
       </View>
 
@@ -370,48 +317,6 @@ const styles = StyleSheet.create({
   saveBtnText: {
     color: '#ffffff',
     fontSize: 13.5,
-    fontWeight: '800',
-  },
-  diagHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  diagRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.slate100,
-  },
-  diagLabel: {
-    fontSize: 12,
-    color: colors.slate600,
-  },
-  diagValue: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: colors.slate900,
-  },
-  diagValueSmall: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.primary700,
-  },
-  syncBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.slate900,
-    borderRadius: radii.md,
-    paddingVertical: 12,
-    marginTop: 14,
-    gap: 8,
-  },
-  syncBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
     fontWeight: '800',
   },
   logoutBtn: {

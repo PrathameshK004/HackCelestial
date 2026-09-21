@@ -207,134 +207,151 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Top Official Banner */}
-          <View style={styles.officialCard}>
-            <View style={styles.badgeRow}>
-              <View style={styles.statusPill}>
-                <Mail size={12} color="#059669" />
-                <Text style={styles.statusPillText}>Official Invitation • Approval Required</Text>
+          {/* Trip Header Hero Card */}
+          <View style={styles.heroCard}>
+            <View style={styles.heroBadgeRow}>
+              <View style={styles.tripCategoryPill}>
+                <Compass size={12} color="#059669" strokeWidth={2.2} />
+                <Text style={styles.tripCategoryText}>{details?.tripType || 'Friends'} Trip</Text>
               </View>
-              {(details?.inviteCode || inviteCode) && (
-                <View style={styles.codePill}>
-                  <Text style={styles.codePillText}>Code: {details?.inviteCode || inviteCode}</Text>
+              <View style={styles.membersCountPill}>
+                <Users size={12} color="#0284C7" strokeWidth={2.2} />
+                <Text style={styles.membersCountText}>
+                  {details?.memberCount || 1} {(details?.memberCount || 1) === 1 ? 'Traveler' : 'Travelers'}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.heroTripTitle}>{details?.groupName || 'Trip Group'}</Text>
+
+            {Boolean(details?.destination) && (
+              <View style={styles.heroDestinationRow}>
+                <MapPin size={15} color="#059669" strokeWidth={2.2} />
+                <Text style={styles.heroDestinationText}>{details?.destination}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Inviter / Host Strip */}
+          <View style={styles.hostStrip}>
+            <View style={styles.hostAvatar}>
+              <Text style={styles.hostAvatarText}>{getInitials(details?.organizerName)}</Text>
+            </View>
+            <View style={styles.hostInfo}>
+              <Text style={styles.hostRoleLabel}>Trip Host & Organizer</Text>
+              <Text style={styles.hostName}>{details?.organizerName || 'Trip Organizer'}</Text>
+            </View>
+            <View style={styles.verifiedHostBadge}>
+              <ShieldCheck size={14} color="#059669" strokeWidth={2.4} />
+              <Text style={styles.verifiedHostText}>Verified</Text>
+            </View>
+          </View>
+
+          {/* Balanced 2x2 Overview Grid */}
+          <View style={styles.gridContainer}>
+            <View style={styles.gridRow}>
+              {/* Trip Dates */}
+              <View style={styles.gridCard}>
+                <View style={styles.gridCardHeaderRow}>
+                  <View style={[styles.gridIconCircle, { backgroundColor: '#ECFDF5' }]}>
+                    <Calendar size={14} color="#059669" strokeWidth={2.2} />
+                  </View>
+                  <Text style={styles.gridCardLabel}>TRIP DATES</Text>
                 </View>
-              )}
-            </View>
+                <Text style={styles.gridCardValue} numberOfLines={2}>
+                  {formatDateRange(details?.startDate, details?.endDate)}
+                </Text>
+              </View>
 
-            <Text style={styles.groupName}>{details?.groupName || 'Trip Group'}</Text>
-
-            <View style={styles.destinationRow}>
-              <MapPin size={16} color="#059669" />
-              <Text style={styles.destinationText}>{details?.destination || 'Destination'}</Text>
-              <Text style={styles.dotSeparator}>•</Text>
-              <View style={styles.tripTypeBadge}>
-                <Text style={styles.tripTypeBadgeText}>{details?.tripType || 'Friends'}</Text>
+              {/* Expense Split Model */}
+              <View style={styles.gridCard}>
+                <View style={styles.gridCardHeaderRow}>
+                  <View style={[styles.gridIconCircle, { backgroundColor: '#FEF3C7' }]}>
+                    <Coins size={14} color="#D97706" strokeWidth={2.2} />
+                  </View>
+                  <Text style={styles.gridCardLabel}>EXPENSE SPLIT</Text>
+                </View>
+                <Text style={styles.gridCardValue} numberOfLines={2}>
+                  {details?.currency || 'INR'} • {details?.expenseSplit || 'Equal'}
+                </Text>
               </View>
             </View>
-          </View>
 
-          {/* Inviter Info Strip */}
-          <View style={styles.inviterStrip}>
-            <View style={styles.inviterAvatar}>
-              <Text style={styles.inviterAvatarText}>{getInitials(details?.organizerName)}</Text>
-            </View>
-            <View style={styles.inviterMeta}>
-              <Text style={styles.inviterLabel}>Invited by Organizer</Text>
-              <Text style={styles.inviterName}>{details?.organizerName || 'Trip Organizer'}</Text>
-            </View>
-            <View style={styles.verifiedShield}>
-              <ShieldCheck size={14} color="#059669" />
-              <Text style={styles.verifiedShieldText}>Verified Organizer</Text>
-            </View>
-          </View>
-
-          {/* Overview Grid */}
-          <View style={styles.detailsGrid}>
-            <View style={styles.detailCard}>
-              <View style={styles.detailLabelRow}>
-                <Calendar size={13} color="#059669" />
-                <Text style={styles.detailLabel}>Trip Dates</Text>
+            <View style={styles.gridRow}>
+              {/* Confirmed Group */}
+              <View style={styles.gridCard}>
+                <View style={styles.gridCardHeaderRow}>
+                  <View style={[styles.gridIconCircle, { backgroundColor: '#F0F9FF' }]}>
+                    <Users size={14} color="#0284C7" strokeWidth={2.2} />
+                  </View>
+                  <Text style={styles.gridCardLabel}>GROUP SIZE</Text>
+                </View>
+                <Text style={styles.gridCardValue}>
+                  {details?.memberCount || 1} Confirmed
+                </Text>
               </View>
-              <Text style={styles.detailValue} numberOfLines={2}>
-                {formatDateRange(details?.startDate, details?.endDate)}
-              </Text>
-            </View>
 
-            <View style={styles.detailCard}>
-              <View style={styles.detailLabelRow}>
-                <Coins size={13} color="#D97706" />
-                <Text style={styles.detailLabel}>Currency & Split</Text>
+              {/* Ledger Security */}
+              <View style={styles.gridCard}>
+                <View style={styles.gridCardHeaderRow}>
+                  <View style={[styles.gridIconCircle, { backgroundColor: '#F5F3FF' }]}>
+                    <ShieldCheck size={14} color="#7C3AED" strokeWidth={2.2} />
+                  </View>
+                  <Text style={styles.gridCardLabel}>SETTLEMENT</Text>
+                </View>
+                <Text style={styles.gridCardValue}>
+                  Auto-Rebalanced
+                </Text>
               </View>
-              <Text style={styles.detailValue} numberOfLines={1}>
-                {details?.currency || 'INR'} ({details?.expenseSplit || 'equal'} split)
-              </Text>
-            </View>
-
-            <View style={styles.detailCard}>
-              <View style={styles.detailLabelRow}>
-                <Users size={13} color="#0284C7" />
-                <Text style={styles.detailLabel}>Confirmed</Text>
-              </View>
-              <Text style={styles.detailValue}>
-                {details?.memberCount || 1} {(details?.memberCount || 1) === 1 ? 'Member' : 'Members'} Joined
-              </Text>
             </View>
           </View>
 
           {/* Description / Notes */}
           {Boolean(details?.description) && (
-            <View style={styles.notesCard}>
-              <Text style={styles.notesTitle}>Trip Notes:</Text>
-              <Text style={styles.notesText}>{details?.description}</Text>
+            <View style={styles.notesContainer}>
+              <Text style={styles.notesSectionLabel}>TRIP NOTES & ITINERARY</Text>
+              <Text style={styles.notesBodyText}>{details?.description}</Text>
             </View>
           )}
 
           {/* Current Confirmed Members Roster Preview */}
           {Boolean(details?.members && details.members.length > 0) && (
-            <View style={styles.rosterSection}>
-              <Text style={styles.sectionTitle}>
-                Trip Roster ({details?.members?.length || 0})
-              </Text>
+            <View style={styles.rosterCard}>
+              <View style={styles.rosterHeader}>
+                <Text style={styles.rosterTitle}>Trip Members</Text>
+                <View style={styles.rosterCounterBadge}>
+                  <Text style={styles.rosterCounterText}>{details?.members?.length || 0}</Text>
+                </View>
+              </View>
+              <View style={styles.rosterDivider} />
               <View style={styles.rosterList}>
                 {details?.members?.map((m) => {
                   const isAccepted = m.status === 'ACCEPTED';
+                  const isOrg = m.role === 'Organizer';
                   return (
-                    <View key={String(m.id)} style={styles.rosterItem}>
-                      <View
-                        style={[
-                          styles.rosterAvatar,
-                          { backgroundColor: m.avatarBg || '#059669' },
-                        ]}
-                      >
+                    <View key={String(m.id)} style={styles.rosterRow}>
+                      <View style={[styles.rosterAvatar, { backgroundColor: m.avatarBg || '#059669' }]}>
                         <Text style={styles.rosterAvatarText}>{getInitials(m.name)}</Text>
                       </View>
-                      <View style={styles.rosterInfo}>
-                        <Text style={styles.rosterName}>{m.name}</Text>
-                        <Text style={styles.rosterSub}>
-                          {m.role === 'Organizer' ? 'Organizer' : isAccepted ? 'Joined' : 'Invite Pending'}
+                      <View style={styles.rosterNameCol}>
+                        <Text style={styles.rosterMemberName} numberOfLines={1}>{m.name}</Text>
+                        <Text style={styles.rosterMemberRole}>
+                          {isOrg ? 'Organizer & Host' : isAccepted ? 'Confirmed Traveler' : 'Invited • Pending'}
                         </Text>
                       </View>
                       <View
                         style={[
-                          styles.roleBadge,
-                          m.role === 'Organizer'
-                            ? styles.roleOrg
-                            : isAccepted
-                            ? styles.roleJoined
-                            : styles.rolePending,
+                          styles.rosterStatusPill,
+                          isOrg ? styles.pillOrg : isAccepted ? styles.pillJoined : styles.pillPending,
                         ]}
                       >
                         <Text
                           style={[
-                            styles.roleBadgeText,
-                            m.role === 'Organizer'
-                              ? styles.roleOrgText
-                              : isAccepted
-                              ? styles.roleJoinedText
-                              : styles.rolePendingText,
+                            styles.rosterStatusPillText,
+                            isOrg ? styles.pillOrgText : isAccepted ? styles.pillJoinedText : styles.pillPendingText,
                           ]}
                         >
-                          {m.role === 'Organizer' ? 'Organizer' : isAccepted ? 'Joined' : 'Pending'}
+                          {isOrg ? 'Host' : isAccepted ? 'Joined' : 'Pending'}
                         </Text>
                       </View>
                     </View>
@@ -344,13 +361,6 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
             </View>
           )}
 
-          {/* Security & Ledger Verification Banner */}
-          <View style={styles.securityStrip}>
-            <ShieldCheck size={16} color="#059669" />
-            <Text style={styles.securityStripText}>
-              End-to-End Rebalanced Ledger • Min-Cash-Flow Settled • Offline Sync Protected
-            </Text>
-          </View>
 
           {/* Action Feedback Alerts */}
           {actionError && (
@@ -431,7 +441,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                   ) : (
                     <>
                       <CheckCircle2 size={17} color="#ffffff" />
-                      <Text style={styles.acceptBtnText}>Accept Invitation & Join Trip</Text>
+                      <Text style={styles.acceptBtnText}>Accept Invitation</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -474,12 +484,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   backBtn: {
-    padding: 4,
-    marginRight: 2,
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
   },
   navTitle: {
     fontSize: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#0F172A',
   },
   pageScroll: {
@@ -488,7 +499,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 48,
     gap: 14,
   },
   loadingContainer: {
@@ -547,107 +558,298 @@ const styles = StyleSheet.create({
   primaryActionBtn: {
     backgroundColor: '#059669',
     paddingHorizontal: 20,
-    paddingVertical: 11,
-    borderRadius: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
   },
   primaryActionBtnText: {
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
   },
-  officialCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 18,
-    padding: 20,
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#1E293B',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
+    borderColor: '#E2E8F0',
+    ...shadows.sm,
   },
-  badgeRow: {
+  heroBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
-    flexWrap: 'wrap',
-    gap: 8,
+    marginBottom: 12,
   },
-  statusPill: {
+  tripCategoryPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(5, 150, 105, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(5, 150, 105, 0.4)',
+    backgroundColor: '#ECFDF5',
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 4,
-  },
-  statusPillText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#34D399',
-    letterSpacing: 0.5,
-  },
-  codePill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 3.5,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: '#A7F3D0',
   },
-  codePillText: {
+  tripCategoryText: {
     fontSize: 11.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '700',
-    color: '#E2E8F0',
+    color: '#059669',
   },
-  groupName: {
+  membersCountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  membersCountText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  heroTripTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 10,
+    color: '#0F172A',
     lineHeight: 28,
+    marginBottom: 8,
   },
-  destinationRow: {
+  heroDestinationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  destinationText: {
+  heroDestinationText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#34D399',
+    color: '#475569',
   },
-  dotSeparator: {
-    color: '#64748B',
-    fontSize: 14,
-  },
-  tripTypeBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2.5,
+  hostStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: '#E2E8F0',
+    ...shadows.sm,
   },
-  tripTypeBadgeText: {
-    fontSize: 11.5,
+  hostAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hostAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  hostInfo: {
+    flex: 1,
+  },
+  hostRoleLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  hostName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  verifiedHostBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  verifiedHostText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  gridContainer: {
+    gap: 10,
+  },
+  gridRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  gridCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...shadows.sm,
+  },
+  gridCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 8,
+  },
+  gridIconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridCardLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  gridCardValue: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 18,
+  },
+  notesContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...shadows.sm,
+  },
+  notesSectionLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  notesBodyText: {
+    fontSize: 13.5,
+    color: '#334155',
+    lineHeight: 20,
+  },
+  rosterCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...shadows.sm,
+  },
+  rosterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  rosterTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  rosterCounterBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  rosterCounterText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  rosterDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginBottom: 10,
+  },
+  rosterList: {
+    gap: 10,
+  },
+  rosterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  rosterAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rosterAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  rosterNameCol: {
+    flex: 1,
+  },
+  rosterMemberName: {
+    fontSize: 13.5,
     fontWeight: '600',
-    color: '#E2E8F0',
+    color: '#0F172A',
+  },
+  rosterMemberRole: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  rosterStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  pillOrg: {
+    backgroundColor: '#EFF6FF',
+  },
+  pillJoined: {
+    backgroundColor: '#ECFDF5',
+  },
+  pillPending: {
+    backgroundColor: '#FFFBEB',
+  },
+  rosterStatusPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  pillOrgText: {
+    color: '#0284C7',
+  },
+  pillJoinedText: {
+    color: '#059669',
+  },
+  pillPendingText: {
+    color: '#D97706',
   },
   securityStrip: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#F0FDF4',
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: '#BBF7D0',
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -655,188 +857,8 @@ const styles = StyleSheet.create({
   securityStripText: {
     fontSize: 11.5,
     fontWeight: '600',
-    color: '#047857',
+    color: '#15803D',
     textAlign: 'center',
-  },
-  inviterStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 13,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    ...shadows.sm,
-  },
-  inviterAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#059669',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inviterAvatarText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  inviterMeta: {
-    flex: 1,
-  },
-  inviterLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  inviterName: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  verifiedShield: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  verifiedShieldText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  detailsGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  detailCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 11,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    ...shadows.sm,
-  },
-  detailLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
-  },
-  detailLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#64748B',
-    textTransform: 'uppercase',
-  },
-  detailValue: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#0F172A',
-    lineHeight: 17,
-  },
-  notesCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 13,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  notesTitle: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  notesText: {
-    fontSize: 13,
-    color: '#475569',
-    lineHeight: 18,
-  },
-  rosterSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    ...shadows.sm,
-  },
-  sectionTitle: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 10,
-  },
-  rosterList: {
-    gap: 8,
-  },
-  rosterItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 5,
-  },
-  rosterAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rosterAvatarText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  rosterInfo: {
-    flex: 1,
-  },
-  rosterName: {
-    fontSize: 13.5,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  rosterSub: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  roleBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-  },
-  roleOrg: {
-    backgroundColor: '#EFF6FF',
-  },
-  roleOrgText: {
-    color: '#0284C7',
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  roleJoined: {
-    backgroundColor: '#ECFDF5',
-  },
-  roleJoinedText: {
-    color: '#059669',
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  rolePending: {
-    backgroundColor: '#FFFBEB',
-  },
-  rolePendingText: {
-    color: '#D97706',
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  roleBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '700',
   },
   alertError: {
     flexDirection: 'row',
@@ -845,8 +867,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF1F2',
     borderWidth: 1,
     borderColor: '#FECDD3',
-    borderRadius: 8,
-    padding: 11,
+    borderRadius: 10,
+    padding: 12,
   },
   alertErrorText: {
     fontSize: 12.5,
@@ -860,8 +882,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#ECFDF5',
     borderWidth: 1,
     borderColor: '#A7F3D0',
-    borderRadius: 8,
-    padding: 11,
+    borderRadius: 10,
+    padding: 12,
   },
   alertSuccessText: {
     fontSize: 12.5,
@@ -869,26 +891,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actionBox: {
-    marginTop: 4,
+    marginTop: 6,
+    marginBottom: 16,
   },
   buttonsRow: {
     flexDirection: 'row',
     gap: 10,
+    alignItems: 'center',
   },
   acceptBtn: {
-    flex: 1.6,
+    flex: 1.8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
+    gap: 8,
     backgroundColor: '#059669',
-    borderRadius: 10,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingVertical: 15,
     ...shadows.md,
   },
   acceptBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
   },
   declineBtn: {
@@ -896,21 +920,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 6,
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingVertical: 15,
     borderWidth: 1,
     borderColor: '#CBD5E1',
   },
   declineBtnText: {
     color: '#64748B',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '600',
   },
   decisionBannerAccepted: {
     backgroundColor: '#ECFDF5',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     borderWidth: 1,
     borderColor: '#A7F3D0',
@@ -920,7 +944,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#065F46',
-    marginBottom: 2,
   },
   decisionSubAccepted: {
     fontSize: 13,
@@ -933,20 +956,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     backgroundColor: '#059669',
-    paddingVertical: 11,
-    paddingHorizontal: 18,
-    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
     alignSelf: 'flex-start',
-    marginTop: 6,
+    marginTop: 8,
   },
   workspaceBtnText: {
     color: '#FFFFFF',
     fontWeight: '700',
-    fontSize: 13.5,
+    fontSize: 14,
   },
   decisionBannerRejected: {
     backgroundColor: '#FFF1F2',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     borderWidth: 1,
     borderColor: '#FECDD3',
@@ -956,7 +979,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#9F1239',
-    marginBottom: 2,
   },
   decisionSubRejected: {
     fontSize: 13,
@@ -967,10 +989,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#FDA4AF',
-    paddingVertical: 9,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
     alignSelf: 'flex-start',
+    marginTop: 6,
   },
   closeActionBtnText: {
     color: '#BE123C',

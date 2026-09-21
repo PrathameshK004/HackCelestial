@@ -495,18 +495,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
 
                 return (
                   <View key={invite.id} style={styles.proInviteCard}>
-                    {/* Top Status Header */}
-                    <View style={styles.proCardHeader}>
-                      <View style={styles.proStatusBadge}>
-                        <View style={styles.proLiveDot} />
-                        <Text style={styles.proStatusText}>OFFICIAL INVITATION</Text>
-                      </View>
-                      <View style={styles.proCodeBadge}>
-                        <Text style={styles.proCodeText}>{invite.inviteCode}</Text>
-                      </View>
-                    </View>
-
-                    {/* Trip Title & Destination */}
+                    {/* Card Header & Inviter Info (Tappable to view details) */}
                     <TouchableOpacity
                       activeOpacity={0.85}
                       onPress={() => onOpenInvitationDetails(invite)}
@@ -520,25 +509,25 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                           <Text style={styles.proDestinationText}>{invite.destination}</Text>
                         </View>
                       )}
-                    </TouchableOpacity>
 
-                    {/* Inviter Info Strip */}
-                    <View style={styles.proInviterStrip}>
-                      <View style={styles.proInviterAvatar}>
-                        <Text style={styles.proInviterAvatarText}>
-                          {getInitials(invite.organizerName)}
-                        </Text>
-                      </View>
-                      <View style={styles.proInviterInfo}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={styles.proInviterName} numberOfLines={1}>
-                            {invite.organizerName || 'Trip Organizer'}
+                      {/* Inviter Info Strip */}
+                      <View style={styles.proInviterStrip}>
+                        <View style={styles.proInviterAvatar}>
+                          <Text style={styles.proInviterAvatarText}>
+                            {getInitials(invite.organizerName)}
                           </Text>
-                          <ShieldCheck size={13} color="#059669" />
                         </View>
-                        <Text style={styles.proInviterSub}>Trip Host • Invited you as {invite.role || 'Traveler'}</Text>
+                        <View style={styles.proInviterInfo}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Text style={styles.proInviterName} numberOfLines={1}>
+                              {invite.organizerName || 'Trip Organizer'}
+                            </Text>
+                            <ShieldCheck size={13} color="#059669" />
+                          </View>
+                          <Text style={styles.proInviterSub}>Trip Host • Invited you as {invite.role || 'Traveler'}</Text>
+                        </View>
                       </View>
-                    </View>
+                    </TouchableOpacity>
 
                     {/* Action Buttons Row */}
                     <View style={styles.proActionsRow}>
@@ -568,16 +557,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                         <Text style={styles.proDeclineBtnText}>Decline</Text>
                       </TouchableOpacity>
                     </View>
-
-                    {/* Review Details Link */}
-                    <TouchableOpacity
-                      style={styles.proReviewLink}
-                      onPress={() => onOpenInvitationDetails(invite)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.proReviewLinkText}>Review full itinerary & roster</Text>
-                      <ArrowRight size={13} color="#2563EB" strokeWidth={2} />
-                    </TouchableOpacity>
                   </View>
                 );
               })

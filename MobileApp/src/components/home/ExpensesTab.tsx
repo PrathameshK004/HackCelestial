@@ -151,7 +151,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
         </View>
       </View>
 
-      {/* Sub-Tabs: AI Settlement Optimizer vs All Expenses */}
+      {/* Sub-Tabs: Settlement Optimizer vs All Expenses */}
       <View style={styles.subTabRow}>
         <TouchableOpacity
           style={[styles.subTabBtn, subTab === 'optimizer' && styles.subTabBtnActive]}
@@ -168,7 +168,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
               subTab === 'optimizer' && styles.subTabTextActive,
             ]}
           >
-            Smart Settlement Optimizer
+            Settlement Optimizer
           </Text>
         </TouchableOpacity>
 
@@ -195,20 +195,6 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
       {/* 1. Optimizer View */}
       {subTab === 'optimizer' && optimalResult && (
         <View>
-          {/* Optimization Stats Banner */}
-          <View style={styles.aiBanner}>
-            <View style={styles.aiBadge}>
-              <Zap size={14} color="#ffffff" strokeWidth={2.4} />
-              <Text style={styles.aiBadgeText}>AI Graph Solver</Text>
-            </View>
-            <Text style={styles.aiBannerTitle}>
-              {optimalResult.reductionPercentage}% Fewer Transactions
-            </Text>
-            <Text style={styles.aiBannerSubtitle}>
-              Greedy Min-Cash-Flow graph algorithm reduces {optimalResult.originalTxCount} pairwise debts to just{' '}
-              {optimalResult.optimizedTxCount} simplified settlements.
-            </Text>
-          </View>
 
           {/* Transfers List */}
           <Text style={styles.sectionHeader}>Optimal Transfers Needed</Text>
@@ -405,40 +391,7 @@ const styles = StyleSheet.create({
     color: colors.slate900,
     fontWeight: '700',
   },
-  aiBanner: {
-    backgroundColor: '#0f172a',
-    borderRadius: radii.lg,
-    padding: 16,
-    marginBottom: 16,
-    ...shadows.md,
-  },
-  aiBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary600,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.sm,
-    alignSelf: 'flex-start',
-    gap: 5,
-    marginBottom: 8,
-  },
-  aiBadgeText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  aiBannerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  aiBannerSubtitle: {
-    fontSize: 12,
-    color: colors.slate300,
-    lineHeight: 17,
-  },
+
   sectionHeader: {
     fontSize: 14,
     fontWeight: '800',

@@ -5,7 +5,7 @@
     "scheme": "triptual",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/triptual-logo.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -17,10 +17,10 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/triptual-logo.png",
         "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "monochromeImage": "./assets/triptual-logo.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.yog7284.MobileApp",
@@ -45,7 +45,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/triptual-logo.png",
           "color": "#059669"
         }
       ]

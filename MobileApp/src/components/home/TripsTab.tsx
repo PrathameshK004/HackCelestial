@@ -135,6 +135,27 @@ export const TripsTab: React.FC<TripsTabProps> = ({
             </TouchableOpacity>
           );
         })}
+        {filteredTrips.length === 0 && (
+          <View style={styles.emptyCard}>
+            <Compass size={40} color={colors.slate400} />
+            <Text style={styles.emptyTitle}>
+              {q ? 'No matching trips' : 'No trips yet'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {q
+                ? `No trips found matching "${searchQuery}".`
+                : 'Create a new trip or join an existing one using an invitation code.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyJoinBtn}
+              onPress={onJoinTrip}
+              activeOpacity={0.85}
+            >
+              <Share2 size={16} color="#ffffff" strokeWidth={2.2} />
+              <Text style={styles.emptyJoinBtnText}>Join Trip with Code</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       <View style={{ height: 100 }} />
@@ -296,5 +317,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#181916',
+  },
+  emptyCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: radii.xl,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#EFECE6',
+    borderStyle: 'dashed',
+    marginTop: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#181916',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#8E8F87',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 18,
+    paddingHorizontal: 12,
+  },
+  emptyJoinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#464B29',
+    borderRadius: radii.full,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    gap: 8,
+  },
+  emptyJoinBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

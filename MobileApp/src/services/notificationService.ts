@@ -1,54 +1,85 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { isRunningInExpoGo } from 'expo';
 import { apiRequest } from '../api/apiClient';
 import { storage } from '../database/storage';
 
-// Configure how notifications appear while the app is in the foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+/**
+ * In Expo SDK 53+, importing `expo-notifications` at top level automatically
+ * loads `DevicePushTokenAutoRegistration.fx` which immediately throws an error
+ * inside Expo Go on Android.
+ *
+ * We lazily resolve the module ONLY when running in a standalone / development build,
+ * or on non-Android platforms, completely preventing the Expo Go red screen crash.
+ */
+let notificationsModule: typeof import('expo-notifications') | null = null;
+let isHandlerSet = false;
+
+function getNotifications(): typeof import('expo-notifications') | null {
+  if (Platform.OS === 'android' && isRunningInExpoGo()) {
+    return null;
+  }
+
+  if (!notificationsModule) {
+    try {
+      notificationsModule = require('expo-notifications');
+      if (notificationsModule && !isHandlerSet) {
+        notificationsModule.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+            shouldShowBanner: true,
+            shouldShowList: true,
+          }),
+        });
+        isHandlerSet = true;
+      }
+    } catch (e: any) {
+      console.warn('[Push] expo-notifications not loaded:', e?.message);
+      return null;
+    }
+  }
+
+  return notificationsModule;
+}
 
 export const notificationService = {
   /**
    * Configure Android notification channels
    */
   async initNotificationChannels(): Promise<void> {
-    if (Platform.OS === 'android') {
-      try {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'General Notifications',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#059669',
-          sound: 'default',
-        });
+    const Notifications = getNotifications();
+    if (!Notifications || Platform.OS !== 'android') {
+      return;
+    }
 
-        await Notifications.setNotificationChannelAsync('expenses', {
-          name: 'Expense Updates',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#10B981',
-          sound: 'default',
-        });
+    try {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'General Notifications',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#059669',
+        sound: 'default',
+      });
 
-        await Notifications.setNotificationChannelAsync('invites', {
-          name: 'Trip Invitations',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 300, 200, 300],
-          lightColor: '#3B82F6',
-          sound: 'default',
-        });
-      } catch (err: any) {
-        console.warn('[Push] Notification channel setup error:', err?.message);
-      }
+      await Notifications.setNotificationChannelAsync('expenses', {
+        name: 'Expense Updates',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#10B981',
+        sound: 'default',
+      });
+
+      await Notifications.setNotificationChannelAsync('invites', {
+        name: 'Trip Invitations',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 300, 200, 300],
+        lightColor: '#3B82F6',
+        sound: 'default',
+      });
+    } catch (err: any) {
+      console.warn('[Push] Notification channel setup error:', err?.message);
     }
   },
 
@@ -57,16 +88,21 @@ export const notificationService = {
    * and register it with the backend.
    */
   async registerForPushNotifications(): Promise<string | null> {
+    // If in Expo Go on Android, skip remote push registration cleanly
+    if (Platform.OS === 'android' && isRunningInExpoGo()) {
+      console.log(
+        '[Push] Running in Expo Go: remote FCM notifications require a Development Build (npx expo run:android). Push registration safely bypassed.'
+      );
+      return null;
+    }
+
+    const Notifications = getNotifications();
+    if (!Notifications) {
+      return null;
+    }
+
     try {
       await this.initNotificationChannels();
-
-      // Remote push notifications on Android require a Development Build in SDK 53+
-      if (Platform.OS === 'android' && isRunningInExpoGo()) {
-        console.warn(
-          '[Push] Running in Expo Go on Android: remote FCM notifications require a Development Build (npx expo run:android). Push registration safely skipped in Expo Go.'
-        );
-        return null;
-      }
 
       // Push notifications only deliver to physical hardware devices
       if (!Device.isDevice) {
@@ -160,9 +196,14 @@ export const notificationService = {
    * Attach foreground and tap listeners for push notifications
    */
   addNotificationListeners(
-    onReceived?: (notification: Notifications.Notification) => void,
-    onResponse?: (response: Notifications.NotificationResponse) => void
+    onReceived?: (notification: any) => void,
+    onResponse?: (response: any) => void
   ) {
+    const Notifications = getNotifications();
+    if (!Notifications) {
+      return () => {};
+    }
+
     try {
       const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
         console.log('[Push] Notification received in foreground:', notification.request.content.title);

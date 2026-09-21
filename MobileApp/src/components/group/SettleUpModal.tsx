@@ -1,5 +1,5 @@
 /**
- * Settle Up Modal / Bottom Sheet
+ * Settle Up Modal / Bottom Sheet — Professional Clean UI
  * Features UPI deep linking, VPA payment details, and offline debt settlement recording
  */
 
@@ -15,7 +15,7 @@ import {
   Alert,
   Linking,
 } from 'react-native';
-import { X, Smartphone, CheckCircle2, QrCode, AlertCircle } from 'lucide-react-native';
+import { X, Smartphone, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { Participant } from '../../types';
 import { useSync } from '../../context/SyncContext';
@@ -40,6 +40,12 @@ interface SettleUpModalProps {
   }) => Promise<void>;
 }
 
+const getInitials = (name: string) => {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+};
+
 export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   visible,
   tripId,
@@ -54,8 +60,7 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   const { isOnline } = useSync();
   const [fromId, setFromId] = useState(initialPayerId || members[1]?.id || members[0]?.id || 'user-2');
   const [toId, setToId] = useState(initialReceiverId || members[0]?.id || 'user-1');
-  const [amount, setAmount] = useState(initialAmount ? String(initialAmount) : '1000');
-  const [remarks, setRemarks] = useState('Trip ledger settlement');
+  const [amount, setAmount] = useState(initialAmount ? String(initialAmount) : '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fromMember = members.find((m) => m.id === fromId) || members[0];
@@ -111,7 +116,7 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
         toMemberName: toMember?.name || 'Receiver',
         toUpiId: targetUpi,
         amount: numAmount,
-        remarks,
+        remarks: `Trip ledger settlement for ${tripName}`,
       });
       onClose();
       Alert.alert('Recorded', `Settlement of ₹${numAmount.toLocaleString()} recorded in local ledger.`);
@@ -125,21 +130,52 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheetContainer}>
+        <View style={styles.sheet}>
+          {/* Drag Handle */}
+          <View style={styles.dragHandle} />
+
           {/* Header */}
-          <View style={styles.sheetHeader}>
-            <View>
-              <Text style={styles.sheetTitle}>Settle Up Debt</Text>
-              <Text style={styles.sheetSubtitle}>Clear pairwise balances for {tripName}</Text>
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.headerTitle}>Settle Up</Text>
+              <Text style={styles.headerSub}>{tripName}</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={18} color={colors.slate600} />
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <X size={18} color={colors.slate500} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
-            {/* Who is paying? */}
-            <Text style={styles.inputLabel}>Who Is Paying?</Text>
+          <ScrollView style={styles.body} showsVerticalScrollIndicator={false} contentContainerStyle={styles.bodyContent}>
+
+            {/* Payment Flow Summary Card */}
+            <View style={styles.flowCard}>
+              <View style={styles.flowMember}>
+                <View style={[styles.flowAvatar, { backgroundColor: fromMember?.avatarBg || '#059669' }]}>
+                  <Text style={styles.flowAvatarText}>{getInitials(fromMember?.name || 'P')}</Text>
+                </View>
+                <Text style={styles.flowName} numberOfLines={1}>{fromMember?.name || 'Payer'}</Text>
+                <Text style={styles.flowRole}>Paying</Text>
+              </View>
+
+              <View style={styles.flowArrowWrap}>
+                <View style={styles.flowArrowLine} />
+                <View style={styles.flowArrowCircle}>
+                  <ArrowRight size={14} color="#059669" strokeWidth={2.5} />
+                </View>
+                <View style={styles.flowArrowLine} />
+              </View>
+
+              <View style={styles.flowMember}>
+                <View style={[styles.flowAvatar, { backgroundColor: toMember?.avatarBg || '#0284C7' }]}>
+                  <Text style={styles.flowAvatarText}>{getInitials(toMember?.name || 'R')}</Text>
+                </View>
+                <Text style={styles.flowName} numberOfLines={1}>{toMember?.name || 'Receiver'}</Text>
+                <Text style={styles.flowRole}>Receiving</Text>
+              </View>
+            </View>
+
+            {/* Who Is Paying */}
+            <Text style={styles.sectionLabel}>Who Is Paying?</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
               {members.map((m) => (
                 <TouchableOpacity
@@ -148,18 +184,18 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
                   onPress={() => setFromId(m.id)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.avatarMini, { backgroundColor: m.avatarBg }]}>
-                    <Text style={styles.avatarMiniText}>{m.name.charAt(0)}</Text>
+                  <View style={[styles.chipAvatar, { backgroundColor: m.avatarBg }]}>
+                    <Text style={styles.chipAvatarText}>{m.name.charAt(0)}</Text>
                   </View>
-                  <Text style={[styles.memberChipText, fromId === m.id && styles.memberChipTextActive]}>
-                    {m.name}
+                  <Text style={[styles.chipText, fromId === m.id && styles.chipTextActive]}>
+                    {m.name.split(' ')[0]}
                   </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
 
-            {/* Who is receiving? */}
-            <Text style={styles.inputLabel}>Paying To</Text>
+            {/* Paying To */}
+            <Text style={styles.sectionLabel}>Paying To</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
               {members.map((m) => (
                 <TouchableOpacity
@@ -168,74 +204,86 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
                   onPress={() => setToId(m.id)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.avatarMini, { backgroundColor: m.avatarBg }]}>
-                    <Text style={styles.avatarMiniText}>{m.name.charAt(0)}</Text>
+                  <View style={[styles.chipAvatar, { backgroundColor: m.avatarBg }]}>
+                    <Text style={styles.chipAvatarText}>{m.name.charAt(0)}</Text>
                   </View>
-                  <Text style={[styles.memberChipText, toId === m.id && styles.memberChipTextActive]}>
-                    {m.name}
+                  <Text style={[styles.chipText, toId === m.id && styles.chipTextActive]}>
+                    {m.name.split(' ')[0]}
                   </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
 
-            {/* Amount */}
-            <Text style={styles.inputLabel}>Settlement Amount (₹)</Text>
-            <View style={styles.amountWrap}>
-              <Text style={styles.currencyPrefix}>₹</Text>
+            {/* Amount Input */}
+            <Text style={styles.sectionLabel}>Amount</Text>
+            <View style={styles.amountCard}>
+              <Text style={styles.currencySymbol}>₹</Text>
               <TextInput
                 style={styles.amountInput}
                 placeholder="0"
-                placeholderTextColor={colors.slate400}
+                placeholderTextColor={colors.slate300}
                 keyboardType="numeric"
                 value={amount}
                 onChangeText={setAmount}
               />
+              {numAmount > 0 && (
+                <View style={styles.amountBadge}>
+                  <Text style={styles.amountBadgeText}>
+                    {numAmount.toLocaleString('en-IN')}
+                  </Text>
+                </View>
+              )}
             </View>
 
-            {/* VPA Display Box */}
-            <View style={styles.vpaBox}>
-              <View style={styles.vpaIconWrap}>
-                <Smartphone size={18} color={colors.primary600} />
+            {/* UPI VPA Info */}
+            <View style={styles.vpaCard}>
+              <View style={styles.vpaIconBox}>
+                <Smartphone size={16} color="#059669" strokeWidth={2.2} />
               </View>
               <View style={styles.vpaInfo}>
-                <Text style={styles.vpaLabel}>Receiver UPI VPA</Text>
+                <Text style={styles.vpaLabel}>RECEIVER UPI VPA</Text>
                 <Text style={styles.vpaAddress}>{targetUpi}</Text>
               </View>
             </View>
 
-            {/* UPI Deep Link Button */}
+            {/* UPI Launch */}
             <TouchableOpacity
-              style={styles.upiActionBtn}
+              style={styles.upiBtn}
               onPress={handleLaunchUpi}
               activeOpacity={0.85}
             >
-              <Smartphone size={16} color="#ffffff" />
-              <Text style={styles.upiActionText}>Launch UPI App (GPay / PhonePe / Paytm)</Text>
+              <Smartphone size={16} color="#ffffff" strokeWidth={2.2} />
+              <Text style={styles.upiBtnText}>Pay via UPI App</Text>
             </TouchableOpacity>
 
+            {/* Offline Banner */}
             {!isOnline && (
-              <View style={styles.offlineNotice}>
-                <AlertCircle size={13} color={colors.accentAmber} />
-                <Text style={styles.offlineNoticeText}>
-                  UPI apps require internet. Offline: tap "Mark as Settled" to balance local ledger.
+              <View style={styles.offlineBanner}>
+                <AlertCircle size={14} color="#D97706" strokeWidth={2.2} />
+                <Text style={styles.offlineBannerText}>
+                  You're offline — UPI apps need internet. Use "Mark as Settled" below to record locally.
                 </Text>
               </View>
             )}
 
-            <View style={{ height: 30 }} />
+            <View style={{ height: 8 }} />
           </ScrollView>
 
-          {/* Footer Submit */}
-          <View style={styles.sheetFooter}>
+          {/* Footer */}
+          <View style={styles.footer}>
             <TouchableOpacity
-              style={styles.settleConfirmBtn}
+              style={[styles.settleBtn, isSubmitting && { opacity: 0.7 }]}
               onPress={handleRecordSettlement}
               disabled={isSubmitting}
               activeOpacity={0.85}
             >
-              <CheckCircle2 size={16} color="#ffffff" />
-              <Text style={styles.settleConfirmText}>
-                {isSubmitting ? 'Recording...' : `Mark as Settled • ₹${numAmount.toLocaleString()}`}
+              <CheckCircle2 size={17} color="#ffffff" strokeWidth={2.2} />
+              <Text style={styles.settleBtnText}>
+                {isSubmitting
+                  ? 'Recording...'
+                  : numAmount > 0
+                  ? `Mark as Settled  •  ₹${numAmount.toLocaleString('en-IN')}`
+                  : 'Mark as Settled'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -248,132 +296,234 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: colors.overlay,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'flex-end',
   },
-  sheetContainer: {
-    backgroundColor: colors.bgCard,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    maxHeight: '85%',
+  sheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '88%',
     ...shadows.xl,
   },
-  sheetHeader: {
+  dragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E2E8F0',
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 18,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
+    borderBottomColor: '#F1F5F9',
   },
-  sheetTitle: {
-    fontSize: 17,
+  headerLeft: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
     fontWeight: '800',
-    color: colors.slate900,
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
-  sheetSubtitle: {
-    fontSize: 11,
-    color: colors.slate500,
-    marginTop: 2,
+  headerSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 1,
+    fontWeight: '500',
   },
   closeBtn: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  body: {
+    flex: 1,
+  },
+  bodyContent: {
+    padding: 20,
+    gap: 14,
+  },
+  // Flow Summary Card
+  flowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
     borderRadius: 16,
-    backgroundColor: colors.slate100,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 4,
+  },
+  flowMember: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  flowAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sheetBody: {
-    padding: 18,
+  flowAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
-  inputLabel: {
+  flowName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  flowRole: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  flowArrowWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 64,
+    justifyContent: 'center',
+  },
+  flowArrowLine: {
+    flex: 1,
+    height: 1.5,
+    backgroundColor: '#A7F3D0',
+  },
+  flowArrowCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Section Label
+  sectionLabel: {
     fontSize: 11.5,
     fontWeight: '700',
-    color: colors.slate700,
-    marginBottom: 6,
-    marginTop: 12,
+    color: '#64748B',
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    marginBottom: -4,
   },
+  // Member Chips
   chipRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 4,
   },
   memberChip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: radii.full,
-    backgroundColor: colors.bgApp,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: '#E2E8F0',
     marginRight: 8,
-    gap: 6,
+    gap: 7,
   },
   memberChipActive: {
-    backgroundColor: colors.primary50,
-    borderColor: colors.primary500,
+    backgroundColor: '#ECFDF5',
+    borderColor: '#6EE7B7',
   },
-  avatarMini: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  chipAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarMiniText: {
-    color: '#ffffff',
-    fontSize: 9.5,
+  chipAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '800',
   },
-  memberChipText: {
-    fontSize: 11.5,
+  chipText: {
+    fontSize: 12.5,
     fontWeight: '600',
-    color: colors.slate700,
+    color: '#64748B',
   },
-  memberChipTextActive: {
-    color: colors.primary700,
+  chipTextActive: {
+    color: '#059669',
     fontWeight: '700',
   },
-  amountWrap: {
+  // Amount Card
+  amountCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bgApp,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    paddingHorizontal: 14,
-    height: 48,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    height: 58,
+    gap: 8,
+    ...shadows.sm,
   },
-  currencyPrefix: {
-    fontSize: 18,
+  currencySymbol: {
+    fontSize: 22,
     fontWeight: '800',
-    color: colors.primary600,
-    marginRight: 6,
+    color: '#059669',
   },
   amountInput: {
     flex: 1,
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
-    color: colors.slate900,
+    color: '#0F172A',
+    padding: 0,
   },
-  vpaBox: {
+  amountBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  amountBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  // VPA Card
+  vpaCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.slate100,
-    borderRadius: radii.md,
-    padding: 12,
-    marginTop: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     gap: 12,
   },
-  vpaIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.primary50,
+  vpaIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -383,63 +533,71 @@ const styles = StyleSheet.create({
   vpaLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.slate500,
+    color: '#94A3B8',
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
   vpaAddress: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '700',
-    color: colors.slate800,
-    marginTop: 1,
+    color: '#0F172A',
   },
-  upiActionBtn: {
+  // UPI Button
+  upiBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary600,
-    borderRadius: radii.md,
-    paddingVertical: 12,
-    marginTop: 14,
-    gap: 8,
-    ...shadows.sm,
-  },
-  upiActionText: {
-    color: '#ffffff',
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  offlineNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.accentAmberLight,
-    padding: 8,
-    borderRadius: radii.sm,
-    gap: 6,
-    marginTop: 10,
-  },
-  offlineNoticeText: {
-    fontSize: 10.5,
-    color: '#92400e',
-    flex: 1,
-  },
-  sheetFooter: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
-  },
-  settleConfirmBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.slate900,
-    borderRadius: radii.md,
-    paddingVertical: 14,
+    backgroundColor: '#059669',
+    borderRadius: 12,
+    paddingVertical: 13,
     gap: 8,
     ...shadows.md,
   },
-  settleConfirmText: {
-    color: '#ffffff',
+  upiBtnText: {
+    color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  // Offline Banner
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    gap: 8,
+  },
+  offlineBannerText: {
+    fontSize: 12,
+    color: '#92400E',
+    flex: 1,
+    lineHeight: 17,
+  },
+  // Footer
+  footer: {
+    padding: 16,
+    paddingBottom: 28,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  settleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    paddingVertical: 15,
+    gap: 8,
+    ...shadows.md,
+  },
+  settleBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14.5,
     fontWeight: '800',
+    letterSpacing: -0.2,
   },
 });

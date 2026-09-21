@@ -428,12 +428,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
           )}
         </View>
 
-        {/* Floating Bottom Navigation Dock */}
-        <BottomDock
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-          onCreatePress={onCreateTrip}
-        />
+        {/* Floating Bottom Navigation Dock — hidden on Profile */}
+        {activeTab !== 'profile' && (
+          <BottomDock
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            onCreatePress={onCreateTrip}
+          />
+        )}
 
         {/* Join Group with Code Modal */}
         <JoinGroupModal
