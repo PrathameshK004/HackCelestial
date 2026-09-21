@@ -1,8 +1,4 @@
-/**
- * Trips Tab matching WebApp 'trips' dock tab
- */
-
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -10,10 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { Plus, MapPin, Calendar, Users, KeyRound, ChevronRight, CheckCircle2 } from 'lucide-react-native';
+import { Plus, Share2, Compass, ArrowRight } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { useTrips } from '../../context/TripContext';
-import { Trip } from '../../types';
 
 interface TripsTabProps {
   onSelectTrip: (tripId: string) => void;
@@ -22,8 +17,6 @@ interface TripsTabProps {
   searchQuery?: string;
 }
 
-type TripFilter = 'all' | 'active' | 'upcoming' | 'completed';
-
 export const TripsTab: React.FC<TripsTabProps> = ({
   onSelectTrip,
   onCreateTrip,
@@ -31,191 +24,105 @@ export const TripsTab: React.FC<TripsTabProps> = ({
   searchQuery = '',
 }) => {
   const { trips } = useTrips();
-  const [activeFilter, setActiveFilter] = useState<TripFilter>('all');
   const q = searchQuery.trim().toLowerCase();
 
   const filteredTrips = trips.filter((t) => {
-    const matchesFilter =
-      activeFilter === 'all' ||
-      (activeFilter === 'active' && t.status === 'active') ||
-      (activeFilter === 'completed' && t.status === 'completed');
     const matchesSearch =
       q === '' ||
       t.name?.toLowerCase().includes(q) ||
       (t.destination as string | undefined)?.toLowerCase().includes(q) ||
       t.description?.toLowerCase().includes(q);
-    return matchesFilter && matchesSearch;
+    return matchesSearch;
   });
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header & New Trip Button */}
-      <View style={styles.topBar}>
-        <View>
-          <Text style={styles.pageTitle}>Your Group Trips</Text>
-          <Text style={styles.pageSubtitle}>
-            {trips.length} active ledgers saved in SQLite
-          </Text>
-        </View>
+      {/* Header Info */}
+      <View style={styles.headerInfo}>
+        <Text style={styles.pageTitle}>All Expeditions & Trips</Text>
+        <Text style={styles.pageSubtitle}>
+          Manage member ratios, record bills, and settle balances
+        </Text>
+      </View>
 
+      {/* Action Buttons */}
+      <View style={styles.actionRow}>
         <TouchableOpacity
           style={styles.createBtn}
           onPress={onCreateTrip}
           activeOpacity={0.85}
         >
           <Plus size={16} color="#ffffff" strokeWidth={2.4} />
-          <Text style={styles.createBtnText}>New Trip</Text>
+          <Text style={styles.createBtnText}>Create New Trip</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.joinBtn}
+          onPress={onJoinTrip}
+          activeOpacity={0.85}
+        >
+          <Share2 size={16} color={colors.slate900} strokeWidth={2.4} />
+          <Text style={styles.joinBtnText}>Join with Code</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Filter Tabs */}
-      <View style={styles.filterRow}>
-        {(['all', 'active', 'completed'] as TripFilter[]).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterChip, activeFilter === f && styles.filterChipActive]}
-            onPress={() => setActiveFilter(f)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                activeFilter === f && styles.filterChipTextActive,
-              ]}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Join with Invite Code Box */}
-      <TouchableOpacity
-        style={styles.joinBox}
-        onPress={onJoinTrip}
-        activeOpacity={0.8}
-      >
-        <View style={styles.joinIconWrap}>
-          <KeyRound size={18} color={colors.primary600} />
-        </View>
-        <View style={styles.joinTextColumn}>
-          <Text style={styles.joinTitle}>Have an Invite Code?</Text>
-          <Text style={styles.joinSubtitle}>
-            Join an existing trip by entering the 6-character code
-          </Text>
-        </View>
-        <ChevronRight size={18} color={colors.slate400} />
-      </TouchableOpacity>
-
       {/* Trips Cards List */}
-      {filteredTrips.map((trip) => {
-        const spentPercent =
-          trip.totalBudget > 0
-            ? Math.min(Math.round((trip.totalSpent / trip.totalBudget) * 100), 100)
-            : 0;
-
-        const isUserOwed = trip.userBalance > 0.01;
-        const doesUserOwe = trip.userBalance < -0.01;
-
-        return (
-          <TouchableOpacity
-            key={trip.id}
-            style={styles.tripCard}
-            onPress={() => onSelectTrip(trip.id)}
-            activeOpacity={0.9}
-          >
-            {/* Header Badge */}
-            <View style={styles.cardHeader}>
-              <View style={styles.badgeRow}>
-                <View style={styles.typeBadge}>
-                  <Text style={styles.typeBadgeText}>{trip.tripType || 'Trip'}</Text>
+      <View style={styles.cardGrid}>
+        {filteredTrips.map((trip) => {
+          return (
+            <TouchableOpacity
+              key={trip.id}
+              style={styles.tripCard}
+              onPress={() => onSelectTrip(trip.id)}
+              activeOpacity={0.9}
+            >
+              {/* Route Nodes Row */}
+              <View style={styles.routeNodesRow}>
+                <View style={styles.routeNode}>
+                  <Text style={styles.routeNodeCode}>{trip.name}</Text>
+                  <Text style={styles.routeNodeSub}>{trip.destination}</Text>
                 </View>
-                {trip.status === 'completed' ? (
-                  <View style={styles.settledBadge}>
-                    <CheckCircle2 size={12} color={colors.primary600} />
-                    <Text style={styles.settledBadgeText}>Settled</Text>
+                
+                <View style={styles.routeConnector}>
+                  <View style={styles.routeDottedLine} />
+                  <View style={styles.routePlaneBadge}>
+                    <Compass size={14} color={colors.accentOlive} />
                   </View>
-                ) : (
-                  <View style={styles.activeBadge}>
-                    <Text style={styles.activeBadgeText}>Active</Text>
-                  </View>
-                )}
+                </View>
+                
+                <View style={[styles.routeNode, { alignItems: 'flex-end' }]}>
+                  <Text style={styles.routeNodeCode}>{trip.members?.length || 3}</Text>
+                  <Text style={styles.routeNodeSub}>Members</Text>
+                </View>
               </View>
 
-              <Text style={styles.tripTitle}>{trip.name}</Text>
+              <View style={styles.divider} />
 
-              <View style={styles.metaRow}>
-                <View style={styles.metaItem}>
-                  <MapPin size={13} color={colors.slate400} />
-                  <Text style={styles.metaText}>{trip.destination}</Text>
+              {/* Route Meta Row */}
+              <View style={styles.routeMetaRow}>
+                <View>
+                  <Text style={styles.metaTimeBold}>Status</Text>
+                  <Text style={[styles.metaTimeValue, trip.status === 'completed' ? styles.textEmerald : styles.textAmber]}>
+                    {trip.status === 'completed' ? 'Fully Settled' : 'Active Split'}
+                  </Text>
                 </View>
-
-                {trip.startDate && (
-                  <View style={styles.metaItem}>
-                    <Calendar size={13} color={colors.slate400} />
-                    <Text style={styles.metaText}>
-                      {trip.startDate}
-                      {trip.endDate ? ` - ${trip.endDate}` : ''}
-                    </Text>
-                  </View>
-                )}
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.metaTimeBold}>Currency</Text>
+                  <Text style={styles.metaTimeValue}>{trip.currency || 'INR'}</Text>
+                </View>
               </View>
-            </View>
 
-            {/* Financial Status & Progress */}
-            <View style={styles.cardFinanceBody}>
-              {/* Progress Bar */}
-              <View style={styles.budgetRow}>
-                <Text style={styles.budgetLabel}>Budget Spent</Text>
-                <Text style={styles.budgetValue}>
-                  {trip.currencySymbol}{trip.totalSpent.toLocaleString()} / {trip.currencySymbol}{trip.totalBudget.toLocaleString()}
+              {/* Bottom Pill */}
+              <View style={styles.ticketBottomPill}>
+                <Text style={styles.ticketBottomPillText}>
+                  Open Group Ledger & Splits
                 </Text>
+                <ArrowRight size={16} color={colors.slate900} />
               </View>
-
-              <View style={styles.progressBarTrack}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    { width: `${spentPercent}%` },
-                  ]}
-                />
-              </View>
-
-              {/* Personal Balance Callout Pill */}
-              <View style={styles.balanceCalloutRow}>
-                <View style={styles.membersStack}>
-                  <Users size={14} color={colors.slate500} />
-                  <Text style={styles.membersCountText}>
-                    {trip.members?.length || 4} travelers
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.balancePill,
-                    isUserOwed && styles.balancePillOwed,
-                    doesUserOwe && styles.balancePillOwes,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.balancePillText,
-                      isUserOwed && styles.balancePillTextOwed,
-                      doesUserOwe && styles.balancePillTextOwes,
-                    ]}
-                  >
-                    {isUserOwed
-                      ? `+${trip.currencySymbol}${Math.abs(trip.userBalance).toLocaleString()} (You are owed)`
-                      : doesUserOwe
-                      ? `-${trip.currencySymbol}${Math.abs(trip.userBalance).toLocaleString()} (You owe)`
-                      : 'Settled up'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
-        );
-      })}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       <View style={{ height: 100 }} />
     </ScrollView>
@@ -225,253 +132,156 @@ export const TripsTab: React.FC<TripsTabProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bgApp,
+    backgroundColor: '#FAF8F5',
   },
   content: {
     padding: 16,
   },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  headerInfo: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
+    marginTop: 10,
   },
   pageTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: colors.slate900,
-    letterSpacing: -0.3,
+    color: '#181916',
+    letterSpacing: -0.5,
+    marginBottom: 6,
+    fontFamily: 'serif',
   },
   pageSubtitle: {
     fontSize: 12,
-    color: colors.slate500,
-    marginTop: 2,
+    color: '#8E8F87',
+    textAlign: 'center',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 24,
   },
   createBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary600,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: radii.md,
-    gap: 6,
-    ...shadows.sm,
+    justifyContent: 'center',
+    backgroundColor: '#464B29',
+    borderRadius: radii.full,
+    paddingVertical: 14,
+    gap: 8,
   },
   createBtnText: {
     color: '#ffffff',
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-  },
-  filterChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: radii.full,
-    backgroundColor: colors.bgCard,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-  },
-  filterChipActive: {
-    backgroundColor: colors.slate900,
-    borderColor: colors.slate900,
-  },
-  filterChipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.slate600,
   },
-  filterChipTextActive: {
-    color: '#ffffff',
-  },
-  joinBox: {
+  joinBtn: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary50,
-    borderRadius: radii.lg,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.primary200,
-    marginBottom: 16,
-    gap: 12,
-  },
-  joinIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: radii.md,
-    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.sm,
+    backgroundColor: '#F2EFE8',
+    borderRadius: radii.full,
+    paddingVertical: 14,
+    gap: 8,
   },
-  joinTextColumn: {
-    flex: 1,
+  joinBtnText: {
+    color: '#181916',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  joinTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.slate900,
-  },
-  joinSubtitle: {
-    fontSize: 11,
-    color: colors.slate600,
-    marginTop: 1,
+  cardGrid: {
+    gap: 16,
   },
   tripCard: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: '#ffffff',
     borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    marginBottom: 16,
-    overflow: 'hidden',
-    ...shadows.md,
-  },
-  cardHeader: {
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.slate100,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  typeBadge: {
-    backgroundColor: colors.slate100,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.sm,
-  },
-  typeBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: colors.slate700,
-    textTransform: 'uppercase',
-  },
-  activeBadge: {
-    backgroundColor: colors.primary50,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.sm,
     borderWidth: 1,
-    borderColor: colors.primary200,
+    borderColor: '#EFECE6',
+    ...shadows.sm,
   },
-  activeBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: colors.primary700,
-  },
-  settledBadge: {
+  routeNodesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary50,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.sm,
-    gap: 4,
-  },
-  settledBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: colors.primary700,
-  },
-  tripTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: colors.slate900,
-    marginBottom: 8,
-    letterSpacing: -0.2,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  metaText: {
-    fontSize: 12,
-    color: colors.slate500,
-    fontWeight: '500',
-  },
-  cardFinanceBody: {
-    padding: 16,
-    backgroundColor: colors.bgCardHover,
-  },
-  budgetRow: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  budgetLabel: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: colors.slate500,
-  },
-  budgetValue: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: colors.slate800,
-  },
-  progressBarTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.slate200,
-    overflow: 'hidden',
     marginBottom: 12,
   },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: colors.primary500,
+  routeNode: {
+    flex: 1,
   },
-  balanceCalloutRow: {
+  routeNodeCode: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#181916',
+    marginBottom: 4,
+    fontFamily: 'serif',
+  },
+  routeNodeSub: {
+    fontSize: 11,
+    color: '#8E8F87',
+  },
+  routeConnector: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    paddingHorizontal: 10,
+  },
+  routeDottedLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    borderWidth: 1,
+    borderColor: '#EFECE6',
+    borderStyle: 'dashed',
+    top: '50%',
+  },
+  routePlaneBadge: {
+    backgroundColor: '#F6F3EC',
+    padding: 6,
+    borderRadius: 20,
+    zIndex: 1,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#EFECE6',
+    marginBottom: 12,
+  },
+  routeMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  metaTimeBold: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#181916',
+    marginBottom: 4,
+  },
+  metaTimeValue: {
+    fontSize: 12,
+    color: '#585952',
+  },
+  textEmerald: {
+    color: '#059669',
+  },
+  textAmber: {
+    color: '#d97706',
+  },
+  ticketBottomPill: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#FAF8F5',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: radii.md,
   },
-  membersStack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  membersCountText: {
+  ticketBottomPillText: {
     fontSize: 12,
-    color: colors.slate600,
-    fontWeight: '500',
-  },
-  balancePill: {
-    backgroundColor: colors.slate100,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radii.full,
-  },
-  balancePillOwed: {
-    backgroundColor: colors.primary50,
-    borderWidth: 1,
-    borderColor: colors.primary200,
-  },
-  balancePillOwes: {
-    backgroundColor: colors.accentAmberLight,
-    borderWidth: 1,
-    borderColor: '#fde68a',
-  },
-  balancePillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.slate700,
-  },
-  balancePillTextOwed: {
-    color: colors.primary700,
-  },
-  balancePillTextOwes: {
-    color: '#92400e',
+    fontWeight: '600',
+    color: '#181916',
   },
 });

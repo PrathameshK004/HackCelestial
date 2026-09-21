@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://hackcelestial-api.onrender.com/api/:path*"
+      "destination": "https://triptual-api.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",

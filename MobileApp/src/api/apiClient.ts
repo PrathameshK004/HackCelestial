@@ -6,7 +6,10 @@
 
 import { storage } from '../database/storage';
 
-export const API_BASE = 'https://hackcelestial-api.onrender.com/api';
+// Local development backend on Mac (port 4000)
+export const API_BASE = 'http://192.168.0.113:4000/api';
+// Cloud backend on Render:
+// export const API_BASE = 'https://triptual-api.onrender.com/api';
 
 export interface RequestOptions extends RequestInit {
   token?: string | null;

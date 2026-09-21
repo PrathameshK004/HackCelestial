@@ -8,7 +8,7 @@ interface SignupFormProps {
 }
 
 export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSuccessRedirect }) => {
-  const { registerTemp, verifyAndRegister, resendOtp } = useAuth();
+  const { registerTemp, verifyAndRegister, resendOtp, loginWithGoogle } = useAuth();
 
   // Step 1: Input details, Step 2: OTP Verification
   const [step, setStep] = useState<1 | 2>(1);
@@ -75,6 +75,84 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
       if (interval) clearInterval(interval);
     };
   }, [step, resendTimer]);
+
+  const handleGoogleLogin = () => {
+    const clientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '324729375491-nl1j4657c42169gptkb1tm8ttoqkce8q.apps.googleusercontent.com';
+
+    if (typeof window === 'undefined' || !(window as any).google) {
+      setErrorMessage('Google Sign-In SDK is loading. Please try again in a few seconds.');
+      return;
+    }
+
+    try {
+      // 1. Primary: Use Google OAuth2 Popup client (always opens real login popup immediately!)
+      if ((window as any).google?.accounts?.oauth2?.initTokenClient) {
+        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'email profile openid',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse?.error) {
+              console.error('Google OAuth Error:', tokenResponse.error);
+              setErrorMessage('Google sign-in was canceled or encountered an issue.');
+              setIsLoading(false);
+              return;
+            }
+            if (tokenResponse?.access_token) {
+              setIsLoading(true);
+              setErrorMessage(null);
+              const res = await loginWithGoogle({ accessToken: tokenResponse.access_token });
+              if (res.success) {
+                setSuccessMessage('Welcome! Setting up your trip workspace...');
+                setTimeout(() => {
+                  if (onSuccessRedirect) onSuccessRedirect();
+                }, 400);
+              } else {
+                setErrorMessage(res.message || 'Google sign-in failed');
+              }
+              setIsLoading(false);
+            }
+          },
+        });
+
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+        return;
+      }
+
+      // 2. Fallback: Google Identity Services One Tap
+      if ((window as any).google?.accounts?.id) {
+        (window as any).google.accounts.id.initialize({
+          client_id: clientId,
+          callback: async (response: any) => {
+            if (response.credential) {
+              setIsLoading(true);
+              setErrorMessage(null);
+              const res = await loginWithGoogle(response.credential);
+              if (res.success) {
+                setSuccessMessage('Welcome! Setting up your trip workspace...');
+                setTimeout(() => {
+                  if (onSuccessRedirect) onSuccessRedirect();
+                }, 400);
+              } else {
+                setErrorMessage(res.message || 'Google sign-in failed');
+              }
+              setIsLoading(false);
+            }
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
+
+        (window as any).google.accounts.id.prompt((notification: any) => {
+          if (notification.isNotDisplayed()) {
+            console.warn('Google prompt not displayed:', notification.getNotDisplayedReason());
+          }
+        });
+      }
+    } catch (err: any) {
+      console.error('Google SSO Error:', err);
+      setErrorMessage('Failed to trigger Google Sign-In: ' + (err.message || 'Unknown error'));
+    }
+  };
 
   // Step 1: Submit Form & Trigger OTP
   const handleStep1Submit = async (e: React.FormEvent) => {
@@ -462,7 +540,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
             <button
               type="button"
               className="auth-social-pill-btn"
-              onClick={() => setErrorMessage('Google SSO is configured for production domain.')}
+              onClick={handleGoogleLogin}
             >
               <svg className="social-svg-icon" viewBox="0 0 24 24" width="18" height="18">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

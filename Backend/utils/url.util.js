@@ -5,7 +5,7 @@
  * never unroutable localhost or capacitor schemes.
  */
 
-const LIVE_APP_URL = 'https://hack-celestial-one.vercel.app';
+const LIVE_APP_URL = 'https://triptual-x.vercel.app';
 
 /**
  * Resolves the real live public application URL for public sharing and emails.

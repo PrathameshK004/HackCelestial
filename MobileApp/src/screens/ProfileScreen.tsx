@@ -3,7 +3,7 @@
  * Features traveler details, UPI ID configuration, and SQLite Offline Diagnostics
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,10 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  BackHandler,
 } from 'react-native';
 import {
+  ArrowLeft,
   User,
   Smartphone,
   Database,
@@ -30,10 +32,28 @@ import { useSync } from '../context/SyncContext';
 import { useTrips } from '../context/TripContext';
 import { Trip } from '../types';
 
-export const ProfileScreen: React.FC = () => {
+interface ProfileScreenProps {
+  onBack?: () => void;
+}
+
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
   const { user, updateUser, logout } = useAuth();
   const { isOnline, isSyncing, pendingCount, syncNow } = useSync();
   const { trips } = useTrips();
+
+  // ── Hardware Back Press Handler ───────────────────────────────────────────
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (onBack) {
+        onBack();
+        return true;
+      }
+      return false;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [onBack]);
 
   const [name, setName] = useState(user?.name || 'Yogesh Dandawalkar');
   const [upiId, setUpiId] = useState(user?.upiId || 'yogesh@okaxis');
@@ -58,6 +78,30 @@ export const ProfileScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Top Header with Back Navigation */}
+      <View style={styles.topNav}>
+        <View style={styles.topNavLeft}>
+          {onBack && (
+            <TouchableOpacity
+              onPress={onBack}
+              style={styles.backBtn}
+              activeOpacity={0.7}
+              accessibilityLabel="Back"
+            >
+              <ArrowLeft size={20} color="#0F172A" strokeWidth={2.2} />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.topNavTitle}>Traveler Profile</Text>
+        </View>
+        <TouchableOpacity
+          onPress={handleLogout}
+          style={styles.logoutTopBtn}
+          activeOpacity={0.7}
+          accessibilityLabel="Sign Out"
+        >
+          <LogOut size={18} color="#EF4444" strokeWidth={2} />
+        </TouchableOpacity>
+      </View>
       {/* Header Profile Card */}
       <View style={styles.profileHeaderCard}>
         <View style={[styles.avatarBig, { backgroundColor: user?.avatarBg || colors.primary600 }]}>
@@ -190,6 +234,40 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+  },
+  topNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  topNavLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topNavTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  logoutTopBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   profileHeaderCard: {
     backgroundColor: colors.bgCard,

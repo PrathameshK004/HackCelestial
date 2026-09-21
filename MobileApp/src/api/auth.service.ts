@@ -1,12 +1,52 @@
 /**
  * Authentication Service
- * Reuses existing backend API contracts
+ * Wired to live backend API contracts (industry-grade OTP signup flow)
+ *
+ * Signup flow (2-step):
+ *   1. registerTemp() → POST /users/registerTempUser  — creates pending user, sends OTP email
+ *   2. verifyAndRegister() → POST /users/registerUser — validates OTP, activates account, returns JWT
+ *
+ * Login:
+ *   login() → POST /users/login — email + password → JWT + refresh token
  */
 
 import { apiRequest } from './apiClient';
-import { AuthResponse, LoginPayload, RegisterUserPayload, User } from '../types';
+import { AuthResponse, LoginPayload, RegisterTempPayload, VerifyRegisterPayload, RegisterUserPayload, User } from '../types';
 
 export const authService = {
+  /**
+   * Step 1 of signup: Create a temporary (pending) account and trigger OTP email
+   */
+  async registerTemp(payload: RegisterTempPayload): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/users/registerTempUser', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: payload.username.trim(),
+        emailId: payload.emailId.trim().toLowerCase(),
+        password: payload.password,
+      }),
+    });
+  },
+
+  /**
+   * Step 2 of signup: Submit OTP code to verify email and fully activate account.
+   * On success backend returns accessToken + refreshToken (instant login).
+   */
+  async verifyAndRegister(payload: VerifyRegisterPayload): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/users/registerUser', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: payload.username.trim(),
+        emailId: payload.emailId.trim().toLowerCase(),
+        password: payload.password,
+        code: payload.code.trim(),
+      }),
+    });
+  },
+
+  /**
+   * Login with email + password
+   */
   async login(payload: LoginPayload): Promise<AuthResponse> {
     return apiRequest<AuthResponse>('/users/login', {
       method: 'POST',
@@ -17,6 +57,22 @@ export const authService = {
     });
   },
 
+  /**
+   * Resend OTP to an existing temp user (e.g. after 30s timer)
+   */
+  async sendOtp(payload: { emailId: string; purpose?: string }): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/users/sendOtp', {
+      method: 'POST',
+      body: JSON.stringify({
+        emailId: payload.emailId.trim().toLowerCase(),
+        purpose: payload.purpose || 'Sign Up',
+      }),
+    });
+  },
+
+  /**
+   * Legacy register — kept for backward compat (same as verifyAndRegister)
+   */
   async register(payload: RegisterUserPayload): Promise<AuthResponse> {
     return apiRequest<AuthResponse>('/users/registerUser', {
       method: 'POST',
@@ -24,16 +80,7 @@ export const authService = {
         username: payload.username.trim(),
         emailId: payload.emailId.trim().toLowerCase(),
         password: payload.password,
-      }),
-    });
-  },
-
-  async sendOtp(payload: { emailId: string; purpose?: string }): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/sendOtp', {
-      method: 'POST',
-      body: JSON.stringify({
-        emailId: payload.emailId.trim().toLowerCase(),
-        purpose: payload.purpose || 'REGISTER',
+        code: payload.code?.trim(),
       }),
     });
   },
@@ -81,17 +128,27 @@ export const authService = {
     });
   },
 
-  async resetPassword(payload: { emailId: string; newPassword: string; resetToken?: string }): Promise<AuthResponse> {
+  async resetPassword(payload: { emailId: string; code: string; newPassword: string }): Promise<AuthResponse> {
     return apiRequest<AuthResponse>('/users/reset-password', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
 
-  async changePassword(payload: { oldPassword?: string; currentPassword?: string; newPassword: string }): Promise<AuthResponse> {
+  async changePassword(payload: { currentPassword: string; newPassword: string }): Promise<AuthResponse> {
     return apiRequest<AuthResponse>('/users/change-password', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-  }
+  },
+
+  async loginWithGoogle(credentialOrPayload: string | { credential?: string; accessToken?: string }): Promise<AuthResponse> {
+    const body = typeof credentialOrPayload === 'string'
+      ? { credential: credentialOrPayload }
+      : credentialOrPayload;
+    return apiRequest<AuthResponse>('/users/google-login', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
 };

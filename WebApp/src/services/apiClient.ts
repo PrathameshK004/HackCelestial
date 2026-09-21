@@ -12,7 +12,7 @@ export const getApiBase = (): string => {
     if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
       return envUrl.trim().replace(/\/+$/, '');
     }
-    return 'https://hackcelestial-api.onrender.com/api';
+    return 'https://triptual-api.onrender.com/api';
   }
 
   // 2. When running on web browser localhost / dev machine, route to local backend via /api proxy
@@ -30,7 +30,7 @@ export const getApiBase = (): string => {
     return envUrl.trim().replace(/\/+$/, '');
   }
 
-  return 'https://hackcelestial-api.onrender.com/api';
+  return 'https://triptual-api.onrender.com/api';
 };
 
 export const API_BASE = getApiBase();

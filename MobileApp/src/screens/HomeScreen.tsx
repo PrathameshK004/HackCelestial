@@ -3,8 +3,8 @@
  * Matches WebApp HomePage.tsx responsive mobile view
  */
 
-import React, { useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, BackHandler, ToastAndroid, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { Header } from '../components/common/Header';
@@ -14,6 +14,7 @@ import { ExploreTab } from '../components/home/ExploreTab';
 import { TripsTab } from '../components/home/TripsTab';
 import { ExpensesTab } from '../components/home/ExpensesTab';
 import { ProfileScreen } from './ProfileScreen';
+import { PaymentsScreen } from './PaymentsScreen';
 import { ProfileDrawer } from '../components/common/ProfileDrawer';
 import { JoinGroupModal } from '../components/home/JoinGroupModal';
 import { AddExpenseModal } from '../components/group/AddExpenseModal';
@@ -30,6 +31,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const lastBackPressRef = useRef<number>(0);
 
   const { trips, addExpense } = useTrips();
   const primaryTrip = trips[0];
@@ -40,19 +42,73 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
     setSearchQuery('');
   };
 
+  // ── Professional Back Navigation Handler ──────────────────────────────────
+  useEffect(() => {
+    const onHardwareBackPress = () => {
+      // 1. Close Profile Hamburger Drawer if open
+      if (isDrawerOpen) {
+        setIsDrawerOpen(false);
+        return true;
+      }
+
+      // 2. Dismiss Join Group Modal if open
+      if (isJoinModalOpen) {
+        setIsJoinModalOpen(false);
+        return true;
+      }
+
+      // 3. Dismiss Quick Expense Modal if open
+      if (isQuickExpenseOpen) {
+        setIsQuickExpenseOpen(false);
+        return true;
+      }
+
+      // 4. Clear active search input
+      if (searchQuery.length > 0) {
+        setSearchQuery('');
+        return true;
+      }
+
+      // 5. If on any secondary tab (trips, expenses, payments, profile), return to explore
+      if (activeTab !== 'explore') {
+        setActiveTab('explore');
+        return true;
+      }
+
+      // 6. On root Explore tab: Double-tap to exit prevention
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        BackHandler.exitApp();
+        return true;
+      }
+      lastBackPressRef.current = now;
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+      }
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBackPress);
+    return () => subscription.remove();
+  }, [isDrawerOpen, isJoinModalOpen, isQuickExpenseOpen, searchQuery, activeTab]);
+
   return (
     <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
-        {/* Top Header with functional search bar */}
-        <Header
-          onPressProfile={() => setIsDrawerOpen(true)}
-          onPressNotifications={() => {}}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-        />
+        {/* Top Header with functional search bar (hidden on full-screen tabs like Payments & Profile) */}
+        {activeTab !== 'payments' && activeTab !== 'profile' && (
+          <>
+            <Header
+              onPressProfile={() => setIsDrawerOpen(true)}
+              onPressNotifications={() => {}}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+            />
 
-        {/* Non-intrusive Sync Status Banner */}
-        <SyncBanner />
+            {/* Non-intrusive Sync Status Banner */}
+            <SyncBanner />
+          </>
+        )}
 
         {/* Tab Content — receives searchQuery for live filtering */}
         <View style={styles.tabContent}>
@@ -72,7 +128,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
             />
           )}
           {activeTab === 'expenses' && <ExpensesTab searchQuery={searchQuery} />}
-          {(activeTab === 'payments' || (activeTab as any) === 'profile') && <ProfileScreen />}
+          {activeTab === 'payments' && (
+            <PaymentsScreen onBack={() => setActiveTab('explore')} />
+          )}
+          {(activeTab as any) === 'profile' && (
+            <ProfileScreen onBack={() => setActiveTab('explore')} />
+          )}
         </View>
 
         {/* Floating Bottom Navigation Dock */}

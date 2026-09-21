@@ -647,42 +647,69 @@ async function validateLogin(req, res) {
  */
 async function googleLogin(req, res) {
     try {
-        const credential = req.body?.credential;
+        const { credential, accessToken } = req.body || {};
         const clientId = process.env.GOOGLE_CLIENT_ID;
 
-        if (!credential || !clientId) {
-            return sendError(res, 'Google sign-in is not configured', null, 503);
+        if (!credential && !accessToken) {
+            return sendError(res, 'Google authentication token is missing', null, 400);
         }
 
-        const ticket = await googleClient.verifyIdToken({
-            idToken: credential,
-            audience: clientId
-        });
-        const payload = ticket.getPayload();
+        let emailId = null;
+        let name = null;
+        let avatar = null;
 
-        if (!payload?.email || payload.email_verified !== true) {
+        if (credential) {
+            if (!clientId) {
+                return sendError(res, 'Google sign-in is not configured on server', null, 503);
+            }
+            const ticket = await googleClient.verifyIdToken({
+                idToken: credential,
+                audience: clientId
+            });
+            const payload = ticket.getPayload();
+            if (payload?.email && payload.email_verified === true) {
+                emailId = payload.email.toLowerCase();
+                name = payload.name;
+                avatar = payload.picture;
+            }
+        } else if (accessToken) {
+            const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            if (userInfoRes.ok) {
+                const info = await userInfoRes.json();
+                if (info?.email && (info.email_verified === true || info.email_verified === 'true')) {
+                    emailId = info.email.toLowerCase();
+                    name = info.name;
+                    avatar = info.picture;
+                }
+            }
+        }
+
+        if (!emailId) {
             return sendError(res, 'Google account email could not be verified', null, 401);
         }
 
-        const emailId = payload.email.toLowerCase();
         let user = await User.findOne({ emailId });
         if (!user) {
             user = await User.create({
-                username: payload.name || emailId.split('@')[0],
+                username: name || emailId.split('@')[0],
                 emailId,
+                avatar: avatar || null,
                 password: crypto.randomBytes(32).toString('hex'),
                 isTemp: false
             });
         } else if (user.isTemp) {
             user.isTemp = false;
-            user.username = payload.name || user.username;
+            user.username = name || user.username;
+            if (avatar && !user.avatar) user.avatar = avatar;
             await user.save();
         }
 
-        const accessToken = createToken(user._id);
+        const token = createToken(user._id);
         const refreshToken = createRefreshToken(user._id);
         await storeRefreshToken(user._id, refreshToken);
-        setAuthCookies(res, accessToken, refreshToken);
+        setAuthCookies(res, token, refreshToken);
 
         return sendSuccess(res, 'Google login successful', {
             userId: user._id,
@@ -694,12 +721,12 @@ async function googleLogin(req, res) {
             avatar: user.avatar || null,
             travelStyle: user.travelStyle || 'Boutique',
             currency: user.currency || 'INR',
-            accessToken,
+            accessToken: token,
             refreshToken
         });
     } catch (error) {
         console.error('Google Login Error:', error.message);
-        return sendError(res, 'Google sign-in failed', error, 401);
+        return sendError(res, 'Google sign-in failed: ' + (error.message || 'Verification error'), error, 401);
     }
 }
 

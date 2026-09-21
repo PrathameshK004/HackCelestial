@@ -26,6 +26,8 @@ export interface AuthResponse {
     otpSent?: boolean;
     verificationRequired?: boolean;
     expiresIn?: number;
+    emailId?: string;
+    otp?: string | number;
   };
   statusCode?: number;
 }
@@ -35,6 +37,22 @@ export interface LoginPayload {
   password?: string;
 }
 
+/** Step 1: Create temporary (pending) user + trigger OTP email */
+export interface RegisterTempPayload {
+  username: string;
+  emailId: string;
+  password: string;
+}
+
+/** Step 2: Verify OTP code + activate account */
+export interface VerifyRegisterPayload {
+  username: string;
+  emailId: string;
+  password: string;
+  code: string;
+}
+
+/** Legacy alias kept for backward compatibility */
 export interface RegisterUserPayload {
   username: string;
   emailId: string;

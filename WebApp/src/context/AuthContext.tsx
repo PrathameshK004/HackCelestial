@@ -19,7 +19,7 @@ interface AuthContextType {
   registerTemp: (data: RegisterTempPayload) => Promise<{ success: boolean; message?: string; otp?: string | number; data?: any }>;
   verifyAndRegister: (data: RegisterUserPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
   resendOtp: (emailId: string, purpose?: string) => Promise<{ success: boolean; message?: string; otp?: string | number }>;
-  loginWithGoogle: (credential: string) => Promise<{ success: boolean; message?: string; user?: User }>;
+  loginWithGoogle: (credentialOrPayload: string | { credential?: string; accessToken?: string }) => Promise<{ success: boolean; message?: string; user?: User }>;
   updateProfile: (data: Partial<User>) => Promise<{ success: boolean; message?: string; user?: User }>;
   changePassword: (data: PasswordChangePayload) => Promise<{ success: boolean; message?: string }>;
   forgotPassword: (emailId: string) => Promise<{ success: boolean; message?: string }>;
@@ -243,9 +243,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const loginWithGoogle = async (credential: string) => {
+  const loginWithGoogle = async (credentialOrPayload: string | { credential?: string; accessToken?: string }) => {
     try {
-      const response = await authService.loginWithGoogle(credential);
+      const response = await authService.loginWithGoogle(credentialOrPayload);
       if (!response.data) return { success: false, message: response.message || 'Google login failed' };
       const loggedUser: User = {
         userId: response.data.userId,

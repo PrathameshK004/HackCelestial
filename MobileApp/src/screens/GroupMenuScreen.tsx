@@ -4,7 +4,7 @@
  * 4 Tabs: Expenses, Debts, Balances, Transactions
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -103,12 +104,56 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
     setIsSettleUpOpen(true);
   };
 
+  // ── Smart Back Navigation Handler ─────────────────────────────────────────
+  const handleBack = () => {
+    // 1. Dismiss open modals
+    if (isAddExpenseOpen) {
+      setIsAddExpenseOpen(false);
+      return;
+    }
+    if (isSettleUpOpen) {
+      setIsSettleUpOpen(false);
+      return;
+    }
+    if (isMembersModalOpen) {
+      setIsMembersModalOpen(false);
+      return;
+    }
+    // 2. Collapse expanded expense card if open
+    if (expandedExpenseId) {
+      setExpandedExpenseId(null);
+      return;
+    }
+    // 3. If on a sub-tab (debts, balances, transactions), return to expenses tab
+    if (activeTab !== 'expenses') {
+      setActiveTab('expenses');
+      return;
+    }
+    // 4. Return to main dashboard
+    onBack();
+  };
+
+  useEffect(() => {
+    const onHardwareBack = () => {
+      handleBack();
+      return true;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [isAddExpenseOpen, isSettleUpOpen, isMembersModalOpen, expandedExpenseId, activeTab, onBack]);
+
   return (
     <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
       {/* Top Navigation Bar */}
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn} activeOpacity={0.7}>
+        <TouchableOpacity
+          onPress={handleBack}
+          style={styles.backBtn}
+          activeOpacity={0.7}
+          accessibilityLabel="Back"
+        >
           <ArrowLeft size={20} color={colors.slate800} />
         </TouchableOpacity>
 

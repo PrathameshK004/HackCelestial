@@ -158,10 +158,13 @@ export const authService = {
     });
   },
 
-  async loginWithGoogle(credential: string): Promise<AuthResponse> {
+  async loginWithGoogle(credentialOrPayload: string | { credential?: string; accessToken?: string }): Promise<AuthResponse> {
+    const body = typeof credentialOrPayload === 'string'
+      ? { credential: credentialOrPayload }
+      : credentialOrPayload;
     return request<AuthResponse>('/users/google-login', {
       method: 'POST',
-      body: JSON.stringify({ credential }),
+      body: JSON.stringify(body),
     });
   },
 };
