@@ -27,7 +27,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
   onTabChange,
   onCreatePress,
 }) => {
-  const activeColor = '#18181B'; // Active dark text and icon
+  const activeColor = '#059669'; // Green active color
   const inactiveColor = '#8E8E93'; // Muted tab text and icon
 
   return (
@@ -39,6 +39,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
           onPress={() => onTabChange('explore')}
           activeOpacity={0.7}
         >
+          {activeTab === 'explore' && <View style={styles.topIndicator} />}
           <Compass
             size={24}
             color={activeTab === 'explore' ? activeColor : inactiveColor}
@@ -60,6 +61,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
           onPress={() => onTabChange('trips')}
           activeOpacity={0.7}
         >
+          {activeTab === 'trips' && <View style={styles.topIndicator} />}
           <RoundtableGroupsIcon
             size={24}
             color={activeTab === 'trips' ? activeColor : inactiveColor}
@@ -74,17 +76,21 @@ export const BottomDock: React.FC<BottomDockProps> = ({
           </Text>
         </TouchableOpacity>
 
-        {/* Center Elevated Floating Action Button (+): Create */}
-        <View style={styles.fabWrapper}>
-          <TouchableOpacity
-            style={styles.fabBtn}
-            onPress={onCreatePress}
-            activeOpacity={0.85}
-          >
-            <Plus size={26} color="#FFFFFF" strokeWidth={2.8} />
-          </TouchableOpacity>
-          <Text style={styles.fabLabel}>Create</Text>
-        </View>
+        {/* Tab 3: Create */}
+        <TouchableOpacity
+          style={styles.tabBtn}
+          onPress={onCreatePress}
+          activeOpacity={0.7}
+        >
+          <Plus
+            size={24}
+            color={inactiveColor}
+            strokeWidth={1.8}
+          />
+          <Text style={styles.tabLabel}>
+            Create
+          </Text>
+        </TouchableOpacity>
 
         {/* Tab 4: Split */}
         <TouchableOpacity
@@ -92,6 +98,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
           onPress={() => onTabChange('expenses')}
           activeOpacity={0.7}
         >
+          {activeTab === 'expenses' && <View style={styles.topIndicator} />}
           <Split
             size={24}
             color={activeTab === 'expenses' ? activeColor : inactiveColor}
@@ -113,6 +120,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
           onPress={() => onTabChange('payments')}
           activeOpacity={0.7}
         >
+          {activeTab === 'payments' && <View style={styles.topIndicator} />}
           <CreditCard
             size={24}
             color={activeTab === 'payments' ? activeColor : inactiveColor}
@@ -160,6 +168,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 2,
+    position: 'relative',
+  },
+  topIndicator: {
+    position: 'absolute',
+    top: -8,
+    width: 32,
+    height: 3.5,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+    backgroundColor: '#059669', // Emerald green active indicator bar
   },
   tabLabel: {
     fontSize: 11,
@@ -168,33 +186,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   tabLabelActive: {
-    color: '#18181B',
-    fontWeight: '800',
-  },
-  fabWrapper: {
-    alignItems: 'center',
-    marginTop: -28, // Elevated above dock edge
-    paddingHorizontal: 6,
-  },
-  fabBtn: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#464B29', // Exact --accent-olive from theme.css line 25
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3.5,
-    borderColor: '#FFFFFF', // Clean white ring around the olive button
-    shadowColor: '#2E331B',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  fabLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#18181B',
-    marginTop: 3,
+    color: '#059669',
+    fontWeight: '700',
   },
 });
