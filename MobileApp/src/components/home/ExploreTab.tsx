@@ -323,6 +323,19 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
 }) => {
   const { trips } = useTrips();
 
+  // Strictly deduplicate trips by ID to guarantee zero redundant cards in explore tab
+  const uniqueTrips = useMemo(() => {
+    const seen = new Set<string>();
+    const res: typeof trips = [];
+    for (const t of trips) {
+      if (t && t.id && !seen.has(t.id)) {
+        seen.add(t.id);
+        res.push(t);
+      }
+    }
+    return res;
+  }, [trips]);
+
   // Navigation & View States
   const [viewMode, setViewMode] = useState<'gallery' | 'list' | 'map'>('gallery');
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -690,14 +703,14 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
           </View>
 
           {/* Ticket Flight Cards */}
-          {trips.length === 0 ? (
+          {uniqueTrips.length === 0 ? (
             <View style={styles.emptyLedgersCard}>
               <Text style={styles.emptyLedgersText}>
                 No active travel groups yet. Create a trip or join with an invite code.
               </Text>
             </View>
           ) : (
-            trips.map((group) => {
+            uniqueTrips.map((group) => {
               const isSettled = group.status === 'completed';
               const originCode = (group.destination || 'SFO')
                 .slice(0, 3)

@@ -15,6 +15,8 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { GroupMenuScreen } from './src/screens/GroupMenuScreen';
 import { CreateGroupScreen } from './src/screens/CreateGroupScreen';
+import { notificationService } from './src/services/notificationService';
+import { syncService } from './src/sync/syncService';
 
 const RootNavigator: React.FC = () => {
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
@@ -31,6 +33,26 @@ const RootNavigator: React.FC = () => {
 
     return () => clearTimeout(timer);
   }, []);
+
+  // Listen for push notifications and user tap interactions
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const cleanup = notificationService.addNotificationListeners(
+      () => {
+        // Automatically sync fresh server data into local SQLite when push notification arrives
+        syncService.downloadServerData().catch(() => {});
+      },
+      (response) => {
+        const data = response.notification.request.content.data;
+        if (data?.groupId) {
+          selectTrip(data.groupId as string);
+        }
+      }
+    );
+
+    return cleanup;
+  }, [isAuthenticated, selectTrip]);
 
   if (showSplash || isAuthLoading) {
     return <SplashScreen onSkip={() => setShowSplash(false)} />;

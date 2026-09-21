@@ -77,6 +77,9 @@ export interface Participant {
   avatarBg: string;
   isUser?: boolean;
   balance: number;
+  status?: 'ACCEPTED' | 'PENDING' | 'REJECTED';
+  inviteCode?: string;
+  inviteUrl?: string;
   syncStatus?: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';
 }
 
@@ -181,3 +184,59 @@ export interface OptimalSettlementResult {
   totalVolume: number;
   reductionPercentage: number;
 }
+
+export interface PendingInvitation {
+  id: string;
+  inviteCode: string;
+  role: string;
+  createdAt: string;
+  expiresAt: string;
+  groupId: string;
+  groupName: string;
+  destination: string;
+  startDate: string | null;
+  endDate: string | null;
+  tripType: string;
+  currency: string;
+  expenseSplit: string;
+  organizerName: string;
+  memberCount?: number;
+}
+
+export interface InviteDetails {
+  inviteCode: string;
+  groupId: string;
+  groupName: string;
+  destination: string;
+  startDate: string | null;
+  endDate: string | null;
+  tripType: string;
+  currency: string;
+  expenseSplit: string;
+  description?: string;
+  organizerName: string;
+  invitedEmail?: string;
+  role: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+  memberCount: number;
+  members?: Array<{
+    id: string | number;
+    name: string;
+    email: string;
+    role: 'Organizer' | 'Traveler' | 'Admin';
+    avatarBg?: string;
+    status?: 'ACCEPTED' | 'PENDING' | 'REJECTED';
+  }>;
+  expiresAt: string;
+}
+
+export interface InboxNotification {
+  id: string;
+  title: string;
+  description: string;
+  timestamp: string;
+  isRead: boolean;
+  category: 'trip' | 'expense' | 'security' | 'system';
+  actionTab?: 'explore' | 'trips' | 'expenses' | 'payments';
+}
+

@@ -23,6 +23,10 @@ router.post('/refresh', usersController.refreshAccessToken);
 router.get('/me/payments', verifyToken, paymentController.getMyPayments);
 router.post('/me/record-payment', verifyToken, paymentController.recordUnifiedPayment);
 
+// Push notification device token registration
+router.post('/push-token', verifyToken, usersController.registerPushToken);
+router.delete('/push-token', verifyToken, usersController.unregisterPushToken);
+
 // Password recovery with OTP
 router.post('/forgot-password', usersController.forgotPassword);
 router.post('/verify-reset-otp', usersController.verifyResetOtp);

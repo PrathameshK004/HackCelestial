@@ -22,6 +22,8 @@ export const memberRepo = {
       avatarBg: r.avatar_bg,
       isUser: Boolean(r.is_user),
       balance: Number(r.balance || 0),
+      status: (r.status || (r.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')) as any,
+      inviteCode: r.invite_code,
       syncStatus: r.sync_status
     }));
   },
@@ -29,8 +31,8 @@ export const memberRepo = {
   upsertMember(member: Participant): void {
     const db = getDatabase();
     db.runSync(`
-      INSERT INTO participants (id, trip_id, user_id, name, email, role, avatar_bg, is_user, balance, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO participants (id, trip_id, user_id, name, email, role, avatar_bg, is_user, balance, status, invite_code, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name=excluded.name,
         email=excluded.email,
@@ -38,6 +40,8 @@ export const memberRepo = {
         avatar_bg=excluded.avatar_bg,
         is_user=excluded.is_user,
         balance=excluded.balance,
+        status=excluded.status,
+        invite_code=excluded.invite_code,
         sync_status=excluded.sync_status
     `, [
       member.id,
@@ -49,6 +53,8 @@ export const memberRepo = {
       member.avatarBg || '#059669',
       member.isUser ? 1 : 0,
       member.balance || 0,
+      member.status || (member.role === 'Organizer' ? 'ACCEPTED' : 'PENDING'),
+      member.inviteCode || null,
       member.syncStatus || 'SYNCED'
     ]);
   },

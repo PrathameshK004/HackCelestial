@@ -1,12 +1,14 @@
 const crypto = require('crypto');
 const { pool } = require('../utils/db.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
+const { verifyGroupAccess } = require('../utils/groupAuth.util');
 const {
     round2,
     calculateExpenseSplits,
     calculateNetBalances,
     calculateOptimalSettlements
 } = require('../utils/recalculation.engine');
+const { sendExpenseNotification } = require('../utils/notification.util');
 
 module.exports = {
     addExpense,
@@ -38,6 +40,11 @@ async function addExpense(req, res) {
             paymentReference = null
         } = req.body;
 
+        if (!userId) {
+            client.release();
+            return sendError(res, "Authentication required", null, 401);
+        }
+
         if (!description || !description.trim()) {
             client.release();
             return sendError(res, "Description is required", null, 400);
@@ -49,13 +56,17 @@ async function addExpense(req, res) {
             return sendError(res, "A valid positive amount is required", null, 400);
         }
 
-        // Verify group exists
-        const groupRes = await client.query('SELECT id, name, currency, expense_split FROM groups WHERE id = $1', [groupId]);
-        if (groupRes.rows.length === 0) {
+        // Verify group access and permissions
+        const access = await verifyGroupAccess(groupId, userId, client);
+        if (access.notFound) {
             client.release();
             return sendError(res, "Group trip not found", null, 404);
         }
-        const group = groupRes.rows[0];
+        if (!access.isAuthorized) {
+            client.release();
+            return sendError(res, "Access denied. You are not a member of this trip.", null, 403);
+        }
+        const group = access.group;
 
         const mapGroupSplit = (s) => {
             if (!s) return 'EQUAL';
@@ -71,30 +82,50 @@ async function addExpense(req, res) {
             ? req.body.splitModel.toUpperCase()
             : mapGroupSplit(group.expense_split);
 
-        // Fetch all group members
-        const membersRes = await client.query('SELECT id, user_id, name, email, role FROM group_members WHERE group_id = $1', [groupId]);
+        // Fetch all group members with acceptance status
+        const membersRes = await client.query('SELECT id, user_id, name, email, role, COALESCE(status, \'ACCEPTED\') as status FROM group_members WHERE group_id = $1', [groupId]);
         if (membersRes.rows.length === 0) {
             client.release();
             return sendError(res, "Group has no members", null, 400);
         }
         const allMembers = membersRes.rows;
 
-        // Resolve Payer Member ID
-        let resolvedPayerMemberId = paidByMemberId;
-        if (!resolvedPayerMemberId) {
-            // Find member corresponding to current user
-            const userMember = allMembers.find(m => m.user_id === userId);
-            resolvedPayerMemberId = userMember ? userMember.id : allMembers[0].id;
+        // Unstop-Style Acceptance Rule:
+        // Before invitation acceptance, split expenses CANNOT be allocated to pending travelers!
+        const acceptedMembers = allMembers.filter(m => m.status === 'ACCEPTED' || m.role === 'Organizer');
+        if (acceptedMembers.length === 0) {
+            client.release();
+            return sendError(res, "No confirmed members in this trip yet. Invited travelers must accept their invitation before expenses can be split.", null, 400);
         }
 
-        const payer = allMembers.find(m => String(m.id) === String(resolvedPayerMemberId)) || allMembers[0];
+        const acceptedMemberIdSet = new Set(acceptedMembers.map(m => String(m.id)));
 
-        // Prepare participants list
+        // Resolve Payer Member ID (must be a confirmed member or organizer)
+        let resolvedPayerMemberId = paidByMemberId;
+        if (!resolvedPayerMemberId) {
+            const userMember = acceptedMembers.find(m => m.user_id === userId);
+            resolvedPayerMemberId = userMember ? userMember.id : acceptedMembers[0].id;
+        }
+
+        const payer = acceptedMembers.find(m => String(m.id) === String(resolvedPayerMemberId)) || acceptedMembers[0];
+
+        // Prepare participants list - ONLY accepted members can be allocated splits
         let participantItems = [];
         if (Array.isArray(participants) && participants.length > 0) {
-            participantItems = participants.map(p => {
+            // Check if user requested someone who hasn't accepted yet
+            const validParticipants = participants.filter(p => {
+                const pId = typeof p === 'string' ? String(p) : String(p.memberId || p.id);
+                return acceptedMemberIdSet.has(pId);
+            });
+
+            if (validParticipants.length === 0) {
+                client.release();
+                return sendError(res, "Cannot allocate split: The selected traveler(s) have not accepted the trip invitation yet. Only confirmed members can share costs.", null, 400);
+            }
+
+            participantItems = validParticipants.map(p => {
                 if (typeof p === 'string') {
-                    const found = allMembers.find(m => String(m.id) === String(p));
+                    const found = acceptedMembers.find(m => String(m.id) === String(p));
                     return {
                         memberId: p,
                         userId: found ? found.user_id : null,
@@ -103,7 +134,7 @@ async function addExpense(req, res) {
                         isOptedIn: true
                     };
                 }
-                const found = allMembers.find(m => String(m.id) === String(p.memberId || p.id));
+                const found = acceptedMembers.find(m => String(m.id) === String(p.memberId || p.id));
                 return {
                     memberId: p.memberId || p.id,
                     userId: found ? found.user_id : (p.userId || null),
@@ -113,8 +144,8 @@ async function addExpense(req, res) {
                 };
             });
         } else {
-            // Default to all members
-            participantItems = allMembers.map(m => ({
+            // Default to ONLY accepted members
+            participantItems = acceptedMembers.map(m => ({
                 memberId: m.id,
                 userId: m.user_id,
                 shareType: 'EQUAL_UNIT',
@@ -193,6 +224,20 @@ async function addExpense(req, res) {
 
         await client.query('COMMIT');
 
+        // Dispatch Push Notifications to all split participants in the trip asynchronously
+        sendExpenseNotification({
+            groupId,
+            groupName: group.name,
+            payerName: payer.name,
+            payerUserId: payer.user_id || userId,
+            description: description.trim(),
+            totalAmount: numAmount,
+            currency: currency || group.currency,
+            splits: insertedSplits
+        }).catch(pushErr => {
+            console.warn("Could not dispatch expense push notifications:", pushErr.message);
+        });
+
         return sendSuccess(res, "Expense recorded successfully", {
             ...expenseInsert.rows[0],
             paidBy: {
@@ -218,6 +263,19 @@ async function addExpense(req, res) {
 async function getGroupExpenses(req, res) {
     try {
         const { groupId } = req.params;
+        const userId = req.userKey;
+
+        if (!userId) {
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        const access = await verifyGroupAccess(groupId, userId);
+        if (access.notFound) {
+            return sendError(res, "Group not found", null, 404);
+        }
+        if (!access.isAuthorized) {
+            return sendError(res, "Access denied. You are not a member of this trip.", null, 403);
+        }
 
         const expensesRes = await pool.query(`
             SELECT e.id, e.description, e.amount, e.category, e.currency,
@@ -287,6 +345,21 @@ async function deleteExpense(req, res) {
         const { groupId, expenseId } = req.params;
         const userId = req.userKey;
 
+        if (!userId) {
+            client.release();
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        const access = await verifyGroupAccess(groupId, userId, client);
+        if (access.notFound) {
+            client.release();
+            return sendError(res, "Group not found", null, 404);
+        }
+        if (!access.isAuthorized) {
+            client.release();
+            return sendError(res, "Access denied. You are not a member of this trip.", null, 403);
+        }
+
         const expRes = await client.query('SELECT description, amount, currency FROM expenses WHERE id = $1 AND group_id = $2', [expenseId, groupId]);
         if (expRes.rows.length === 0) {
             client.release();
@@ -334,22 +407,33 @@ async function deleteExpense(req, res) {
 async function getGroupSettlement(req, res) {
     try {
         const { groupId } = req.params;
+        const userId = req.userKey;
 
-        // 1. Fetch group
-        const groupRes = await pool.query('SELECT id, name, currency, status FROM groups WHERE id = $1', [groupId]);
-        if (groupRes.rows.length === 0) {
+        if (!userId) {
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        const access = await verifyGroupAccess(groupId, userId);
+        if (access.notFound) {
             return sendError(res, "Group not found", null, 404);
         }
-        const group = groupRes.rows[0];
+        if (!access.isAuthorized) {
+            return sendError(res, "Access denied. You are not a member of this trip.", null, 403);
+        }
+
+        const group = access.group;
 
         // 2. Fetch members
         const membersRes = await pool.query(`
-            SELECT id, user_id, name, email, role, avatar_bg, upi_id, status
+            SELECT id, user_id, name, email, role, avatar_bg, upi_id, COALESCE(status, 'ACCEPTED') as status
             FROM group_members
             WHERE group_id = $1
             ORDER BY joined_at ASC
         `, [groupId]);
-        const members = membersRes.rows;
+        const members = membersRes.rows.map(m => ({
+            ...m,
+            status: m.status || (m.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')
+        }));
 
         if (members.length === 0) {
             return sendSuccess(res, "Settlement calculated successfully", {
@@ -500,6 +584,21 @@ async function recordSettlement(req, res) {
             remarks = 'Debt settlement'
         } = req.body;
 
+        if (!userId) {
+            client.release();
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        const access = await verifyGroupAccess(groupId, userId, client);
+        if (access.notFound) {
+            client.release();
+            return sendError(res, "Group not found", null, 404);
+        }
+        if (!access.isAuthorized) {
+            client.release();
+            return sendError(res, "Access denied. You are not a member of this trip.", null, 403);
+        }
+
         const toMemberId = paidTo || req.body.toMemberId;
         if (!toMemberId) {
             client.release();
@@ -595,6 +694,21 @@ async function settleGroup(req, res) {
         const { groupId } = req.params;
         const userId = req.userKey;
 
+        if (!userId) {
+            client.release();
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        const access = await verifyGroupAccess(groupId, userId, client);
+        if (access.notFound) {
+            client.release();
+            return sendError(res, "Group not found", null, 404);
+        }
+        if (!access.isOrganizer) {
+            client.release();
+            return sendError(res, "Only the group organizer can mark the trip as settled", null, 403);
+        }
+
         await client.query('BEGIN');
 
         const updateRes = await client.query(`
@@ -603,12 +717,6 @@ async function settleGroup(req, res) {
             WHERE id = $1
             RETURNING id, name, status
         `, [groupId]);
-
-        if (updateRes.rows.length === 0) {
-            await client.query('ROLLBACK');
-            client.release();
-            return sendError(res, "Group not found", null, 404);
-        }
 
         const actorRes = userId ? await client.query('SELECT username FROM users WHERE id = $1', [userId]) : null;
         const actorName = actorRes && actorRes.rows[0] ? actorRes.rows[0].username : 'Organizer';
@@ -646,6 +754,19 @@ async function settleGroup(req, res) {
 async function getAuditLog(req, res) {
     try {
         const { groupId } = req.params;
+        const userId = req.userKey;
+
+        if (!userId) {
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        const access = await verifyGroupAccess(groupId, userId);
+        if (access.notFound) {
+            return sendError(res, "Group not found", null, 404);
+        }
+        if (!access.isAuthorized) {
+            return sendError(res, "Access denied. You are not a member of this trip.", null, 403);
+        }
 
         const auditRes = await pool.query(`
             SELECT id, event_type as "eventType", actor_name as "actorName",

@@ -1,0 +1,29 @@
+{
+    "project_info": {
+        "project_number": "872375313330",
+        "project_id": "triptual-x",
+        "storage_bucket": "triptual-x.firebasestorage.app"
+    },
+    "client": [
+        {
+            "client_info": {
+                "mobilesdk_app_id": "1:872375313330:android:a10c0f7a58742fcd667aab",
+                "android_client_info": {
+                    "package_name": "com.yog7284.MobileApp"
+                }
+            },
+            "oauth_client": [],
+            "api_key": [
+                {
+                    "current_key": "AIzaSyDscVYU_ixm_SP2xBWlx2JFOdB0FOJFByU"
+                }
+            ],
+            "services": {
+                "appinvite_service": {
+                    "other_platform_oauth_client": []
+                }
+            }
+        }
+    ],
+    "configuration_version": "1"
+}

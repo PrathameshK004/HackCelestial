@@ -140,7 +140,7 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
 
     // Validate email
     if (!cleanEmail) {
-      setEmailError('Email address is mandatory');
+      setEmailError('Please enter an email address');
       valid = false;
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       setEmailError('Please enter a valid email address');
@@ -154,7 +154,7 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
 
     // Validate name
     if (!cleanName) {
-      setNameError('Traveler full name is mandatory');
+      setNameError('Please enter traveler full name');
       valid = false;
     } else if (cleanName.length < 2) {
       setNameError('Name must be at least 2 characters');
@@ -207,7 +207,6 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
               <View style={styles.fieldGroup}>
                 <View style={styles.labelRow}>
                   <Text style={styles.label}>Email Address</Text>
-                  <Text style={styles.mandatoryBadge}>Required *</Text>
                 </View>
                 <View style={[styles.inputContainer, emailError ? styles.inputError : null]}>
                   <Mail size={18} color={colors.slate400} style={styles.inputIcon} />
@@ -227,39 +226,24 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
                 </View>
                 {!!emailError && <Text style={styles.errorText}>{emailError}</Text>}
 
-                {/* Dynamic Platform Status Indicator (matching WebApp exactly) */}
+                {/* Dynamic Platform Status Indicator */}
                 {registrationStatus && !isCheckingUser && (
-                  <View style={[styles.statusBanner, registrationStatus.isRegistered ? styles.statusRegistered : styles.statusUnregistered]}>
+                  <View style={[styles.statusBadge, registrationStatus.isRegistered ? styles.statusBadgeRegistered : styles.statusBadgeUnregistered]}>
                     {registrationStatus.isRegistered ? (
-                      <CheckCircle2 size={18} color="#059669" style={styles.statusIcon} />
+                      <>
+                        <CheckCircle2 size={15} color="#059669" />
+                        <Text style={styles.statusBadgeText}>
+                          Verified Member: <Text style={styles.boldText}>{registrationStatus.registeredUsername}</Text>
+                        </Text>
+                      </>
                     ) : (
-                      <UserX size={18} color="#d97706" style={styles.statusIcon} />
+                      <>
+                        <Mail size={15} color="#64748B" />
+                        <Text style={styles.statusBadgeTextMuted}>
+                          New User • Email invite will be sent
+                        </Text>
+                      </>
                     )}
-                    <View style={styles.statusTextContainer}>
-                      {registrationStatus.isRegistered ? (
-                        <>
-                          <View style={styles.statusTitleRow}>
-                            <Text style={styles.statusMainText}>
-                              Platform User: <Text style={styles.boldText}>{registrationStatus.registeredUsername}</Text>
-                            </Text>
-                            <View style={styles.autoFilledTag}>
-                              <Sparkles size={10} color="#059669" style={{ marginRight: 3 }} />
-                              <Text style={styles.autoFilledTagText}>Name auto-fetched</Text>
-                            </View>
-                          </View>
-                          <Text style={styles.statusSubText}>
-                            📩 Official invite will be sent. Member joins group upon approval.
-                          </Text>
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.statusMainTextBold}>New to Triptual</Text>
-                          <Text style={styles.statusSubTextAmber}>
-                            📧 An invitation link will be sent to their email to join and create an account.
-                          </Text>
-                        </>
-                      )}
-                    </View>
                   </View>
                 )}
               </View>
@@ -268,7 +252,6 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
               <View style={[styles.fieldGroup, { marginTop: 14 }]}>
                 <View style={styles.labelRow}>
                   <Text style={styles.label}>Traveler Full Name</Text>
-                  <Text style={styles.mandatoryBadge}>Required *</Text>
                 </View>
                 <View style={[styles.inputContainer, nameError ? styles.inputError : null]}>
                   <User size={18} color={colors.slate400} style={styles.inputIcon} />
@@ -311,7 +294,7 @@ const styles = StyleSheet.create({
   },
   dialog: {
     backgroundColor: '#ffffff',
-    borderRadius: radii.xl,
+    borderRadius: 14,
     width: '100%',
     maxWidth: 480,
     overflow: 'hidden',
@@ -342,12 +325,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   title: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: colors.slate900,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: colors.slate500,
     marginTop: 2,
   },
@@ -369,12 +352,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   label: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.slate800,
   },
   mandatoryBadge: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
     color: colors.accentRose,
   },
@@ -385,7 +368,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
     borderRadius: radii.lg,
     backgroundColor: '#f8fafc',
-    height: 48,
+    height: 46,
     paddingHorizontal: 14,
   },
   inputError: {
@@ -398,7 +381,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     height: '100%',
-    fontSize: 14,
+    fontSize: 13.5,
     color: colors.slate900,
   },
   spinner: {
@@ -406,82 +389,48 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: colors.accentRose,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     marginTop: 5,
     marginLeft: 2,
   },
-  statusBanner: {
-    flexDirection: 'row',
-    padding: 12,
-    borderRadius: radii.md,
-    marginTop: 10,
-    borderWidth: 1,
-  },
-  statusRegistered: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#a7f3d0',
-  },
-  statusUnregistered: {
-    backgroundColor: '#fffbeb',
-    borderColor: '#fde68a',
-  },
-  statusIcon: {
-    marginTop: 2,
-    marginRight: 10,
-  },
-  statusTextContainer: {
-    flex: 1,
-  },
-  statusTitleRow: {
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 4,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 8,
+    gap: 8,
   },
-  statusMainText: {
-    fontSize: 13,
-    color: '#065f46',
+  statusBadgeRegistered: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#A7F3D0',
   },
-  statusMainTextBold: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#92400e',
+  statusBadgeUnregistered: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E2E8F0',
+  },
+  statusBadgeText: {
+    fontSize: 11.5,
+    color: '#065F46',
+    flex: 1,
+  },
+  statusBadgeTextMuted: {
+    fontSize: 11.5,
+    color: '#64748B',
+    flex: 1,
   },
   boldText: {
     fontWeight: '700',
     color: '#047857',
   },
-  autoFilledTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#d1fae5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  autoFilledTagText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#047857',
-  },
-  statusSubText: {
-    fontSize: 11,
-    color: '#047857',
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  statusSubTextAmber: {
-    fontSize: 11,
-    color: '#b45309',
-    marginTop: 4,
-    lineHeight: 16,
-  },
   footer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
     justifyContent: 'flex-end',
@@ -490,27 +439,27 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   cancelBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
     borderRadius: radii.md,
   },
   cancelBtnText: {
     color: colors.slate600,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   submitBtn: {
     flexDirection: 'row',
     backgroundColor: colors.primary600,
-    paddingVertical: 11,
-    paddingHorizontal: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: radii.md,
     alignItems: 'center',
     ...shadows.sm,
   },
   submitBtnText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
 });

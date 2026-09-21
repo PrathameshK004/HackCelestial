@@ -18,7 +18,14 @@ export const syncService = {
   async downloadServerData(): Promise<{ success: boolean; tripCount: number; error?: string }> {
     try {
       const res = await groupService.getMyGroups();
-      const serverGroups = res?.data || [];
+      const rawServerGroups = res?.data || [];
+      const seenGroupIds = new Set<string>();
+      const serverGroups = rawServerGroups.filter((g: any) => {
+        const id = String(g.id || g.group_id || '');
+        if (!id || seenGroupIds.has(id)) return false;
+        seenGroupIds.add(id);
+        return true;
+      });
 
       const db = getDatabase();
 
@@ -60,6 +67,9 @@ export const syncService = {
                 avatarBg: m.avatarBg || '#059669',
                 isUser: Boolean(m.isUser),
                 balance: Number(m.balance || 0),
+                status: (m.status || (m.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')) as any,
+                inviteCode: m.inviteCode || null,
+                inviteUrl: m.inviteUrl || null,
                 syncStatus: 'SYNCED'
               };
               memberRepo.upsertMember(member);
@@ -75,9 +85,32 @@ export const syncService = {
         `, [new Date().toISOString()]);
       });
 
-      // Synchronize detailed expenses & settlements for each group
+      // Synchronize detailed expenses & authoritative members for each group
       for (const g of serverGroups) {
         const tripId = String(g.id || g.group_id);
+        try {
+          const detailRes = await groupService.getGroupById(tripId);
+          if (detailRes?.data?.members && Array.isArray(detailRes.data.members)) {
+            for (const m of detailRes.data.members) {
+              const member: Participant = {
+                id: String(m.id || m.memberId || m.email),
+                tripId,
+                userId: m.userId || m.id,
+                name: m.name || 'Traveler',
+                email: m.email || '',
+                role: m.role === 'Organizer' ? 'Organizer' : 'Traveler',
+                avatarBg: m.avatarBg || '#059669',
+                isUser: Boolean(m.isUser),
+                balance: Number(m.balance || 0),
+                status: (m.status || (m.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')) as any,
+                inviteCode: m.inviteCode || null,
+                inviteUrl: m.inviteUrl || null,
+                syncStatus: 'SYNCED'
+              };
+              memberRepo.upsertMember(member);
+            }
+          }
+        } catch (_) {}
         try {
           const expRes = await groupService.getExpenses(tripId);
           if (Array.isArray(expRes?.data)) {

@@ -21,6 +21,7 @@ interface HeaderProps {
   onPressNotifications?: () => void;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
+  unreadCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   onPressNotifications,
   searchQuery = '',
   onSearchChange,
+  unreadCount = 0,
 }) => {
   const { user } = useAuth();
   const inputRef = useRef<TextInput>(null);
@@ -94,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({
         accessibilityLabel="Inbox & Notifications"
       >
         <Inbox size={22} color="#374151" strokeWidth={1.8} />
-        <View style={styles.inboxDot} />
+        {unreadCount > 0 && <View style={styles.inboxDot} />}
       </TouchableOpacity>
     </View>
   );

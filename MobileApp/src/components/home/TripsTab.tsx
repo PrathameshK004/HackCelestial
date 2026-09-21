@@ -26,7 +26,20 @@ export const TripsTab: React.FC<TripsTabProps> = ({
   const { trips } = useTrips();
   const q = searchQuery.trim().toLowerCase();
 
-  const filteredTrips = trips.filter((t) => {
+  // Strictly deduplicate trips by ID to guarantee zero redundant cards in this section
+  const uniqueTrips = React.useMemo(() => {
+    const seen = new Set<string>();
+    const res: typeof trips = [];
+    for (const t of trips) {
+      if (t && t.id && !seen.has(t.id)) {
+        seen.add(t.id);
+        res.push(t);
+      }
+    }
+    return res;
+  }, [trips]);
+
+  const filteredTrips = uniqueTrips.filter((t) => {
     const matchesSearch =
       q === '' ||
       t.name?.toLowerCase().includes(q) ||

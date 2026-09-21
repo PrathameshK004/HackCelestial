@@ -130,6 +130,18 @@ export const groupService = {
     });
   },
 
+  async rejectInvite(inviteCode: string): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(`/invites/${inviteCode}/reject`, {
+      method: 'POST',
+    });
+  },
+
+  async getMyPendingInvitations(): Promise<{ message: string; data: any[] }> {
+    return apiRequest<{ message: string; data: any[] }>('/invites/my-pending', {
+      method: 'GET',
+    });
+  },
+
   async getUserPayments(): Promise<{ message: string; data: any }> {
     return apiRequest<{ message: string; data: any }>('/payments/my-payments', {
       method: 'GET',

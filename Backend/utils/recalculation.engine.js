@@ -203,7 +203,8 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
             email: m.email,
             role: m.role || 'Traveler',
             avatarBg: m.avatar_bg || m.avatarBg || '#10b981',
-            upiId: m.upi_id || m.upiId || ''
+            upiId: m.upi_id || m.upiId || '',
+            status: m.status || (m.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')
         };
     }
 

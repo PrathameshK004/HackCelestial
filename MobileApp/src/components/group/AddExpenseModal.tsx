@@ -14,7 +14,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { X, Check, DollarSign, Users, Split } from 'lucide-react-native';
+import { X, Check, DollarSign, Users, Split, Clock, AlertCircle, ShieldCheck } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { Participant, CostSharingModel } from '../../types';
 
@@ -51,12 +51,20 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   onClose,
   onSubmit,
 }) => {
+  // Unstop-Style Team Ledger: Only confirmed / accepted travelers can participate in splits
+  const acceptedMembers = members.filter(
+    (m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer'
+  );
+  const pendingMembers = members.filter(
+    (m) => m.status === 'PENDING' && m.role !== 'Organizer'
+  );
+
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<'Stay' | 'Food' | 'Transport' | 'Activities' | 'Supplies' | 'Other'>('Food');
   const [splitModel, setSplitModel] = useState<CostSharingModel>('EQUAL');
-  const [paidById, setPaidById] = useState(members[0]?.id || 'user-1');
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(members.map((m) => m.id));
+  const [paidById, setPaidById] = useState(acceptedMembers[0]?.id || members[0]?.id || 'user-1');
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(acceptedMembers.map((m) => m.id));
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI'>('UPI');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -86,13 +94,17 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const payer = members.find((m) => m.id === paidById);
+      const payer = acceptedMembers.find((m) => m.id === paidById) || acceptedMembers[0];
+      if (!payer) {
+        Alert.alert('Action Required', 'At least one traveler must have accepted the invitation to record expenses.');
+        return;
+      }
       await onSubmit({
         title: title.trim(),
         amount: numAmount,
         category,
-        paidById,
-        paidByName: payer?.name || 'Member',
+        paidById: payer.id,
+        paidByName: payer.name || 'Member',
         splitModel,
         paymentMethod,
         paymentReference: paymentMethod === 'UPI' ? 'UPI-' + Date.now().toString().substring(7) : undefined,
@@ -166,10 +178,10 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               ))}
             </ScrollView>
 
-            {/* Paid By Member Picker */}
+            {/* Paid By Member Picker (Confirmed Members Only) */}
             <Text style={styles.inputLabel}>Paid By</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-              {members.map((m) => (
+              {acceptedMembers.map((m) => (
                 <TouchableOpacity
                   key={m.id}
                   style={[styles.payerChip, paidById === m.id && styles.payerChipActive]}
@@ -208,8 +220,11 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
             {/* Participants Checklist */}
             {splitModel !== 'ORGANIZER_PAID' && (
               <View>
-                <Text style={styles.inputLabel}>Split Among ({activeCount} travelers)</Text>
-                {members.map((m) => {
+                <View style={styles.splitHeaderRow}>
+                  <Text style={styles.inputLabel}>Split Among ({activeCount} confirmed travelers)</Text>
+                </View>
+
+                {acceptedMembers.map((m) => {
                   const isChecked = selectedMemberIds.includes(m.id);
                   return (
                     <TouchableOpacity
@@ -221,15 +236,47 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                       <View style={[styles.checkbox, isChecked && styles.checkboxActive]}>
                         {isChecked && <Check size={13} color="#ffffff" strokeWidth={3} />}
                       </View>
-                      <Text style={styles.memberCheckName}>
-                        {m.name} {m.isUser ? '(You)' : ''}
-                      </Text>
+                      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.memberCheckName}>
+                          {m.name} {m.isUser ? '(You)' : ''}
+                        </Text>
+                        <View style={styles.confirmedPill}>
+                          <Text style={styles.confirmedPillText}>Accepted</Text>
+                        </View>
+                      </View>
                       <Text style={styles.memberShareEst}>
                         ₹{splitPerPerson.toLocaleString()}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
+
+                {/* Unstop-Style Pending Travelers Exclusion Notice */}
+                {pendingMembers.length > 0 && (
+                  <View style={styles.pendingSectionBox}>
+                    <View style={styles.pendingSectionHeader}>
+                      <Clock size={13} color="#b45309" />
+                      <Text style={styles.pendingSectionTitle}>
+                        Awaiting Acceptance ({pendingMembers.length})
+                      </Text>
+                    </View>
+                    <Text style={styles.pendingSectionHint}>
+                      Per Unstop team rules, travelers must accept their trip invitation before expenses can be split with them.
+                    </Text>
+
+                    {pendingMembers.map((m) => (
+                      <View key={m.id} style={styles.pendingMemberRow}>
+                        <View style={[styles.avatarMiniMuted, { backgroundColor: m.avatarBg || '#94a3b8' }]}>
+                          <Text style={styles.avatarMiniText}>{m.name.charAt(0)}</Text>
+                        </View>
+                        <Text style={styles.pendingMemberName}>{m.name}</Text>
+                        <View style={styles.pendingBadge}>
+                          <Text style={styles.pendingBadgeText}>Pending Invite • 0 Debt</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
 
@@ -506,5 +553,81 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '800',
+  },
+  splitHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  confirmedPill: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 999,
+  },
+  confirmedPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  pendingSectionBox: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#fffbeb',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: '#fde68a',
+  },
+  pendingSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  pendingSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  pendingSectionHint: {
+    fontSize: 11,
+    color: '#78350f',
+    lineHeight: 15,
+    marginBottom: 10,
+  },
+  pendingMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    gap: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#fef3c7',
+  },
+  avatarMiniMuted: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.8,
+  },
+  pendingMemberName: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#78350f',
+  },
+  pendingBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  pendingBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#b45309',
   },
 });

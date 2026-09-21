@@ -13,6 +13,17 @@ import { syncQueueRepo } from '../database/repositories/syncQueueRepo';
 import { ledgerEngine } from '../sync/ledgerEngine';
 import { syncEngine } from '../sync/syncEngine';
 
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
+    return (crypto as any).randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 interface TripContextType {
   trips: Trip[];
   selectedTrip: Trip | null;
@@ -59,13 +70,23 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Load trips from SQLite database
+  // Load trips from SQLite database & strictly deduplicate
   const loadTrips = useCallback(() => {
     try {
       const allTrips = tripRepo.getAllTrips();
       // Populate details for each
       const populated = allTrips.map((t) => tripRepo.getTripById(t.id) || t);
-      setTrips(populated);
+      
+      // Strict deduplication by unique trip id to prevent redundant trips in any section
+      const seen = new Set<string>();
+      const uniqueTrips: Trip[] = [];
+      for (const t of populated) {
+        if (t && t.id && !seen.has(t.id)) {
+          seen.add(t.id);
+          uniqueTrips.push(t);
+        }
+      }
+      setTrips(uniqueTrips);
     } catch (e) {
       console.warn('Error loading trips from SQLite:', e);
     } finally {
@@ -299,7 +320,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createTrip = async (
     tripData: Partial<Trip> & { travelers?: Array<{ name: string; email: string; role?: string }> }
   ): Promise<string> => {
-    const tripId = 'grp_' + Date.now();
+    const tripId = generateUUID();
     const newTrip: Trip = {
       id: tripId,
       name: tripData.name || 'New Trip',

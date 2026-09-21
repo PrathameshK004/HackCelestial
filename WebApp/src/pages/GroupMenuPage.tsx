@@ -116,14 +116,18 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
     scannerRef.current?.destroy();
   }, []);
 
-  // Initialize participants in Add Expense form once members load
+  // Initialize participants in Add Expense form once members load (confirmed members only)
   useEffect(() => {
     if (settlementData?.members && settlementData.members.length > 0) {
-      const allIds = settlementData.members.map((m) => String(m.id));
+      const acceptedIds = settlementData.members
+        .filter((m: any) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer')
+        .map((m: any) => String(m.id));
       setExpenseForm((prev) => ({
         ...prev,
-        participants: prev.participants.length > 0 ? prev.participants : allIds,
-        paidByMemberId: prev.paidByMemberId || allIds[0]
+        participants: prev.participants.length > 0
+          ? prev.participants.filter((p) => acceptedIds.includes(p))
+          : acceptedIds,
+        paidByMemberId: prev.paidByMemberId && acceptedIds.includes(prev.paidByMemberId) ? prev.paidByMemberId : (acceptedIds[0] || '')
       }));
     }
   }, [settlementData]);
@@ -189,13 +193,15 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
     });
   };
 
-  // Select all / none
+  // Select all / none (confirmed members only)
   const toggleAllParticipants = () => {
     if (!settlementData) return;
-    const allIds = settlementData.members.map((m) => String(m.id));
+    const acceptedIds = settlementData.members
+      .filter((m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer')
+      .map((m) => String(m.id));
     setExpenseForm((prev) => ({
       ...prev,
-      participants: prev.participants.length === allIds.length ? [] : allIds
+      participants: prev.participants.length === acceptedIds.length ? [] : acceptedIds
     }));
   };
 
@@ -1222,9 +1228,18 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                             <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'var(--border-light)', color: 'var(--text-secondary)' }}>
                               {m.role || 'Traveler'}
                             </span>
+                            {((m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer') ? (
+                              <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0' }}>
+                                ✓ Accepted
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>
+                                ⏳ Pending Invite
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            {m.email}
+                            {m.email} • {((m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer') ? 'Active in Ledger' : 'No Debt Until Accepted'}
                           </div>
                         </div>
                       </div>
@@ -1367,11 +1382,13 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                         onChange={(e) => setExpenseForm({ ...expenseForm, paidByMemberId: e.target.value })}
                         style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.82rem', padding: '9px 12px' }}
                       >
-                        {membersList.map((m) => (
-                          <option key={String(m.id)} value={String(m.id)}>
-                            {m.name} {m.role === 'Organizer' ? '(Organizer)' : ''}
-                          </option>
-                        ))}
+                        {membersList
+                          .filter((m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer')
+                          .map((m) => (
+                            <option key={String(m.id)} value={String(m.id)}>
+                              {m.name} {m.role === 'Organizer' ? '(Organizer)' : ''}
+                            </option>
+                          ))}
                       </select>
                     </div>
 
@@ -1394,37 +1411,50 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                     </div>
                   </div>
 
-                  {/* Participants Multi-Select */}
+                  {/* Participants Multi-Select (Confirmed Only) */}
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        Split Among ({expenseForm.participants.length} selected)
-                      </label>
-                      <button
-                        type="button"
-                        onClick={toggleAllParticipants}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--accent-olive)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        {expenseForm.participants.length === membersList.length ? 'Deselect All' : 'Select All'}
-                      </button>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
-                      {membersList.map((m) => {
-                        const isChecked = expenseForm.participants.includes(String(m.id));
-                        return (
-                          <button
-                            key={String(m.id)}
-                            type="button"
-                            className={`category-pill ${isChecked ? 'active' : ''}`}
-                            onClick={() => toggleParticipant(String(m.id))}
-                            style={{ padding: '6px 10px', fontSize: '0.72rem', justifyContent: 'center' }}
-                          >
-                            <Check size={11} style={{ opacity: isChecked ? 1 : 0.2 }} />
-                            <span>{m.name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {(() => {
+                      const confirmedList = membersList.filter((m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer');
+                      const pendingList = membersList.filter((m) => m.status === 'PENDING' && m.role !== 'Organizer');
+                      return (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                              Split Among ({expenseForm.participants.length} confirmed travelers)
+                            </label>
+                            <button
+                              type="button"
+                              onClick={toggleAllParticipants}
+                              style={{ background: 'transparent', border: 'none', color: 'var(--accent-olive)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              {expenseForm.participants.length === confirmedList.length ? 'Deselect All' : 'Select All'}
+                            </button>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
+                            {confirmedList.map((m) => {
+                              const isChecked = expenseForm.participants.includes(String(m.id));
+                              return (
+                                <button
+                                  key={String(m.id)}
+                                  type="button"
+                                  className={`category-pill ${isChecked ? 'active' : ''}`}
+                                  onClick={() => toggleParticipant(String(m.id))}
+                                  style={{ padding: '6px 10px', fontSize: '0.72rem', justifyContent: 'center' }}
+                                >
+                                  <Check size={11} style={{ opacity: isChecked ? 1 : 0.2 }} />
+                                  <span>{m.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {pendingList.length > 0 && (
+                            <div style={{ marginTop: '8px', padding: '6px 10px', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fde68a', fontSize: '0.7rem', color: '#92400e' }}>
+                              ⏳ {pendingList.length} traveler{pendingList.length > 1 ? 's' : ''} awaiting invitation acceptance (excluded from splits until confirmed).
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Payment Channel */}

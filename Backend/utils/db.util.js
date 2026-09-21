@@ -220,13 +220,32 @@ const initializeDatabase = async () => {
         )
     `);
 
-    // Indexes for high performance ledger queries
+    // 10. User Push Notification Tokens (Firebase Cloud Messaging)
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_push_tokens (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token TEXT NOT NULL,
+            device_type VARCHAR(50) DEFAULT 'mobile',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT unique_user_push_token UNIQUE (user_id, token)
+        )
+    `);
+
+    // Ensure push token column exists in users table as well
+    await pool.query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;
+    `);
+
+    // Indexes for high performance ledger queries and push tokens
     await pool.query(`
         CREATE INDEX IF NOT EXISTS idx_expenses_group_id ON expenses(group_id);
         CREATE INDEX IF NOT EXISTS idx_expense_splits_expense_id ON expense_splits(expense_id);
         CREATE INDEX IF NOT EXISTS idx_expense_splits_member_id ON expense_splits(member_id);
         CREATE INDEX IF NOT EXISTS idx_settlements_group_id ON settlements(group_id);
         CREATE INDEX IF NOT EXISTS idx_ledger_audit_group_id ON ledger_audit_log(group_id);
+        CREATE INDEX IF NOT EXISTS idx_user_push_tokens_user_id ON user_push_tokens(user_id);
     `);
 };
 

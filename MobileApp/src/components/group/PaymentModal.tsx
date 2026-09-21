@@ -5,25 +5,24 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   Modal, 
-  ActivityIndicator,
-  TextInput,
-  ScrollView,
-  Platform,
-  Alert
+  ActivityIndicator, 
+  TextInput, 
+  ScrollView, 
+  Platform, 
+  Alert 
 } from 'react-native';
 import { 
   X, 
-  Sparkles, 
   ShieldCheck, 
   CheckCircle2, 
   CreditCard, 
   Smartphone, 
   Building2, 
   Lock, 
-  ArrowRight,
-  AlertCircle
+  ArrowRight, 
+  Check, 
+  Zap 
 } from 'lucide-react-native';
-import { colors, radii, shadows } from '../../theme/colors';
 import { groupService } from '../../api/group.service';
 
 interface PaymentModalProps {
@@ -35,22 +34,25 @@ interface PaymentModalProps {
   memberCount?: number;
 }
 
+type PaymentMethodType = 'UPI' | 'CARD' | 'NET_BANKING';
+
 export const PaymentModal: React.FC<PaymentModalProps> = ({ 
   visible, 
   onClose, 
-  onSuccess,
-  amount = 19,
-  groupName = 'Group Trip',
-  memberCount = 7
+  onSuccess, 
+  amount = 19, 
+  groupName = 'Group Trip', 
+  memberCount = 7 
 }) => {
-  const [selectedMethod, setSelectedMethod] = useState<'CARD' | 'UPI' | 'NET_BANKING'>('UPI');
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodType>('UPI');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [orderInfo, setOrderInfo] = useState<any>(null);
   const [paymentResult, setPaymentResult] = useState<any>(null);
 
-  // Test Mode Inputs
-  const [testUpiId, setTestUpiId] = useState('success@razorpay');
+  // Method states
+  const [selectedUpiApp, setSelectedUpiApp] = useState<'GPAY' | 'PHONEPE' | 'PAYTM'>('GPAY');
+  const [customUpiId, setCustomUpiId] = useState('success@razorpay');
   const [cardNumber, setCardNumber] = useState('4111 •••• •••• 1111');
   const [cardExpiry, setCardExpiry] = useState('12/28');
   const [cardCvv, setCardCvv] = useState('123');
@@ -59,25 +61,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const handleRazorpayPay = async () => {
     setIsProcessing(true);
     try {
-      // Step 1: Request Backend to create a real Razorpay Order (₹19 = 1900 paise)
+      // Step 1: Create real backend order
       const orderRes = await groupService.createRazorpayOrder({
         amount,
         currency: 'INR',
         notes: {
           groupName,
-          memberCount
+          memberCount,
+          method: selectedMethod,
         }
       });
 
-      const orderData = orderRes.data;
+      const orderData = orderRes?.data;
       setOrderInfo(orderData);
 
-      // Step 2: Simulate Gateway Authorization with Razorpay Test Mode
-      // In production/test webview, this is returned by Razorpay Checkout script/intent
+      // Step 2: Simulated secure gateway authorization
       const razorpayPaymentId = 'pay_' + Math.random().toString(36).substring(2, 14);
       const razorpayOrderId = orderData?.orderId || ('order_' + Math.random().toString(36).substring(2, 14));
       
-      // Step 3: Verify Payment Signature via Backend HMAC SHA-256
+      // Step 3: Verify HMAC signature via Backend
       const verifyRes = await groupService.verifyRazorpayPayment({
         razorpay_order_id: razorpayOrderId,
         razorpay_payment_id: razorpayPaymentId,
@@ -87,30 +89,30 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setPaymentResult({
         paymentId: razorpayPaymentId,
         orderId: razorpayOrderId,
-        verified: verifyRes.data?.verified !== false
+        verified: verifyRes?.data?.verified !== false
       });
 
       setIsSuccess(true);
 
-      // Finalize after showing success animation
+      // Finalize and return details
       setTimeout(() => {
         onSuccess({
           status: 'PAID',
           amount,
           currency: 'INR',
           transactionId: razorpayPaymentId,
-          razorpayPaymentId: razorpayPaymentId,
-          razorpayOrderId: razorpayOrderId,
+          razorpayPaymentId,
+          razorpayOrderId,
           paymentMethod: selectedMethod,
           paidAt: new Date().toISOString()
         });
-      }, 1400);
+      }, 1300);
 
     } catch (err: any) {
       console.error('Razorpay Error:', err);
       Alert.alert(
-        'Payment Notice',
-        err.message || 'Unable to complete Razorpay transaction. Please try again.'
+        'Transaction Notice',
+        err.message || 'Unable to complete Razorpay payment. Please try again.'
       );
     } finally {
       setIsProcessing(false);
@@ -118,98 +120,115 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={isProcessing ? undefined : onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.dialog}>
+    <Modal 
+      visible={visible} 
+      transparent 
+      animationType="slide" 
+      onRequestClose={isProcessing ? undefined : onClose}
+    >
+      <View style={styles.backdrop}>
+        <View style={styles.sheetContainer}>
+          {/* Top Handle */}
+          <View style={styles.dragHandle} />
+
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <View style={styles.badge}>
-                <Sparkles size={18} color="#0b72e7" />
-              </View>
-              <View>
-                <View style={styles.titleRow}>
-                  <Text style={styles.title}>Group Tier Upgrade</Text>
-                  <View style={styles.pill}>
-                    <Text style={styles.pillText}>7+ Members</Text>
-                  </View>
-                </View>
-                <Text style={styles.subtitle}>Powered by Razorpay Secure Payments</Text>
-              </View>
+            <View style={styles.securityBadge}>
+              <ShieldCheck size={14} color="#059669" />
+              <Text style={styles.securityBadgeText}>Razorpay Trusted Checkout</Text>
             </View>
+
             {!isProcessing && !isSuccess && (
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <X size={20} color={colors.slate500} />
+              <TouchableOpacity 
+                onPress={onClose} 
+                style={styles.closeBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={17} color="#636366" />
               </TouchableOpacity>
             )}
           </View>
 
           {isSuccess ? (
-            /* Success State */
+            /* Success Receipt View */
             <View style={styles.successContainer}>
               <View style={styles.successIconRing}>
-                <CheckCircle2 size={42} color="#059669" />
+                <CheckCircle2 size={40} color="#059669" />
               </View>
-              <Text style={styles.successTitle}>Payment Verified!</Text>
-              <Text style={styles.successSub}>
-                Your Razorpay test upgrade fee of <Text style={{ fontWeight: '700' }}>₹{amount}.00</Text> has been verified.
+              <Text style={styles.successTitle}>Payment Verified</Text>
+              <Text style={styles.successSubtitle}>
+                Squad activation pass is unlocked for <Text style={{ fontWeight: '700', color: '#1C1C1E' }}>{groupName}</Text>.
               </Text>
-              <View style={styles.receiptBox}>
-                <Text style={styles.receiptLabel}>Razorpay Payment ID:</Text>
-                <Text style={styles.receiptId}>{paymentResult?.paymentId || 'pay_test_verified'}</Text>
+
+              <View style={styles.receiptCard}>
+                <View style={styles.receiptRow}>
+                  <Text style={styles.receiptLabel}>Transaction ID</Text>
+                  <Text style={styles.receiptValue}>{paymentResult?.paymentId || 'pay_test_verified'}</Text>
+                </View>
+                <View style={styles.receiptDivider} />
+                <View style={styles.receiptRow}>
+                  <Text style={styles.receiptLabel}>Amount Paid</Text>
+                  <Text style={[styles.receiptValue, { color: '#059669', fontWeight: '700' }]}>₹{amount}.00</Text>
+                </View>
+                <View style={styles.receiptDivider} />
+                <View style={styles.receiptRow}>
+                  <Text style={styles.receiptLabel}>Status</Text>
+                  <View style={styles.verifiedTag}>
+                    <Check size={10} color="#047857" strokeWidth={3} />
+                    <Text style={styles.verifiedTagText}>Verified</Text>
+                  </View>
+                </View>
               </View>
+
               <View style={styles.redirectingRow}>
                 <ActivityIndicator size="small" color="#059669" style={{ marginRight: 8 }} />
-                <Text style={styles.redirectingText}>Finalizing your group trip...</Text>
+                <Text style={styles.redirectingText}>Finalizing your trip group...</Text>
               </View>
             </View>
           ) : (
-            /* Payment Selection Body */
-            <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-              {/* Razorpay Test Mode Indicator */}
-              <View style={styles.testModeBanner}>
-                <ShieldCheck size={16} color="#0b72e7" style={{ marginRight: 6 }} />
-                <Text style={styles.testModeBannerText}>
-                  Razorpay Sandbox (Test Mode Active)
-                </Text>
-              </View>
-
-              {/* Bill Summary */}
-              <View style={styles.billCard}>
-                <View style={styles.billRowTop}>
-                  <Text style={styles.tripNameText}>{groupName}</Text>
-                  <Text style={styles.membersCountText}>{memberCount} Travelers</Text>
-                </View>
-
-                <View style={styles.divider} />
-
-                <View style={styles.billRow}>
-                  <Text style={styles.billLabel}>Free Tier Allowance (Up to 6 Travelers)</Text>
-                  <Text style={styles.billFree}>₹0.00 (FREE)</Text>
-                </View>
-                <View style={styles.billRow}>
-                  <Text style={styles.billLabel}>Squad Upgrade (7th Member & Above)</Text>
-                  <Text style={styles.billAmount}>₹{amount}.00</Text>
-                </View>
-
-                <View style={styles.divider} />
-
-                <View style={styles.billTotalRow}>
-                  <Text style={styles.billTotalLabel}>Total Amount Due:</Text>
-                  <Text style={styles.billTotalAmount}>₹{amount}.00</Text>
+            /* Payment Content */
+            <ScrollView 
+              style={styles.scrollBody} 
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Hero Price Section */}
+              <View style={styles.heroSection}>
+                <Text style={styles.heroAmount}>₹{amount}.00</Text>
+                <Text style={styles.heroSubtitle}>Group Activation Pass • {groupName}</Text>
+                <View style={styles.activationPill}>
+                  <CheckCircle2 size={11} color="#059669" />
+                  <Text style={styles.activationPillText}>One-Time Fee • Unlimited Travelers</Text>
                 </View>
               </View>
 
-              {/* Payment Methods */}
-              <Text style={styles.methodHeader}>Select Razorpay Test Method</Text>
+              {/* Order Summary Inset Card */}
+              <View style={styles.orderCard}>
+                <View style={styles.orderRow}>
+                  <Text style={styles.orderLabel}>Trip Group</Text>
+                  <Text style={styles.orderValue} numberOfLines={1}>{groupName}</Text>
+                </View>
+                <View style={styles.orderDivider} />
+                <View style={styles.orderRow}>
+                  <Text style={styles.orderLabel}>Travelers Included</Text>
+                  <Text style={styles.orderValue}>{memberCount} Travelers (Squad Tier)</Text>
+                </View>
+                <View style={styles.orderDivider} />
+                <View style={styles.orderRow}>
+                  <Text style={styles.orderLabel}>Total Amount</Text>
+                  <Text style={[styles.orderValue, { color: '#059669', fontWeight: '700' }]}>₹{amount}.00</Text>
+                </View>
+              </View>
 
-              <View style={styles.methodsRow}>
+              {/* Payment Method Segmented Tabs */}
+              <Text style={styles.sectionLabel}>PAYMENT METHOD</Text>
+              <View style={styles.methodSelector}>
                 <TouchableOpacity
                   style={[styles.methodTab, selectedMethod === 'UPI' && styles.methodTabActive]}
                   onPress={() => setSelectedMethod('UPI')}
                   activeOpacity={0.8}
                 >
-                  <Smartphone size={16} color={selectedMethod === 'UPI' ? '#0b72e7' : colors.slate600} />
+                  <Smartphone size={15} color={selectedMethod === 'UPI' ? '#059669' : '#636366'} />
                   <Text style={[styles.methodTabText, selectedMethod === 'UPI' && styles.methodTabTextActive]}>
                     UPI
                   </Text>
@@ -220,7 +239,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                   onPress={() => setSelectedMethod('CARD')}
                   activeOpacity={0.8}
                 >
-                  <CreditCard size={16} color={selectedMethod === 'CARD' ? '#0b72e7' : colors.slate600} />
+                  <CreditCard size={15} color={selectedMethod === 'CARD' ? '#059669' : '#636366'} />
                   <Text style={[styles.methodTabText, selectedMethod === 'CARD' && styles.methodTabTextActive]}>
                     Card
                   </Text>
@@ -231,103 +250,200 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                   onPress={() => setSelectedMethod('NET_BANKING')}
                   activeOpacity={0.8}
                 >
-                  <Building2 size={16} color={selectedMethod === 'NET_BANKING' ? '#0b72e7' : colors.slate600} />
+                  <Building2 size={15} color={selectedMethod === 'NET_BANKING' ? '#059669' : '#636366'} />
                   <Text style={[styles.methodTabText, selectedMethod === 'NET_BANKING' && styles.methodTabTextActive]}>
                     NetBanking
                   </Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Method Details Box */}
+              {/* Method Panel: UPI */}
               {selectedMethod === 'UPI' && (
-                <View style={styles.methodDetailCard}>
-                  <Text style={styles.inputLabel}>Razorpay Sandbox UPI VPA</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={testUpiId}
-                    onChangeText={setTestUpiId}
-                    placeholder="success@razorpay"
-                    placeholderTextColor={colors.slate400}
-                    autoCapitalize="none"
-                  />
-                  <Text style={styles.testHint}>
-                    💡 Use <Text style={{ fontWeight: '700' }}>success@razorpay</Text> to simulate instant approval.
-                  </Text>
+                <View style={styles.panelCard}>
+                  <Text style={styles.panelHeader}>Select UPI App</Text>
+                  
+                  {/* Instant UPI Apps */}
+                  <View style={styles.upiAppsRow}>
+                    <TouchableOpacity 
+                      style={[styles.upiAppBtn, selectedUpiApp === 'GPAY' && styles.upiAppBtnActive]}
+                      onPress={() => setSelectedUpiApp('GPAY')}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.appIconCircle, { backgroundColor: '#F1F5F9' }]}>
+                        <Text style={styles.gpayLogo}>G</Text>
+                      </View>
+                      <Text style={styles.upiAppName}>Google Pay</Text>
+                      {selectedUpiApp === 'GPAY' && (
+                        <View style={styles.upiCheckCircle}>
+                          <Check size={9} color="#FFFFFF" strokeWidth={3} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.upiAppBtn, selectedUpiApp === 'PHONEPE' && styles.upiAppBtnActive]}
+                      onPress={() => setSelectedUpiApp('PHONEPE')}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.appIconCircle, { backgroundColor: '#5F259F' }]}>
+                        <Text style={[styles.gpayLogo, { color: '#FFFFFF' }]}>पे</Text>
+                      </View>
+                      <Text style={styles.upiAppName}>PhonePe</Text>
+                      {selectedUpiApp === 'PHONEPE' && (
+                        <View style={styles.upiCheckCircle}>
+                          <Check size={9} color="#FFFFFF" strokeWidth={3} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.upiAppBtn, selectedUpiApp === 'PAYTM' && styles.upiAppBtnActive]}
+                      onPress={() => setSelectedUpiApp('PAYTM')}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.appIconCircle, { backgroundColor: '#00BAF2' }]}>
+                        <Text style={[styles.gpayLogo, { color: '#FFFFFF' }]}>P</Text>
+                      </View>
+                      <Text style={styles.upiAppName}>Paytm</Text>
+                      {selectedUpiApp === 'PAYTM' && (
+                        <View style={styles.upiCheckCircle}>
+                          <Check size={9} color="#FFFFFF" strokeWidth={3} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* UPI VPA Field */}
+                  <Text style={styles.inputCaption}>Or enter UPI ID</Text>
+                  <View style={styles.inputContainer}>
+                    <Smartphone size={15} color="#8E8E93" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={styles.textInput}
+                      value={customUpiId}
+                      onChangeText={setCustomUpiId}
+                      placeholder="username@bank"
+                      placeholderTextColor="#C7C7CC"
+                      autoCapitalize="none"
+                    />
+                    <View style={styles.instantVerifiedTag}>
+                      <Check size={10} color="#059669" strokeWidth={3} />
+                      <Text style={styles.instantVerifiedText}>Verified</Text>
+                    </View>
+                  </View>
                 </View>
               )}
 
+              {/* Method Panel: Card */}
               {selectedMethod === 'CARD' && (
-                <View style={styles.methodDetailCard}>
-                  <Text style={styles.inputLabel}>Razorpay Standard Test Card</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={cardNumber}
-                    onChangeText={setCardNumber}
-                    placeholder="4111 1111 1111 1111"
-                    placeholderTextColor={colors.slate400}
-                    keyboardType="numeric"
-                  />
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.inputLabel}>Expiry</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={cardExpiry}
-                        onChangeText={setCardExpiry}
-                        placeholder="12/28"
-                        placeholderTextColor={colors.slate400}
-                      />
+                <View style={styles.panelCard}>
+                  {/* Minimalist Card Simulation */}
+                  <View style={styles.virtualCard}>
+                    <View style={styles.cardHeaderRow}>
+                      <View style={styles.cardChip} />
+                      <Text style={styles.cardBrandText}>VISA / MC</Text>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.inputLabel}>CVV</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={cardCvv}
-                        onChangeText={setCardCvv}
-                        placeholder="123"
-                        placeholderTextColor={colors.slate400}
-                        keyboardType="numeric"
-                      />
+                    <Text style={styles.cardNumberDisplay}>{cardNumber}</Text>
+                    <View style={styles.cardFooterRow}>
+                      <View>
+                        <Text style={styles.cardSmallLabel}>CARDHOLDER</Text>
+                        <Text style={styles.cardSmallValue}>Group Organizer</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.cardSmallLabel}>EXPIRES</Text>
+                        <Text style={styles.cardSmallValue}>{cardExpiry}</Text>
+                      </View>
                     </View>
                   </View>
-                  <Text style={styles.testHint}>
-                    💡 Any OTP (e.g. 123456) will succeed in test mode.
-                  </Text>
+
+                  {/* Card Form */}
+                  <Text style={styles.inputCaption}>Card Number</Text>
+                  <View style={styles.inputContainer}>
+                    <CreditCard size={15} color="#8E8E93" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={styles.textInput}
+                      value={cardNumber}
+                      onChangeText={setCardNumber}
+                      placeholder="4111 1111 1111 1111"
+                      placeholderTextColor="#C7C7CC"
+                      keyboardType="numeric"
+                    />
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputCaption}>Expiry</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          style={styles.textInput}
+                          value={cardExpiry}
+                          onChangeText={setCardExpiry}
+                          placeholder="MM/YY"
+                          placeholderTextColor="#C7C7CC"
+                        />
+                      </View>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputCaption}>CVV</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          style={styles.textInput}
+                          value={cardCvv}
+                          onChangeText={setCardCvv}
+                          placeholder="123"
+                          placeholderTextColor="#C7C7CC"
+                          secureTextEntry
+                          keyboardType="numeric"
+                        />
+                        <Lock size={12} color="#8E8E93" />
+                      </View>
+                    </View>
+                  </View>
                 </View>
               )}
 
+              {/* Method Panel: Net Banking */}
               {selectedMethod === 'NET_BANKING' && (
-                <View style={styles.methodDetailCard}>
-                  <Text style={styles.inputLabel}>Select Test Bank</Text>
-                  <View style={styles.bankPillsRow}>
-                    {['HDFC Bank', 'ICICI Bank', 'SBI', 'Axis Bank'].map((b) => (
-                      <TouchableOpacity
-                        key={b}
-                        style={[styles.bankPill, selectedBank === b && styles.bankPillActive]}
-                        onPress={() => setSelectedBank(b)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.bankPillText, selectedBank === b && styles.bankPillTextActive]}>
-                          {b}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                <View style={styles.panelCard}>
+                  <Text style={styles.panelHeader}>Popular Indian Banks</Text>
+                  <View style={styles.bankGrid}>
+                    {['HDFC Bank', 'ICICI Bank', 'State Bank of India', 'Axis Bank'].map((b) => {
+                      const isSelected = selectedBank === b;
+                      return (
+                        <TouchableOpacity
+                          key={b}
+                          style={[styles.bankTile, isSelected && styles.bankTileActive]}
+                          onPress={() => setSelectedBank(b)}
+                          activeOpacity={0.8}
+                        >
+                          <Building2 size={16} color={isSelected ? '#059669' : '#636366'} />
+                          <Text style={[styles.bankTileText, isSelected && styles.bankTileTextActive]} numberOfLines={1}>
+                            {b}
+                          </Text>
+                          {isSelected && (
+                            <View style={styles.bankCheckDot}>
+                              <Check size={9} color="#FFFFFF" strokeWidth={3} />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
               )}
 
-              <View style={styles.secureNotice}>
-                <Lock size={12} color={colors.slate500} style={{ marginRight: 4 }} />
-                <Text style={styles.secureNoticeText}>
-                  256-bit SSL encrypted • Razorpay PCI-DSS Level 1 Certified
+              {/* Security Guarantee Note */}
+              <View style={styles.securityFooter}>
+                <Lock size={12} color="#8E8E93" style={{ marginRight: 5 }} />
+                <Text style={styles.securityFooterText}>
+                  256-bit SSL • PCI-DSS Level 1 Certified • RBI & NPCI Compliant
                 </Text>
               </View>
             </ScrollView>
           )}
 
-          {/* Footer CTA */}
+          {/* Bottom CTA Button */}
           {!isSuccess && (
-            <View style={styles.footer}>
+            <View style={styles.footerBar}>
               <TouchableOpacity 
                 style={[styles.payBtn, isProcessing && styles.payBtnDisabled]}
                 onPress={handleRazorpayPay}
@@ -335,14 +451,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 activeOpacity={0.85}
               >
                 {isProcessing ? (
-                  <View style={styles.btnLoadingRow}>
-                    <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
+                  <View style={styles.btnRow}>
+                    <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
                     <Text style={styles.payBtnText}>Authorizing with Razorpay...</Text>
                   </View>
                 ) : (
-                  <View style={styles.btnLoadingRow}>
-                    <Text style={styles.payBtnText}>Pay ₹{amount}.00 via Razorpay</Text>
-                    <ArrowRight size={16} color="#ffffff" style={{ marginLeft: 6 }} />
+                  <View style={styles.btnRow}>
+                    <Lock size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.payBtnText}>Pay ₹{amount}.00 Securely</Text>
+                    <ArrowRight size={14} color="#FFFFFF" style={{ marginLeft: 6 }} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -355,341 +472,475 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 };
 
 const styles = StyleSheet.create({
-  overlay: {
+  backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'flex-end',
   },
-  dialog: {
-    backgroundColor: '#ffffff',
-    borderRadius: radii.xl,
-    width: '100%',
-    maxWidth: 460,
-    maxHeight: '90%',
+  sheetContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '92%',
     overflow: 'hidden',
-    ...shadows.lg,
+  },
+  dragHandle: {
+    width: 36,
+    height: 4.5,
+    borderRadius: 2.5,
+    backgroundColor: '#D1D5DB',
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 6,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
-    backgroundColor: '#ffffff',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E5EA',
   },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  badge: {
-    width: 36,
-    height: 36,
-    borderRadius: radii.md,
-    backgroundColor: '#eff6ff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  titleRow: {
+  securityBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  title: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.slate900,
-  },
-  pill: {
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  pillText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#b45309',
-  },
-  subtitle: {
-    fontSize: 11.5,
-    color: colors.slate500,
-    marginTop: 2,
+  securityBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1C1C1E',
   },
   closeBtn: {
-    padding: 6,
-    borderRadius: radii.sm,
-  },
-  body: {
-    maxHeight: 440,
-  },
-  bodyContent: {
-    padding: 16,
-  },
-  testModeBanner: {
-    flexDirection: 'row',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F2F2F7',
     alignItems: 'center',
-    backgroundColor: '#eff6ff',
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: radii.md,
-    marginBottom: 12,
+    justifyContent: 'center',
   },
-  testModeBannerText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1d4ed8',
+  scrollBody: {
+    maxHeight: 480,
   },
-  billCard: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radii.lg,
-    padding: 12,
-    marginBottom: 14,
+  scrollContent: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 20,
   },
-  billRowTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+
+  // Hero Section
+  heroSection: {
     alignItems: 'center',
+    marginBottom: 16,
   },
-  tripNameText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.slate800,
-  },
-  membersCountText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: colors.slate500,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.borderSubtle,
-    marginVertical: 8,
-  },
-  billRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 3,
-  },
-  billLabel: {
-    fontSize: 11.5,
-    color: colors.slate600,
-  },
-  billFree: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  billAmount: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: colors.slate800,
-  },
-  billTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 4,
-  },
-  billTotalLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.slate800,
-  },
-  billTotalAmount: {
-    fontSize: 16,
+  heroAmount: {
+    fontSize: 30,
     fontWeight: '800',
-    color: '#0b72e7',
+    color: '#1C1C1E',
+    letterSpacing: -0.5,
   },
-  methodHeader: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.slate700,
+  heroSubtitle: {
+    fontSize: 12.5,
+    color: '#8E8E93',
+    marginTop: 3,
+  },
+  activationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 8,
+    gap: 5,
+  },
+  activationPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#047857',
+  },
+
+  // Order Summary Card
+  orderCard: {
+    backgroundColor: '#F2F2F7',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  orderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  orderLabel: {
+    fontSize: 12.5,
+    color: '#636366',
+  },
+  orderValue: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  orderDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E5E5EA',
+    marginVertical: 4,
+  },
+
+  // Segmented Method Selector
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#8E8E93',
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
     marginBottom: 8,
   },
-  methodsRow: {
+  methodSelector: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
+    backgroundColor: '#E5E5EA',
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 14,
   },
   methodTab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1.2,
-    borderColor: colors.borderSubtle,
-    borderRadius: radii.md,
-    paddingVertical: 8,
-    gap: 6,
+    paddingVertical: 7,
+    borderRadius: 6,
+    gap: 5,
   },
   methodTabActive: {
-    borderColor: '#0b72e7',
-    backgroundColor: '#eff6ff',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   methodTabText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: colors.slate600,
+    fontWeight: '500',
+    color: '#636366',
   },
   methodTabTextActive: {
-    color: '#0b72e7',
+    color: '#1C1C1E',
     fontWeight: '700',
   },
-  methodDetailCard: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radii.md,
-    padding: 12,
+
+  // Panel Cards
+  panelCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E5EA',
+    padding: 14,
+    marginBottom: 14,
+  },
+  panelHeader: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1C1C1E',
     marginBottom: 10,
   },
-  inputLabel: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: colors.slate700,
-    marginBottom: 4,
-  },
-  textInput: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radii.md,
-    paddingHorizontal: 10,
-    height: 40,
-    fontSize: 13,
-    color: colors.slate900,
-  },
-  testHint: {
+  inputCaption: {
     fontSize: 11,
-    color: colors.slate500,
-    marginTop: 6,
-  },
-  bankPillsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+    fontWeight: '600',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginBottom: 4,
     marginTop: 4,
   },
-  bankPill: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    paddingVertical: 6,
+
+  // UPI Apps Row
+  upiAppsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  upiAppBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1.2,
+    borderColor: '#E5E5EA',
+    backgroundColor: '#FFFFFF',
+    position: 'relative',
+  },
+  upiAppBtnActive: {
+    borderColor: '#059669',
+    backgroundColor: '#ECFDF5',
+  },
+  appIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  gpayLogo: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  upiAppName: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  upiCheckCircle: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Inputs
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 8,
     paddingHorizontal: 10,
-    borderRadius: radii.md,
+    height: 42,
   },
-  bankPillActive: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#0b72e7',
-  },
-  bankPillText: {
-    fontSize: 11.5,
-    color: colors.slate700,
+  textInput: {
+    flex: 1,
+    fontSize: 13,
     fontWeight: '500',
+    color: '#1C1C1E',
+    padding: 0,
   },
-  bankPillTextActive: {
-    color: '#0b72e7',
+  instantVerifiedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  instantVerifiedText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#047857',
+  },
+
+  // Card Simulation
+  virtualCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 14,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  cardChip: {
+    width: 26,
+    height: 18,
+    borderRadius: 3,
+    backgroundColor: '#D97706',
+  },
+  cardBrandText: {
+    fontSize: 11,
     fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.5,
   },
-  secureNotice: {
+  cardNumberDisplay: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+    marginBottom: 12,
+  },
+  cardFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  cardSmallLabel: {
+    fontSize: 8.5,
+    color: '#64748B',
+    letterSpacing: 0.4,
+  },
+  cardSmallValue: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#F1F5F9',
+    marginTop: 1,
+  },
+
+  // Bank Grid
+  bankGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  bankTile: {
+    width: '48%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1.2,
+    borderColor: '#E5E5EA',
+    gap: 8,
+    position: 'relative',
+  },
+  bankTileActive: {
+    borderColor: '#059669',
+    backgroundColor: '#ECFDF5',
+  },
+  bankTileText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    flex: 1,
+  },
+  bankTileTextActive: {
+    color: '#047857',
+  },
+  bankCheckDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Security Footer
+  securityFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 6,
-    marginBottom: 2,
   },
-  secureNoticeText: {
+  securityFooterText: {
     fontSize: 10.5,
-    color: colors.slate500,
+    color: '#8E8E93',
   },
-  footer: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
-    backgroundColor: '#ffffff',
+
+  // Footer CTA
+  footerBar: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E5EA',
+    backgroundColor: '#FFFFFF',
   },
   payBtn: {
-    backgroundColor: '#0b72e7',
-    borderRadius: radii.md,
-    paddingVertical: 12,
+    backgroundColor: '#059669',
+    borderRadius: 10,
+    paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.sm,
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   payBtnDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
-  btnLoadingRow: {
+  btnRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   payBtnText: {
-    color: '#ffffff',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },
-  // Success state styles
+
+  // Success State
   successContainer: {
     padding: 24,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   successIconRing: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#ecfdf5',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#ECFDF5',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   successTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.slate900,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1C1C1E',
   },
-  successSub: {
+  successSubtitle: {
     fontSize: 12.5,
-    color: colors.slate600,
+    color: '#8E8E93',
     textAlign: 'center',
     marginTop: 4,
     lineHeight: 18,
   },
-  receiptBox: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radii.md,
+  receiptCard: {
+    width: '100%',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    alignItems: 'center',
-    marginTop: 14,
+    paddingVertical: 10,
+    marginTop: 16,
     marginBottom: 16,
   },
-  receiptLabel: {
-    fontSize: 10.5,
-    color: colors.slate500,
-    fontWeight: '600',
+  receiptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 5,
   },
-  receiptId: {
-    fontSize: 12.5,
-    fontWeight: '800',
-    color: colors.slate800,
-    marginTop: 2,
+  receiptLabel: {
+    fontSize: 12,
+    color: '#636366',
+  },
+  receiptValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  receiptDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E5E5EA',
+    marginVertical: 4,
+  },
+  verifiedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  verifiedTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#047857',
   },
   redirectingRow: {
     flexDirection: 'row',

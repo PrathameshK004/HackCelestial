@@ -9,6 +9,7 @@ const { generateOTP, hashOTP, verifyOTP, isOTPExpired, getOTPExpiry } = require(
 const { createToken, createRefreshToken, verifyRefreshToken } = require('../utils/jwt.util');
 const { verifyPassword } = require('../utils/verify.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
+const { saveUserPushToken, removeUserPushToken } = require('../utils/notification.util');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -30,7 +31,9 @@ module.exports = {
     refreshAccessToken,
     createTempUser,
     checkRegisteredUser,
-    googleLogin
+    googleLogin,
+    registerPushToken,
+    unregisterPushToken
 };
 
 /**
@@ -836,6 +839,56 @@ async function logoutUser(req, res) {
     res.clearCookie('jwt');
     res.clearCookie('refreshToken', { path: '/api/users' });
     return sendSuccess(res, "Successfully logged out");
+}
+
+/**
+ * Register / Update FCM push notification token for authenticated user
+ */
+async function registerPushToken(req, res) {
+    try {
+        const userId = req.userKey;
+        const { token, deviceType = 'mobile' } = req.body;
+
+        if (!userId) {
+            return sendError(res, "Authentication required", null, 401);
+        }
+        if (!token || !String(token).trim()) {
+            return sendError(res, "Push token is required", null, 400);
+        }
+
+        const success = await saveUserPushToken(userId, String(token).trim(), deviceType);
+        if (!success) {
+            return sendError(res, "Failed to save push token", null, 500);
+        }
+
+        return sendSuccess(res, "Push token registered successfully", { 
+            token: String(token).trim(), 
+            deviceType 
+        });
+    } catch (err) {
+        console.error("Register push token error:", err.message);
+        return sendError(res, "Failed to register push token", err, 500);
+    }
+}
+
+/**
+ * Unregister / Remove FCM push notification token
+ */
+async function unregisterPushToken(req, res) {
+    try {
+        const userId = req.userKey;
+        const { token } = req.body;
+
+        if (!userId) {
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        await removeUserPushToken(userId, token);
+        return sendSuccess(res, "Push token removed successfully");
+    } catch (err) {
+        console.error("Unregister push token error:", err.message);
+        return sendError(res, "Failed to unregister push token", err, 500);
+    }
 }
 
 

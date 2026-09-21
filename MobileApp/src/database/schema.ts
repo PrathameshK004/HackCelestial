@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS participants (
   avatar_bg TEXT DEFAULT '#059669',
   is_user INTEGER DEFAULT 0,
   balance REAL DEFAULT 0,
+  status TEXT DEFAULT 'ACCEPTED',
+  invite_code TEXT,
   sync_status TEXT DEFAULT 'SYNCED',
   FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
 );

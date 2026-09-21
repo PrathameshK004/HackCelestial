@@ -3,6 +3,8 @@ const { pool } = require('../utils/db.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const { sendEmail } = require('../utils/mail.util');
 const { getLiveAppUrl } = require('../utils/url.util');
+const { verifyGroupAccess } = require('../utils/groupAuth.util');
+const { sendGroupInviteNotification } = require('../utils/notification.util');
 
 module.exports = {
     createGroupInvite,
@@ -24,33 +26,66 @@ async function createGroupInvite(req, res) {
         if (!groupId) {
             return sendError(res, "Group ID is required", null, 400);
         }
+        if (!userId) {
+            return sendError(res, "Authentication required", null, 401);
+        }
 
-        // Fetch group details
-        const groupRes = await pool.query('SELECT * FROM groups WHERE id = $1', [groupId]);
-        if (groupRes.rows.length === 0) {
+        // Security check: Only members or organizer can create invite codes for this group
+        const access = await verifyGroupAccess(groupId, userId);
+        if (access.notFound) {
             return sendError(res, "Group not found", null, 404);
         }
-        const group = groupRes.rows[0];
-
-        // Fetch organizer / inviter name
-        let inviterName = 'A friend';
-        if (userId) {
-            const userRes = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
-            if (userRes.rows.length > 0) {
-                inviterName = userRes.rows[0].username;
-            }
+        if (!access.isAuthorized) {
+            return sendError(res, "Access denied. You are not a member of this trip.", null, 403);
         }
 
-        const inviteCode = 'TRIP-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+        const group = access.group;
+        const inviterName = access.member?.name || 'A group member';
 
-        await pool.query(`
-            INSERT INTO group_invitations (id, group_id, invite_code, invited_by, invited_email, role, status, expires_at, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, NOW())
-        `, [crypto.randomUUID(), groupId, inviteCode, userId || null, email ? email.trim().toLowerCase() : null, role, expiresAt]);
+        let inviteCode = 'TRIP-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+        let expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+        // Deduplication: If a direct invite already exists for this email and trip, reuse it
+        if (email) {
+            const trimmedEmail = email.trim().toLowerCase();
+            const existingInvite = await pool.query(`
+                SELECT invite_code as "inviteCode", expires_at as "expiresAt"
+                FROM group_invitations
+                WHERE group_id = $1 AND LOWER(invited_email) = $2 AND status = 'PENDING' AND expires_at > NOW()
+                ORDER BY created_at DESC LIMIT 1
+            `, [groupId, trimmedEmail]);
+
+            if (existingInvite.rows.length > 0) {
+                inviteCode = existingInvite.rows[0].inviteCode;
+                expiresAt = existingInvite.rows[0].expiresAt;
+            } else {
+                await pool.query(`
+                    INSERT INTO group_invitations (id, group_id, invite_code, invited_by, invited_email, role, status, expires_at, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, NOW())
+                `, [crypto.randomUUID(), groupId, inviteCode, userId || null, trimmedEmail, role, expiresAt]);
+            }
+        } else {
+            await pool.query(`
+                INSERT INTO group_invitations (id, group_id, invite_code, invited_by, invited_email, role, status, expires_at, created_at)
+                VALUES ($1, $2, $3, $4, null, $5, 'PENDING', $6, NOW())
+            `, [crypto.randomUUID(), groupId, inviteCode, userId || null, role, expiresAt]);
+        }
 
         const baseUrl = getLiveAppUrl(req);
         const inviteUrl = `${baseUrl}/join/${inviteCode}`;
+
+        // Send Push Notification if email corresponds to a registered user
+        if (email) {
+            sendGroupInviteNotification({
+                inviteeEmail: email.trim().toLowerCase(),
+                inviterName,
+                groupName: group.name,
+                groupId,
+                inviteCode
+            }).catch(pushErr => {
+                console.warn("Could not dispatch push notification for invite:", pushErr.message);
+            });
+        }
 
         // Send Email if requested
         if (sendDirectEmail && email) {
@@ -288,16 +323,29 @@ async function rejectInvite(req, res) {
 
         await client.query('BEGIN');
 
-        // Update invitation status
-        await client.query('UPDATE group_invitations SET status = $1 WHERE id = $2', ['REJECTED', invite.id]);
+        // Update invitation status: only mark this invite row as REJECTED if it was specific, or if general don't deactivate for other people
+        if (invite.invited_email && userEmail && invite.invited_email.toLowerCase() === userEmail) {
+            await client.query('UPDATE group_invitations SET status = $1 WHERE id = $2', ['REJECTED', invite.id]);
+        }
 
-        // Remove or mark REJECTED in group_members
+        // Also mark any invitations addressed to this user's email for this group as REJECTED
         if (userEmail) {
+            await client.query(`
+                UPDATE group_invitations SET status = 'REJECTED' 
+                WHERE group_id = $1 AND LOWER(invited_email) = LOWER($2)
+            `, [invite.group_id, userEmail]);
+        }
+
+        // Mark REJECTED in group_members so this group never shows as pending or joined
+        if (userEmail || userId) {
             await client.query(`
                 UPDATE group_members 
                 SET status = 'REJECTED' 
-                WHERE group_id = $1 AND (LOWER(email) = LOWER($2) OR user_id = $3)
-            `, [invite.group_id, userEmail, userId]);
+                WHERE group_id = $1 AND (
+                    (LOWER(email) = LOWER($2) AND $2 != '') OR 
+                    (user_id = $3 AND $3 IS NOT NULL)
+                )
+            `, [invite.group_id, userEmail, userId || null]);
         }
 
         await client.query('COMMIT');
@@ -319,6 +367,7 @@ async function rejectInvite(req, res) {
 
 /**
  * Get all pending invitations for the logged-in user
+ * Guaranteed strictly SINGLE invitation per trip (deduplicated by group_id)
  */
 async function getMyPendingInvitations(req, res) {
     try {
@@ -331,10 +380,12 @@ async function getMyPendingInvitations(req, res) {
         if (userRes.rows.length === 0) {
             return sendError(res, "User not found", null, 404);
         }
-        const userEmail = userRes.rows[0].email_id.toLowerCase();
+        const userEmail = (userRes.rows[0].email_id || '').trim().toLowerCase();
 
+        // Guaranteed at most ONE invitation per group (preferring dedicated email invite over general invite)
         const pendingInvites = await pool.query(`
-            SELECT DISTINCT gi.id, gi.invite_code as "inviteCode", gi.role, gi.created_at as "createdAt",
+            SELECT DISTINCT ON (g.id) 
+                   gi.id, gi.invite_code as "inviteCode", gi.role, gi.created_at as "createdAt",
                    gi.expires_at as "expiresAt", g.id as "groupId", g.name as "groupName",
                    g.destination, g.start_date as "startDate", g.end_date as "endDate",
                    g.trip_type as "tripType", g.currency, g.expense_split as "expenseSplit",
@@ -342,13 +393,24 @@ async function getMyPendingInvitations(req, res) {
             FROM group_invitations gi
             JOIN groups g ON gi.group_id = g.id
             LEFT JOIN users u ON gi.invited_by = u.id
-            WHERE (LOWER(gi.invited_email) = LOWER($1) OR gi.group_id IN (
-                SELECT group_id FROM group_members WHERE LOWER(email) = LOWER($1) AND status = 'PENDING'
-            ))
-            AND gi.status = 'PENDING'
+            WHERE (
+                (LOWER(gi.invited_email) = LOWER($1) AND gi.status = 'PENDING')
+                OR (
+                    gi.invited_email IS NULL 
+                    AND gi.status = 'PENDING'
+                    AND gi.group_id IN (
+                        SELECT group_id FROM group_members WHERE LOWER(email) = LOWER($1) AND status = 'PENDING'
+                    )
+                )
+            )
             AND gi.expires_at > NOW()
-            ORDER BY gi.created_at DESC
-        `, [userEmail]);
+            AND g.id NOT IN (
+                SELECT group_id FROM group_members 
+                WHERE ((LOWER(email) = LOWER($1) AND $1 != '') OR user_id = $2) 
+                  AND status IN ('ACCEPTED', 'REJECTED')
+            )
+            ORDER BY g.id, (CASE WHEN LOWER(gi.invited_email) = LOWER($1) THEN 0 ELSE 1 END), gi.created_at DESC
+        `, [userEmail, userId]);
 
         return sendSuccess(res, "Pending invitations fetched successfully", pendingInvites.rows);
 

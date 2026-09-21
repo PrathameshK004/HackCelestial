@@ -173,10 +173,18 @@ export const ledgerEngine = {
 };
 
 function getInvolvedMemberIds(exp: Expense, allMembers: Participant[]): string[] {
+  // Unstop Team Rule: Before acceptance, split expenses CANNOT be allocated to pending travelers
+  const acceptedMembers = allMembers.filter(
+    (m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer'
+  );
+  const acceptedIdSet = new Set(acceptedMembers.map((m) => m.id));
+
   if (exp.splits && exp.splits.length > 0) {
-    const optedIn = exp.splits.filter((s) => s.isOptedIn).map((s) => s.participantId);
+    const optedIn = exp.splits
+      .filter((s) => s.isOptedIn && acceptedIdSet.has(s.participantId))
+      .map((s) => s.participantId);
     if (optedIn.length > 0) return optedIn;
   }
-  // Default to all trip members
-  return allMembers.map((m) => m.id);
+  // Default to accepted trip members only
+  return acceptedMembers.map((m) => m.id);
 }

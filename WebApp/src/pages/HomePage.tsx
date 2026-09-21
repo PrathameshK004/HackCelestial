@@ -357,7 +357,17 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     try {
       const res = await groupService.getMyPendingInvitations();
       if (res.data && Array.isArray(res.data)) {
-        setPendingInvitations(res.data);
+        // Enforce strictly unique invitation per trip
+        const seen = new Set<string>();
+        const uniqueInvites: any[] = [];
+        for (const inv of res.data) {
+          const key = inv.groupId || inv.inviteCode || inv.id;
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            uniqueInvites.push(inv);
+          }
+        }
+        setPendingInvitations(uniqueInvites);
       } else {
         setPendingInvitations([]);
       }
@@ -461,15 +471,25 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     try {
       const response = await groupService.getMyGroups();
       if (response.data && Array.isArray(response.data)) {
-        setGroups(response.data);
+        // Deduplicate groups by id strictly to prevent redundant trips in any section
+        const seen = new Set<string>();
+        const uniqueGroups: any[] = [];
+        for (const g of response.data) {
+          const gid = g?.id || g?.groupId;
+          if (gid && !seen.has(gid)) {
+            seen.add(gid);
+            uniqueGroups.push(g);
+          }
+        }
+        setGroups(uniqueGroups);
         if (initialSelectedGroupId) {
-          const matched = response.data.find((g: any) => g.id === initialSelectedGroupId);
+          const matched = uniqueGroups.find((g: any) => g.id === initialSelectedGroupId);
           if (matched) setSelectedGroup(matched);
         }
-        if (response.data.length > 0) {
+        if (uniqueGroups.length > 0) {
           setSelectedExpenseGroupId((prev) => {
-            const exists = response.data.some((g: any) => g.id === prev);
-            return exists && prev ? prev : response.data[0].id;
+            const exists = uniqueGroups.some((g: any) => g.id === prev);
+            return exists && prev ? prev : uniqueGroups[0].id;
           });
         }
       } else {

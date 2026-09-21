@@ -14,7 +14,17 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { X, UserPlus, Copy, Check, Shield, User } from 'lucide-react-native';
+import { 
+  X, 
+  UserPlus, 
+  Copy, 
+  Check, 
+  Crown, 
+  Clock, 
+  CheckCircle2, 
+  AlertCircle,
+  Share2 
+} from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { Participant } from '../../types';
 
@@ -38,12 +48,31 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [copied, setCopied] = useState(false);
+  const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Group acceptance statistics (Unstop team model)
+  const confirmedMembers = members.filter(
+    (m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer'
+  );
+  const pendingMembers = members.filter(
+    (m) => m.status === 'PENDING' && m.role !== 'Organizer'
+  );
 
   const handleCopyCode = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    Alert.alert('Copied!', `Trip invite code "${inviteCode}" copied.`);
+    Alert.alert('Invite Code Copied!', `Group invite code "${inviteCode}" copied to clipboard.`);
+  };
+
+  const handleCopyMemberInvite = (m: Participant) => {
+    const code = m.inviteCode || inviteCode;
+    setCopiedMemberId(m.id);
+    setTimeout(() => setCopiedMemberId(null), 2000);
+    Alert.alert(
+      'Invitation Link Ready',
+      `Invite code for ${m.name}: ${code}\nShare this with ${m.name} so they can accept on Triptual.`
+    );
   };
 
   const handleAdd = async () => {
@@ -57,7 +86,10 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
       await onAddMember(name.trim(), email.trim() || undefined);
       setName('');
       setEmail('');
-      Alert.alert('Added', `${name} has been added to ${tripName} in local SQLite!`);
+      Alert.alert(
+        'Traveler Invited!',
+        `${name} has been added. They will be in "Pending Invite" status until they accept the invitation on their device.`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to add member');
     } finally {
@@ -72,8 +104,10 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
           {/* Header */}
           <View style={styles.sheetHeader}>
             <View>
-              <Text style={styles.sheetTitle}>Trip Travelers</Text>
-              <Text style={styles.sheetSubtitle}>{members.length} members in {tripName}</Text>
+              <Text style={styles.sheetTitle}>Trip Travelers & Roster</Text>
+              <Text style={styles.sheetSubtitle}>
+                {confirmedMembers.length} confirmed • {pendingMembers.length} pending in {tripName}
+              </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <X size={18} color={colors.slate600} />
@@ -81,10 +115,33 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
           </View>
 
           <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
-            {/* Invite Code Box */}
+            {/* Unstop Acceptance Summary Dashboard Card */}
+            <View style={styles.acceptanceDashboard}>
+              <View style={styles.dashHeaderRow}>
+                <Text style={styles.dashTitle}>Team Acceptance Status</Text>
+                <View style={styles.dashPillsRow}>
+                  <View style={styles.dashConfirmedPill}>
+                    <CheckCircle2 size={11} color="#059669" />
+                    <Text style={styles.dashConfirmedText}>{confirmedMembers.length} Confirmed</Text>
+                  </View>
+                  {pendingMembers.length > 0 && (
+                    <View style={styles.dashPendingPill}>
+                      <Clock size={11} color="#b45309" />
+                      <Text style={styles.dashPendingText}>{pendingMembers.length} Awaiting</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              <Text style={styles.dashRuleText}>
+                Unstop Policy: Expenses and splits are exclusively allocated to confirmed members. Unconfirmed members carry ₹0 liability.
+              </Text>
+            </View>
+
+            {/* General Trip Invite Box */}
             <View style={styles.inviteBox}>
               <View>
-                <Text style={styles.inviteLabel}>Trip Invite Code</Text>
+                <Text style={styles.inviteLabel}>General Trip Invite Code</Text>
                 <Text style={styles.inviteCodeText}>{inviteCode}</Text>
               </View>
 
@@ -95,44 +152,100 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
             </View>
 
             {/* Members List */}
-            <Text style={styles.sectionTitle}>Active Group Members</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Traveler Roster ({members.length})</Text>
+              <Text style={styles.sectionSubCount}>{confirmedMembers.length}/{members.length} Active in Ledger</Text>
+            </View>
 
-            {members.map((m) => (
-              <View key={m.id} style={styles.memberRow}>
-                <View style={[styles.avatar, { backgroundColor: m.avatarBg || colors.primary600 }]}>
-                  <Text style={styles.avatarText}>{m.name.charAt(0).toUpperCase()}</Text>
-                </View>
+            {members.map((m) => {
+              const isConfirmed = (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer';
+              const isPending = m.status === 'PENDING' && m.role !== 'Organizer';
+              const isCopied = copiedMemberId === m.id;
 
-                <View style={styles.memberInfo}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.memberName}>{m.name}</Text>
-                    {m.isUser && <Text style={styles.youBadge}>(You)</Text>}
+              return (
+                <View key={m.id} style={[styles.memberCard, isPending && styles.memberCardPending]}>
+                  <View style={styles.memberTopRow}>
+                    {/* Avatar */}
+                    <View style={[styles.avatar, { backgroundColor: m.avatarBg || colors.primary600 }]}>
+                      <Text style={styles.avatarText}>{m.name.charAt(0).toUpperCase()}</Text>
+                    </View>
+
+                    {/* Info */}
+                    <View style={styles.memberInfo}>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.memberName}>{m.name}</Text>
+                        {m.isUser && <Text style={styles.youBadge}>(You)</Text>}
+                        {m.role === 'Organizer' && (
+                          <View style={styles.crownBadge}>
+                            <Crown size={11} color="#d97706" />
+                            <Text style={styles.crownBadgeText}>Organizer</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.memberEmail}>{m.email || 'No email associated'}</Text>
+                    </View>
+
+                    {/* Net Balance / Status */}
+                    <View style={styles.rightCol}>
+                      {isConfirmed ? (
+                        <View style={styles.balanceBadge}>
+                          <Text
+                            style={[
+                              styles.balanceText,
+                              m.balance > 0 && { color: colors.primary700 },
+                              m.balance < 0 && { color: '#92400e' },
+                            ]}
+                          >
+                            {m.balance > 0
+                              ? `+₹${m.balance.toLocaleString()}`
+                              : m.balance < 0
+                              ? `-₹${Math.abs(m.balance).toLocaleString()}`
+                              : '₹0'}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.pendingBalBadge}>
+                          <Text style={styles.pendingBalText}>₹0 (Pending)</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
-                  <Text style={styles.memberRole}>
-                    {m.role === 'Organizer' ? 'Trip Organizer' : 'Traveler'}
-                  </Text>
-                </View>
 
-                <View style={styles.balanceBadge}>
-                  <Text
-                    style={[
-                      styles.balanceText,
-                      m.balance > 0 && { color: colors.primary700 },
-                      m.balance < 0 && { color: '#92400e' },
-                    ]}
-                  >
-                    {m.balance > 0
-                      ? `+₹${m.balance.toLocaleString()}`
-                      : m.balance < 0
-                      ? `-₹${Math.abs(m.balance).toLocaleString()}`
-                      : '₹0'}
-                  </Text>
+                  {/* Status Indicator Bar */}
+                  <View style={styles.memberStatusRow}>
+                    {isConfirmed ? (
+                      <View style={styles.statusAcceptedTag}>
+                        <Check size={11} color="#059669" strokeWidth={2.6} />
+                        <Text style={styles.statusAcceptedText}>Accepted & Confirmed • Active in Split Ledger</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.statusPendingWrap}>
+                        <View style={styles.statusPendingTag}>
+                          <Clock size={11} color="#b45309" strokeWidth={2.4} />
+                          <Text style={styles.statusPendingText}>Awaiting Acceptance • Excluded from Splits</Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.resendBtn}
+                          onPress={() => handleCopyMemberInvite(m)}
+                          activeOpacity={0.8}
+                        >
+                          {isCopied ? (
+                            <Check size={11} color="#ffffff" strokeWidth={2.5} />
+                          ) : (
+                            <Share2 size={11} color="#ffffff" strokeWidth={2} />
+                          )}
+                          <Text style={styles.resendBtnText}>{isCopied ? 'Copied' : 'Share Invite'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
 
             {/* Add Traveler Form */}
-            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Add New Traveler</Text>
+            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Invite New Traveler</Text>
 
             <TextInput
               style={styles.input}
@@ -144,7 +257,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
 
             <TextInput
               style={styles.input}
-              placeholder="Email address (optional)"
+              placeholder="Email address (e.g. sara@example.com)"
               placeholderTextColor={colors.slate400}
               keyboardType="email-address"
               value={email}
@@ -159,7 +272,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
             >
               <UserPlus size={16} color="#ffffff" />
               <Text style={styles.addBtnText}>
-                {isSubmitting ? 'Adding...' : 'Add Traveler to Trip'}
+                {isSubmitting ? 'Sending Invitation...' : 'Send Trip Invitation'}
               </Text>
             </TouchableOpacity>
 
@@ -249,32 +362,113 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
   },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.slate700,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
     marginBottom: 10,
   },
-  memberRow: {
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.slate700,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  sectionSubCount: {
+    fontSize: 11,
+    color: colors.slate500,
+    fontWeight: '600',
+  },
+  acceptanceDashboard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: radii.lg,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 16,
+  },
+  dashHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  dashTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: colors.slate800,
+    letterSpacing: 0.2,
+  },
+  dashPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  dashConfirmedPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.slate100,
-    gap: 12,
+    gap: 4,
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+  },
+  dashConfirmedText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  dashPendingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+  },
+  dashPendingText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#b45309',
+  },
+  dashRuleText: {
+    fontSize: 11,
+    color: colors.slate600,
+    lineHeight: 15,
+  },
+  memberCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: radii.md,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    ...shadows.sm,
+  },
+  memberCardPending: {
+    backgroundColor: '#fafaf9',
+    borderColor: '#e7e5e4',
+  },
+  memberTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
   },
   memberInfo: {
@@ -283,7 +477,8 @@ const styles = StyleSheet.create({
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
+    flexWrap: 'wrap',
   },
   memberName: {
     fontSize: 13.5,
@@ -295,10 +490,27 @@ const styles = StyleSheet.create({
     color: colors.primary600,
     fontWeight: '700',
   },
-  memberRole: {
+  crownBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  crownBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#b45309',
+  },
+  memberEmail: {
     fontSize: 11,
     color: colors.slate500,
-    marginTop: 1,
+    marginTop: 2,
+  },
+  rightCol: {
+    alignItems: 'flex-end',
   },
   balanceBadge: {
     paddingHorizontal: 8,
@@ -310,6 +522,64 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.slate600,
+  },
+  pendingBalBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.sm,
+    backgroundColor: '#f1f5f9',
+  },
+  pendingBalText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.slate500,
+  },
+  memberStatusRow: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.slate100,
+  },
+  statusAcceptedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  statusAcceptedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#059669',
+  },
+  statusPendingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  statusPendingTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flex: 1,
+  },
+  statusPendingText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#b45309',
+  },
+  resendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary600,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.sm,
+  },
+  resendBtnText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   input: {
     backgroundColor: colors.bgApp,

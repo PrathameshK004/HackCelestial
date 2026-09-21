@@ -23,7 +23,12 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.yog7284.MobileApp"
+      "package": "com.yog7284.MobileApp",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -36,7 +41,19 @@
           "cameraPermission": "Allow Triptual to access your camera to scan merchant UPI QR codes at counters."
         }
       ],
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#059669"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3ea65a77-f6ae-4667-b270-5d530fa14533"
+      }
+    }
   }
 }

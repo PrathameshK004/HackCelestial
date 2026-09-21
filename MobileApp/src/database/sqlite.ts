@@ -29,6 +29,14 @@ export function getDatabase(): SQLite.SQLiteDatabase {
  */
 export function initializeDatabase(): void {
   const db = getDatabase();
+
+  // Non-destructive migrations for existing SQLite databases
+  try {
+    db.execSync("ALTER TABLE participants ADD COLUMN status TEXT DEFAULT 'ACCEPTED';");
+  } catch (_) {}
+  try {
+    db.execSync("ALTER TABLE participants ADD COLUMN invite_code TEXT;");
+  } catch (_) {}
   
   // Check if trips exist; if not, populate initial sample trips so user can test offline immediately!
   const countRow = db.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM trips');

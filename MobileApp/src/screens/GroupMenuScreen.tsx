@@ -29,6 +29,8 @@ import {
   RefreshCw,
   Smartphone,
   CheckCircle2,
+  Clock,
+  ChevronRight,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
 import { useTrips } from '../context/TripContext';
@@ -68,6 +70,13 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const members = trip?.members || [];
   const expenses = trip?.expenses || [];
   const settlements = trip?.settlements || [];
+
+  const confirmedMembers = members.filter(
+    (m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer'
+  );
+  const pendingMembers = members.filter(
+    (m) => m.status === 'PENDING' && m.role !== 'Organizer'
+  );
 
   // Optimal debts calculation
   const optimalResult = useMemo(() => {
@@ -162,7 +171,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
             {trip?.name || 'Trip Ledger'}
           </Text>
           <Text style={styles.tripSubtitle}>
-            {trip?.destination} • {members.length} members
+            {trip?.destination} • {confirmedMembers.length}/{members.length} Confirmed
           </Text>
         </View>
 
@@ -187,6 +196,23 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
 
       {/* Main Content Area */}
       <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
+        {/* Unstop Acceptance Alert Banner */}
+        {pendingMembers.length > 0 && (
+          <TouchableOpacity
+            style={styles.unstopStatusBanner}
+            onPress={() => setIsMembersModalOpen(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.unstopBannerIcon}>
+              <Clock size={13} color="#b45309" />
+            </View>
+            <Text style={styles.unstopStatusText}>
+              <Text style={{ fontWeight: '700', color: '#78350f' }}>{pendingMembers.length} traveler{pendingMembers.length > 1 ? 's' : ''}</Text> awaiting invitation acceptance. Expenses are split only among confirmed travelers.
+            </Text>
+            <ChevronRight size={14} color="#b45309" />
+          </TouchableOpacity>
+        )}
+
         {/* Personal Balance Callout Card */}
         <View style={styles.balanceCalloutCard}>
           <View style={styles.balanceTextCol}>
@@ -418,35 +444,53 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         {/* TAB 3: BALANCES TABLE */}
         {activeTab === 'balances' && (
           <View style={styles.balancesCard}>
-            <Text style={styles.balancesCardTitle}>Member Balance Breakdown</Text>
-            {members.map((m) => (
-              <View key={m.id} style={styles.balanceMemberRow}>
-                <View style={[styles.avatarMini, { backgroundColor: m.avatarBg }]}>
-                  <Text style={styles.avatarMiniText}>{m.name.charAt(0)}</Text>
-                </View>
+            <View style={styles.balancesCardHeader}>
+              <Text style={styles.balancesCardTitle}>Member Balance Breakdown</Text>
+              <Text style={styles.balancesCardSub}>{confirmedMembers.length} active in ledger</Text>
+            </View>
+            {members.map((m) => {
+              const isConfirmed = (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer';
+              return (
+                <View key={m.id} style={styles.balanceMemberRow}>
+                  <View style={[styles.avatarMini, { backgroundColor: m.avatarBg }]}>
+                    <Text style={styles.avatarMiniText}>{m.name.charAt(0)}</Text>
+                  </View>
 
-                <View style={styles.memberInfoCol}>
-                  <Text style={styles.memberRowName}>
-                    {m.name} {m.isUser ? '(You)' : ''}
+                  <View style={styles.memberInfoCol}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.memberRowName}>
+                        {m.name} {m.isUser ? '(You)' : ''}
+                      </Text>
+                      <View style={isConfirmed ? styles.confirmedSmallPill : styles.pendingSmallPill}>
+                        <Text style={isConfirmed ? styles.confirmedSmallPillText : styles.pendingSmallPillText}>
+                          {isConfirmed ? 'Confirmed' : 'Pending Invite'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.memberRowRole}>
+                      {m.role} • {isConfirmed ? 'Active in Ledger' : 'No Debt Until Accepted'}
+                    </Text>
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.memberNetBalance,
+                      isConfirmed && m.balance > 0 && styles.memberNetBalanceOwed,
+                      isConfirmed && m.balance < 0 && styles.memberNetBalanceOwes,
+                      !isConfirmed && { color: colors.slate400 }
+                    ]}
+                  >
+                    {isConfirmed
+                      ? m.balance > 0
+                        ? `+₹${m.balance.toLocaleString()}`
+                        : m.balance < 0
+                        ? `-₹${Math.abs(m.balance).toLocaleString()}`
+                        : '₹0'
+                      : '₹0'}
                   </Text>
-                  <Text style={styles.memberRowRole}>{m.role}</Text>
                 </View>
-
-                <Text
-                  style={[
-                    styles.memberNetBalance,
-                    m.balance > 0 && styles.memberNetBalanceOwed,
-                    m.balance < 0 && styles.memberNetBalanceOwes,
-                  ]}
-                >
-                  {m.balance > 0
-                    ? `+₹${m.balance.toLocaleString()}`
-                    : m.balance < 0
-                    ? `-₹${Math.abs(m.balance).toLocaleString()}`
-                    : '₹0'}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -1010,5 +1054,67 @@ const styles = StyleSheet.create({
     color: colors.slate900,
     marginBottom: 10,
     textTransform: 'uppercase',
+  },
+  unstopStatusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: radii.md,
+    padding: 12,
+    marginBottom: 14,
+    gap: 8,
+  },
+  unstopBannerIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#fef3c7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unstopStatusText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#92400e',
+    lineHeight: 16,
+  },
+  balancesCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 10,
+  },
+  balancesCardSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.slate500,
+  },
+  confirmedSmallPill: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  confirmedSmallPillText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  pendingSmallPill: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  pendingSmallPillText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#b45309',
   },
 });
