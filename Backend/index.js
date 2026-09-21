@@ -54,6 +54,10 @@ app.get('/', (req, res) => {
 
 app.get('/health', healthController.checkHealth);
 
+// Serve static assets (illustrations, etc.)
+app.use('/public', express.static(path.join(__dirname, 'public')));
+app.use('/illustrations', express.static(path.join(__dirname, 'public', 'illustrations')));
+
 app.use('/api', indexRouter);
 
 app.use('/api', (req, res) => {

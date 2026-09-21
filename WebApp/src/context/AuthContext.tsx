@@ -21,6 +21,7 @@ interface AuthContextType {
   resendOtp: (emailId: string, purpose?: string) => Promise<{ success: boolean; message?: string; otp?: string | number }>;
   loginWithGoogle: (credentialOrPayload: string | { credential?: string; accessToken?: string }) => Promise<{ success: boolean; message?: string; user?: User }>;
   updateProfile: (data: Partial<User>) => Promise<{ success: boolean; message?: string; user?: User }>;
+  refreshProfile: () => Promise<User | null>;
   changePassword: (data: PasswordChangePayload) => Promise<{ success: boolean; message?: string }>;
   forgotPassword: (emailId: string) => Promise<{ success: boolean; message?: string }>;
   verifyResetOtp: (emailId: string, code: string) => Promise<{ success: boolean; message?: string }>;
@@ -47,6 +48,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (storedToken && storedUser) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
+
+          // Real-time synchronization from PostgreSQL single source of truth
+          authService.getProfile()
+            .then((res) => {
+              const serverUser = (res.data as any)?.user || res.data;
+              if (serverUser && (serverUser.id || serverUser.userId)) {
+                const freshUser: User = {
+                  userId: serverUser.id || serverUser.userId,
+                  id: serverUser.id || serverUser.userId,
+                  username: serverUser.username || serverUser.name,
+                  emailId: serverUser.emailId || serverUser.email,
+                  phone: serverUser.phone || null,
+                  upiId: serverUser.upiId || null,
+                  avatar: serverUser.avatar || null,
+                  travelStyle: serverUser.travelStyle || 'Boutique',
+                  currency: serverUser.currency || 'INR',
+                  dob: serverUser.dob || null
+                };
+                setUser(freshUser);
+                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(freshUser));
+              }
+            })
+            .catch((err) => {
+              console.warn('[AuthContext] Initial profile sync note:', err.message);
+            });
         }
       } catch (err) {
         console.error('Failed to parse cached auth state:', err);
@@ -266,17 +292,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
-   * Real-time profile update: updates backend, saves locally, and broadcasts to all listeners
+   * Refresh current user profile directly from PostgreSQL database
+   */
+  const refreshProfile = async (): Promise<User | null> => {
+    try {
+      const res = await authService.getProfile();
+      const serverUser = (res.data as any)?.user || res.data;
+      if (serverUser && (serverUser.id || serverUser.userId)) {
+        const freshUser: User = {
+          userId: serverUser.id || serverUser.userId || user?.id,
+          id: serverUser.id || serverUser.userId || user?.id,
+          username: serverUser.username || serverUser.name || user?.username,
+          emailId: serverUser.emailId || serverUser.email || user?.emailId,
+          phone: serverUser.phone !== undefined ? serverUser.phone : user?.phone,
+          upiId: serverUser.upiId !== undefined ? serverUser.upiId : user?.upiId,
+          avatar: serverUser.avatar !== undefined ? serverUser.avatar : user?.avatar,
+          travelStyle: serverUser.travelStyle || user?.travelStyle || 'Boutique',
+          currency: serverUser.currency || user?.currency || 'INR',
+          dob: serverUser.dob !== undefined ? serverUser.dob : (user?.dob || null),
+        };
+        saveAuthSession(freshUser);
+        return freshUser;
+      }
+      return user;
+    } catch (err: any) {
+      console.warn('[AuthContext] refreshProfile error:', err.message);
+      return user;
+    }
+  };
+
+  /**
+   * Real-time profile update: updates backend database first, then commits to local state
    */
   const updateProfile = async (data: Partial<User>) => {
     if (!user) throw new Error('You must be signed in to update your profile.');
     
     try {
       const response = await authService.updateProfile(data);
+      const serverUser = (response.data as any)?.user || response.data;
+
       const updatedUser: User = {
         ...user,
         ...data,
-        ...((response.data as any) || {})
+        ...(serverUser || {}),
+        userId: serverUser?.id || serverUser?.userId || user.id,
+        id: serverUser?.id || serverUser?.userId || user.id,
+        username: serverUser?.username || serverUser?.name || data.username || user.username,
+        emailId: serverUser?.emailId || serverUser?.email || user.emailId,
+        phone: serverUser?.phone !== undefined ? serverUser?.phone : (data.phone !== undefined ? data.phone : user.phone),
+        upiId: serverUser?.upiId !== undefined ? serverUser?.upiId : (data.upiId !== undefined ? data.upiId : user.upiId),
+        avatar: serverUser?.avatar !== undefined ? serverUser?.avatar : (data.avatar !== undefined ? data.avatar : user.avatar),
+        travelStyle: serverUser?.travelStyle || data.travelStyle || user.travelStyle,
+        currency: serverUser?.currency || data.currency || user.currency,
+        dob: serverUser?.dob !== undefined ? serverUser?.dob : (data.dob !== undefined ? data.dob : user.dob),
       };
 
       saveAuthSession(updatedUser);
@@ -295,15 +363,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user: updatedUser
       };
     } catch (err: any) {
-      console.warn('Profile update API note:', err.message);
-      // Resilient optimistic update
-      const updatedUser: User = { ...user, ...data };
-      saveAuthSession(updatedUser);
-      window.dispatchEvent(new CustomEvent('auth:user-updated', { detail: updatedUser }));
+      console.error('[AuthContext] Profile update failed on server:', err.message);
       return {
-        success: true,
-        message: 'Profile saved locally.',
-        user: updatedUser
+        success: false,
+        message: err.message || 'Failed to update profile on server. Please check your connection.',
+        user
       };
     }
   };
@@ -407,6 +471,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resendOtp,
         loginWithGoogle,
         updateProfile,
+        refreshProfile,
         changePassword,
         forgotPassword,
         verifyResetOtp,

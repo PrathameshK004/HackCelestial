@@ -3,10 +3,14 @@ let express = require("express");
 let router = express.Router();
 let usersController = require('../controllers/user.controller');
 let paymentController = require('../controllers/payment.controller');
+let illustrationController = require('../controllers/illustration.controller');
 let userMiddleware = require('../middleware/user.middleware');
 const { sendSuccess } = require('../utils/response.util');
 
 let verifyToken = require('../middleware/auth.middleware');
+
+// Google-style profile picture illustrations catalog
+router.get('/illustrations', illustrationController.getIllustrations);
 
 
 router.get('/checkAuth', verifyToken, (req, res) => {
@@ -42,6 +46,8 @@ router.get('/profile', verifyToken, (req, res) => {
     return usersController.getUserById(req, res);
 });
 router.put('/profile', verifyToken, usersController.updateProfile);
+router.patch('/profile', verifyToken, usersController.updateProfile);
+router.post('/profile', verifyToken, usersController.updateProfile);
 
 router.get('/:userId', verifyToken, userMiddleware.validateUserId, usersController.getUserById);
 router.post('/login', userMiddleware.checkLogin, usersController.validateLogin);
@@ -51,6 +57,7 @@ router.post('/registerTempUser', userMiddleware.validateNewTempUser, usersContro
 router.post('/check-registered', usersController.checkRegisteredUser);
 router.get('/check-registered', usersController.checkRegisteredUser);
 router.put('/:userId', verifyToken, userMiddleware.validateUserId, usersController.updateUser);
+router.patch('/:userId', verifyToken, userMiddleware.validateUserId, usersController.updateUser);
 router.delete('/:userId', verifyToken, userMiddleware.validateUserId, usersController.deleteUser);
 router.post("/sendOtp", userMiddleware.validateOtpReq, usersController.sendOTP);
 

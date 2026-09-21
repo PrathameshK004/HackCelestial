@@ -4,12 +4,20 @@
  * Features: Silent Token Rotation, Request Replay, Network Timeout Handling
  */
 
+import { Platform } from 'react-native';
 import { storage } from '../database/storage';
 
-// Local development backend on Mac (port 4000)
-export const API_BASE = 'http://192.168.0.113:4000/api';
-// Cloud backend on Render:
-// export const API_BASE = 'https://triptual-api.onrender.com/api';
+export const getApiBase = (): string => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://127.0.0.1:4000/api';
+    }
+  }
+  return 'http://192.168.0.113:4000/api';
+};
+
+export const API_BASE = getApiBase();
 
 export interface RequestOptions extends RequestInit {
   token?: string | null;

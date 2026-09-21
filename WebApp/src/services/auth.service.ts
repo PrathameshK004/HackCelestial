@@ -114,6 +114,15 @@ export const authService = {
   },
 
   /**
+   * Fetch current authenticated user profile
+   */
+  async getProfile(): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/profile', {
+      method: 'GET',
+    });
+  },
+
+  /**
    * Fetch user details by ID
    */
   async getUserById(userId: string, token: string): Promise<AuthResponse> {

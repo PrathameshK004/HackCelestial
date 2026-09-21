@@ -12,7 +12,7 @@ require('dotenv').config();
  * @param {string} expiresIn - Token expiration time (default: 7 days)
  * @returns {string} Generated JWT token
  */
-const createToken = (userId, expiresIn = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m') => {
+const createToken = (userId, expiresIn = process.env.ACCESS_TOKEN_EXPIRES_IN || '7d') => {
     try {
         return jwt.sign({ key: userId }, process.env.JWTSecret, {
             expiresIn,

@@ -8,6 +8,7 @@ export interface User {
   avatar?: string;
   travelStyle?: string;
   currency?: string;
+  dob?: string | null;
 }
 
 export interface PasswordChangePayload {

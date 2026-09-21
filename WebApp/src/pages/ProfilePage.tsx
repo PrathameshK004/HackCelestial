@@ -5,7 +5,6 @@ import {
   CreditCard,
   Check,
   Camera,
-  LogOut,
   Lock,
   Eye,
   EyeOff,
@@ -14,36 +13,62 @@ import {
   Loader2,
   Smartphone,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  TreePalm,
+  Trees,
+  Building,
+  Mountain,
+  Calendar,
+  Wifi
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { IllustrationAvatar } from '../components/IllustrationAvatar';
+import { IllustrationPickerModal } from '../components/IllustrationPickerModal';
 
 interface ProfilePageProps {
   onBack: () => void;
 }
 
-const AVATAR_PRESETS = [
-  '🎒', '🧭', '✈️', '🏕️', '🏔️', '🏖️', '🌲', '🚗'
-];
-
 export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
-  const { user, logout, updateProfile, changePassword } = useAuth();
+  const { user, updateProfile, refreshProfile, changePassword } = useAuth();
 
   // Profile Form States
-  const [username, setUsername] = useState(user?.username || 'Traveler');
+  const [username, setUsername] = useState(user?.username || '');
   const [email, setEmail] = useState(user?.emailId || '');
   const [phone, setPhone] = useState(user?.phone || '');
+  const [dob, setDob] = useState(user?.dob || '');
   const [upiId, setUpiId] = useState(user?.upiId || '');
   const [avatar, setAvatar] = useState(user?.avatar || '');
   const [defaultCurrency, setDefaultCurrency] = useState(user?.currency || 'INR');
-  const [travelStyle, setTravelStyle] = useState<'Boutique' | 'Coastal' | 'Nature' | 'Urban'>(
+  const [travelStyle, setTravelStyle] = useState<'Boutique' | 'Coastal' | 'Nature' | 'Urban' | 'Mountain'>(
     (user?.travelStyle as any) || 'Boutique'
   );
-  const [whatsappAlerts, setWhatsappAlerts] = useState(true);
-  const [autoSettleReminders, setAutoSettleReminders] = useState(true);
 
-  // Avatar selector modal / popover
-  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  // Google-Style Illustration Picker Modal state
+  const [showIllustrationModal, setShowIllustrationModal] = useState(false);
+
+  const handleSelectIllustration = async (newAvatar: string | null) => {
+    setAvatar(newAvatar || '');
+    try {
+      await updateProfile({
+        avatar: newAvatar || undefined,
+        username: username.trim(),
+        phone: phone.trim(),
+        dob: dob ? dob.trim() : null,
+        upiId: upiId.trim(),
+        travelStyle,
+        currency: defaultCurrency,
+      });
+      setProfileSuccessMsg(
+        newAvatar
+          ? 'Profile illustration updated successfully in database!'
+          : 'Switched to initials avatar.'
+      );
+    } catch (err: any) {
+      setProfileErrorMsg(err.message || 'Failed to update profile picture.');
+    }
+  };
 
   // Security & Password Form States
   const [currentPassword, setCurrentPassword] = useState('');
@@ -62,27 +87,42 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
   const [passwordSuccessMsg, setPasswordSuccessMsg] = useState<string | null>(null);
   const [passwordErrorMsg, setPasswordErrorMsg] = useState<string | null>(null);
 
+  // Online connection status
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Fetch real database profile on mount
+  useEffect(() => {
+    refreshProfile?.().catch(console.error);
+  }, []);
+
   // Sync state when user updates in context
   useEffect(() => {
     if (user) {
-      if (user.username) setUsername(user.username);
-      if (user.emailId) setEmail(user.emailId);
-      if (user.phone) setPhone(user.phone);
-      if (user.upiId) setUpiId(user.upiId);
-      if (user.avatar) setAvatar(user.avatar);
+      if (user.username !== undefined) setUsername(user.username || '');
+      if (user.emailId !== undefined) setEmail(user.emailId || '');
+      if (user.phone !== undefined) setPhone(user.phone || '');
+      if (user.dob !== undefined && user.dob !== null) setDob(user.dob || '');
+      if (user.upiId !== undefined) setUpiId(user.upiId || '');
+      if (user.avatar !== undefined) setAvatar(user.avatar || '');
       if (user.travelStyle) setTravelStyle(user.travelStyle as any);
       if (user.currency) setDefaultCurrency(user.currency);
     }
   }, [user]);
 
-  const displayName = username || user?.username || 'Traveler';
-  const displayInitials = displayName
-    .split(' ')
-    .filter(Boolean)
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'TR';
+  const displayName = username || user?.username || '';
 
   // Real-time Profile Save
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -95,13 +135,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
       const res = await updateProfile({
         username: username.trim(),
         phone: phone.trim(),
+        dob: dob ? dob.trim() : null,
         upiId: upiId.trim(),
         avatar: avatar || undefined,
         travelStyle,
         currency: defaultCurrency
       });
 
-      setProfileSuccessMsg(res.message || 'Profile updated in real-time across all your trip ledgers!');
+      if (!res.success) {
+        setProfileErrorMsg(res.message || 'Failed to update profile.');
+      } else {
+        setProfileSuccessMsg(res.message || 'Profile updated successfully in database!');
+      }
     } catch (err: any) {
       setProfileErrorMsg(err.message || 'Failed to update profile.');
     } finally {
@@ -212,28 +257,23 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             </h1>
           </div>
 
-          <button
-            type="button"
-            className="profile-header-icon-btn profile-logout-btn"
-            onClick={logout}
-            title="Sign out of session"
+          <div
+            title={isOnline ? 'Online & Connected' : 'Offline Mode'}
             style={{
-              padding: '6px 14px',
-              fontSize: '0.78rem',
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              borderRadius: '9999px',
-              border: '1px solid #fecaca',
-              background: '#fef2f2',
-              color: '#b91c1c',
-              cursor: 'pointer',
-              fontWeight: 600
+              justifyContent: 'center',
+              background: isOnline ? '#ecfdf5' : '#fef2f2',
+              border: isOnline ? '1.5px solid #a7f3d0' : '1.5px solid #fecaca',
+              color: isOnline ? '#10b981' : '#ef4444',
+              transition: 'all 0.2s ease',
             }}
           >
-            <LogOut size={14} />
-            <span>Logout</span>
-          </button>
+            <Wifi size={18} strokeWidth={2.3} />
+          </div>
         </div>
 
         {/* Global Notices */}
@@ -267,30 +307,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
-            <div
-              className="profile-avatar-giant"
-              style={{
-                width: '62px',
-                height: '62px',
-                fontSize: avatar ? '1.8rem' : '1.35rem',
-                flexShrink: 0,
-                position: 'relative',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 700,
-                boxShadow: '0 4px 14px rgba(5, 150, 105, 0.3)'
-              }}
-            >
-              <span>{avatar || displayInitials}</span>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <IllustrationAvatar
+                avatar={avatar}
+                name={displayName}
+                size={64}
+                onClick={() => setShowIllustrationModal(true)}
+              />
               <button
                 type="button"
                 className="avatar-edit-fab"
-                title="Change Avatar Icon"
-                onClick={() => setShowAvatarPicker(!showAvatarPicker)}
+                title="Change Illustration Picture"
+                onClick={() => setShowIllustrationModal(true)}
                 style={{
                   position: 'absolute',
                   bottom: '-2px',
@@ -305,7 +333,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                  zIndex: 3,
                 }}
               >
                 <Camera size={13} />
@@ -358,67 +387,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
           </div>
         </section>
 
-        {/* Avatar Preset Picker Tray */}
-        {showAvatarPicker && (
-          <div
-            style={{
-              background: '#ffffff',
-              border: '1px solid #a7f3d0',
-              borderRadius: '16px',
-              padding: '14px',
-              marginBottom: '18px',
-              boxShadow: '0 4px 15px rgba(5, 150, 105, 0.12)',
-              animation: 'fadeInDown 0.2s ease-out'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--slate-800)' }}>
-                Choose Your Traveler Icon
-              </span>
-              <button
-                type="button"
-                onClick={() => setAvatar('')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#059669',
-                  fontSize: '0.76rem',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                Use Initials
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {AVATAR_PRESETS.map((icon) => (
-                <button
-                  key={icon}
-                  type="button"
-                  onClick={() => {
-                    setAvatar(icon);
-                    setShowAvatarPicker(false);
-                  }}
-                  style={{
-                    fontSize: '1.4rem',
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '12px',
-                    border: avatar === icon ? '2px solid #059669' : '1px solid #e2e8f0',
-                    background: avatar === icon ? '#ecfdf5' : '#f8fafc',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'transform 0.15s ease'
-                  }}
-                >
-                  {icon}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Google-Style Profile Illustration Picker Modal */}
+        <IllustrationPickerModal
+          isOpen={showIllustrationModal}
+          onClose={() => setShowIllustrationModal(false)}
+          selectedIllustrationId={avatar}
+          onSelect={handleSelectIllustration}
+          userName={displayName}
+        />
 
         {/* 2. Key Metrics Row */}
         <div className="profile-stats-grid" style={{ marginBottom: '20px' }}>
@@ -498,16 +474,58 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
               </div>
 
               <div className="form-group-block">
+                <label className="form-group-label">Date of Birth</label>
+                <div className="auth-input-relative-wrap">
+                  <Calendar size={17} className="auth-input-leading-icon" />
+                  <input
+                    type="date"
+                    className="styled-text-input"
+                    style={{ paddingLeft: '40px' }}
+                    value={dob}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setDob(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group-block">
                 <label className="form-group-label">Preferred Travel Style</label>
-                <div className="category-pills-bar" style={{ padding: '4px 0' }}>
-                  {(['Boutique', 'Coastal', 'Nature', 'Urban'] as const).map((style) => (
+                <div
+                  className="category-pills-bar"
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '4px 0',
+                    overflowX: 'auto',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none'
+                  }}
+                >
+                  {[
+                    { style: 'Boutique', icon: Sparkles },
+                    { style: 'Coastal', icon: TreePalm },
+                    { style: 'Nature', icon: Trees },
+                    { style: 'Mountain', icon: Mountain },
+                    { style: 'Urban', icon: Building }
+                  ].map(({ style, icon: StyleIcon }) => (
                     <button
                       key={style}
                       type="button"
+                      style={{
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        padding: '10px 14px',
+                        whiteSpace: 'nowrap'
+                      }}
                       className={`category-pill ${travelStyle === style ? 'active' : ''}`}
-                      onClick={() => setTravelStyle(style)}
+                      onClick={() => setTravelStyle(style as any)}
                     >
-                      {style}
+                      <StyleIcon size={14} />
+                      <span>{style}</span>
                     </button>
                   ))}
                 </div>
@@ -537,57 +555,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                 <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
                   Trip members can settle bills directly to this UPI address.
                 </span>
-              </div>
-
-              <div className="form-group-block">
-                <label className="form-group-label">Default Ledger Currency</label>
-                <select
-                  className="styled-select-input"
-                  value={defaultCurrency}
-                  onChange={(e) => setDefaultCurrency(e.target.value)}
-                >
-                  <option value="INR">INR (₹) — Indian Rupee</option>
-                  <option value="USD">USD ($) — US Dollar</option>
-                  <option value="EUR">EUR (€) — Euro</option>
-                  <option value="GBP">GBP (£) — British Pound</option>
-                </select>
-              </div>
-
-              {/* Instant Notification Preferences */}
-              <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label className="notification-toggle-row" style={{ cursor: 'pointer' }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
-                      WhatsApp Split Alerts
-                    </div>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                      Receive instant UPI payment links when a bill is split
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    className="auth-clean-checkbox"
-                    checked={whatsappAlerts}
-                    onChange={(e) => setWhatsappAlerts(e.target.checked)}
-                  />
-                </label>
-
-                <label className="notification-toggle-row" style={{ cursor: 'pointer' }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
-                      Auto-Debt Reconciliation
-                    </div>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                      Recalculate minimum debt transfer routes on new bills
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    className="auth-clean-checkbox"
-                    checked={autoSettleReminders}
-                    onChange={(e) => setAutoSettleReminders(e.target.checked)}
-                  />
-                </label>
               </div>
             </div>
           </div>

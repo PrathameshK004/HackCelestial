@@ -133,25 +133,32 @@ async function sendOTP(req, res) {
  * Get user by ID
  */
 async function getUserById(req, res) {
-    let userId = req.params.userId;
+    let userId = req.params.userId || req.userKey;
+
+    if (!userId) {
+        return sendError(res, "User ID is required", null, 400);
+    }
 
     try {
         let user = await User.findById(userId);
 
-        if (!user || user.isTemp) {
+        if (!user) {
             return sendError(res, "User not found", null, 404);
         }
 
         const safeUser = {
             id: user._id,
             userId: user._id,
+            name: user.username,
             username: user.username,
+            email: user.emailId,
             emailId: user.emailId,
             phone: user.phone || null,
             upiId: user.upiId || null,
             avatar: user.avatar || null,
             travelStyle: user.travelStyle || 'Boutique',
             currency: user.currency || 'INR',
+            dob: user.dob || null,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
         };
@@ -334,37 +341,127 @@ async function createTempUser(req, res) {
  */
 async function updateProfile(req, res) {
     const userId = req.userKey || req.params.userId;
-    const { username, phone, upiId, avatar, travelStyle, currency } = req.body;
+
+    if (!userId) {
+        return sendError(res, "User ID is required", null, 400);
+    }
 
     try {
         const user = await User.findById(userId);
 
-        if (!user || user.isTemp) {
+        if (!user) {
             return sendError(res, "User not found", null, 404);
         }
 
-        if (username && username.trim()) {
-            user.username = username.trim();
-        }
-        if (phone !== undefined) {
-            user.phone = phone ? phone.trim() : null;
-        }
-        if (upiId !== undefined) {
-            user.upiId = upiId ? upiId.trim() : null;
-        }
-        if (avatar !== undefined) {
-            user.avatar = avatar || null;
-        }
-        if (travelStyle !== undefined) {
-            user.travelStyle = travelStyle || 'Boutique';
-        }
-        if (currency !== undefined) {
-            user.currency = currency || 'INR';
+        // 1. Name / Username update (supports 'name', 'username', 'fullName')
+        const rawName = req.body.name !== undefined 
+            ? req.body.name 
+            : (req.body.username !== undefined ? req.body.username : req.body.fullName);
+
+        if (rawName !== undefined) {
+            if (typeof rawName !== 'string' || !rawName.trim()) {
+                return sendError(res, "Name cannot be empty", null, 400);
+            }
+            const trimmedName = rawName.trim();
+            if (trimmedName.length > 100) {
+                return sendError(res, "Name cannot exceed 100 characters", null, 400);
+            }
+            user.username = trimmedName;
         }
 
-        await user.save();
+        // 2. UPI ID update (supports 'upiId', 'upi_id', 'uiId', 'ui_id')
+        const rawUpiId = req.body.upiId !== undefined 
+            ? req.body.upiId 
+            : (req.body.upi_id !== undefined 
+                ? req.body.upi_id 
+                : (req.body.uiId !== undefined ? req.body.uiId : req.body.ui_id));
 
-        // Real-time synchronization across all groups the user is part of:
+        if (rawUpiId !== undefined) {
+            if (rawUpiId === null || (typeof rawUpiId === 'string' && !rawUpiId.trim())) {
+                user.upiId = null;
+            } else {
+                const trimmedUpi = String(rawUpiId).trim();
+                if (trimmedUpi.length > 255) {
+                    return sendError(res, "UPI ID cannot exceed 255 characters", null, 400);
+                }
+                user.upiId = trimmedUpi;
+            }
+        }
+
+        // 3. Phone number update (supports 'phone', 'phoneNumber', 'phone_number')
+        const rawPhone = req.body.phone !== undefined 
+            ? req.body.phone 
+            : (req.body.phoneNumber !== undefined ? req.body.phoneNumber : req.body.phone_number);
+
+        if (rawPhone !== undefined) {
+            if (rawPhone === null || (typeof rawPhone === 'string' && !rawPhone.trim())) {
+                user.phone = null;
+            } else {
+                const trimmedPhone = String(rawPhone).trim();
+                if (trimmedPhone.length > 50) {
+                    return sendError(res, "Phone number cannot exceed 50 characters", null, 400);
+                }
+                user.phone = trimmedPhone;
+            }
+        }
+
+        // 4. DOB (Date of Birth) update (supports 'dob', 'dateOfBirth', 'date_of_birth')
+        const rawDob = req.body.dob !== undefined 
+            ? req.body.dob 
+            : (req.body.dateOfBirth !== undefined ? req.body.dateOfBirth : req.body.date_of_birth);
+
+        if (rawDob !== undefined) {
+            if (rawDob === null || (typeof rawDob === 'string' && !rawDob.trim())) {
+                user.dob = null;
+            } else {
+                user.dob = String(rawDob).trim().slice(0, 20);
+            }
+        }
+
+        // 5. Optional extra profile attributes
+        if (req.body.avatar !== undefined) {
+            user.avatar = req.body.avatar ? String(req.body.avatar).trim() : null;
+        }
+        const rawTravelStyle = req.body.travelStyle !== undefined ? req.body.travelStyle : req.body.travel_style;
+        if (rawTravelStyle !== undefined) {
+            user.travelStyle = rawTravelStyle || 'Boutique';
+        }
+        if (req.body.currency !== undefined) {
+            user.currency = req.body.currency || 'INR';
+        }
+
+        // 6. Persist directly to PostgreSQL users table
+        const updateResult = await pool.query(
+            `UPDATE users 
+             SET username = $1, 
+                 phone = $2, 
+                 upi_id = $3, 
+                 avatar = $4, 
+                 travel_style = $5, 
+                 currency = $6, 
+                 dob = $7,
+                 is_temp = FALSE,
+                 updated_at = NOW()
+             WHERE id = $8
+             RETURNING *`,
+            [
+                user.username,
+                user.phone,
+                user.upiId,
+                user.avatar,
+                user.travelStyle,
+                user.currency,
+                user.dob !== undefined ? user.dob : null,
+                user._id
+            ]
+        );
+
+        const updatedRow = updateResult.rows[0];
+        if (updatedRow) {
+            user.updatedAt = updatedRow.updated_at;
+        }
+
+        // 7. Real-time synchronization across all trip groups the user is member of:
         try {
             await pool.query(
                 `UPDATE group_members 
@@ -379,13 +476,16 @@ async function updateProfile(req, res) {
         const safeUser = {
             id: user._id,
             userId: user._id,
+            name: user.username,
             username: user.username,
+            email: user.emailId,
             emailId: user.emailId,
             phone: user.phone || null,
             upiId: user.upiId || null,
             avatar: user.avatar || null,
             travelStyle: user.travelStyle || 'Boutique',
             currency: user.currency || 'INR',
+            dob: user.dob || null,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
         };
@@ -426,7 +526,7 @@ async function changePassword(req, res) {
     try {
         const user = await User.findById(userId);
 
-        if (!user || user.isTemp) {
+        if (!user) {
             return sendError(res, "User not found", null, 404);
         }
 
@@ -634,6 +734,7 @@ async function validateLogin(req, res) {
             avatar: user.avatar || null,
             travelStyle: user.travelStyle || 'Boutique',
             currency: user.currency || 'INR',
+            dob: user.dob || null,
             accessToken: token,
             refreshToken: refreshToken
         };
@@ -724,6 +825,7 @@ async function googleLogin(req, res) {
             avatar: user.avatar || null,
             travelStyle: user.travelStyle || 'Boutique',
             currency: user.currency || 'INR',
+            dob: user.dob || null,
             accessToken: token,
             refreshToken
         });

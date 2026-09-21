@@ -59,7 +59,8 @@ interface AuthContextType {
   loginWithGoogle: (credentialOrPayload: string | { credential?: string; accessToken?: string }) => Promise<{ success: boolean; error?: string }>;
 
   logout: () => Promise<void>;
-  updateUser: (data: Partial<User>) => void;
+  updateUser: (data: Partial<User>) => Promise<{ success: boolean; user?: User; error?: string }>;
+  refreshProfile: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -84,8 +85,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           authService.getProfile()
             .then((res) => {
               const freshUser = (res.data as any)?.user || res.data;
-              if (freshUser && freshUser.id) {
-                const merged: User = { ...savedUser, ...freshUser };
+              if (freshUser && (freshUser.id || freshUser.userId)) {
+                const merged: User = { 
+                  ...savedUser, 
+                  ...freshUser,
+                  id: freshUser.id || freshUser.userId,
+                  name: freshUser.name || freshUser.username,
+                  username: freshUser.username || freshUser.name,
+                  email: freshUser.email || freshUser.emailId,
+                  emailId: freshUser.emailId || freshUser.email,
+                  phone: freshUser.phone !== undefined ? freshUser.phone : savedUser.phone,
+                  upiId: freshUser.upiId !== undefined ? freshUser.upiId : savedUser.upiId,
+                  avatar: freshUser.avatar !== undefined ? freshUser.avatar : savedUser.avatar,
+                  travelStyle: freshUser.travelStyle || savedUser.travelStyle,
+                  currency: freshUser.currency || savedUser.currency,
+                  dob: freshUser.dob !== undefined ? freshUser.dob : (savedUser.dob || null),
+                };
                 setUser(merged);
                 storage.setAuthUser(merged);
               }
@@ -242,13 +257,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // ── Update User ──────────────────────────────────────────────────────────────
-  const updateUser = (data: Partial<User>): void => {
-    if (!user) return;
-    const updated = { ...user, ...data };
-    setUser(updated);
-    storage.setAuthUser(updated);
-    authService.updateProfile(data).catch(() => {});
+  // ── Refresh Profile directly from PostgreSQL DB ───────────────────────────
+  const refreshProfile = async (): Promise<User | null> => {
+    try {
+      const res = await authService.getProfile();
+      const freshUser = (res.data as any)?.user || res.data;
+      if (freshUser && (freshUser.id || freshUser.userId)) {
+        const merged: User = {
+          ...user,
+          ...freshUser,
+          id: freshUser.id || freshUser.userId,
+          name: freshUser.name || freshUser.username,
+          username: freshUser.username || freshUser.name,
+          email: freshUser.email || freshUser.emailId,
+          emailId: freshUser.emailId || freshUser.email,
+          phone: freshUser.phone !== undefined ? freshUser.phone : user?.phone,
+          upiId: freshUser.upiId !== undefined ? freshUser.upiId : user?.upiId,
+          avatar: freshUser.avatar !== undefined ? freshUser.avatar : user?.avatar,
+          travelStyle: freshUser.travelStyle || user?.travelStyle,
+          currency: freshUser.currency || user?.currency,
+          dob: freshUser.dob !== undefined ? freshUser.dob : (user?.dob || null),
+        };
+        setUser(merged);
+        await storage.setAuthUser(merged);
+        return merged;
+      }
+      return user;
+    } catch (e) {
+      console.warn('[AuthContext] refreshProfile error:', e);
+      return user;
+    }
+  };
+
+  // ── Update User (Single source of truth via PostgreSQL) ──────────────────────
+  const updateUser = async (data: Partial<User>): Promise<{ success: boolean; user?: User; error?: string }> => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+
+    try {
+      const res = await authService.updateProfile(data);
+      const serverUser = (res.data as any)?.user || res.data;
+      if (serverUser && (serverUser.id || serverUser.userId)) {
+        const merged: User = {
+          ...user,
+          ...data,
+          ...serverUser,
+          id: serverUser.id || serverUser.userId || user.id,
+          name: serverUser.name || serverUser.username || data.name || user.name,
+          username: serverUser.username || serverUser.name || data.username || user.username,
+          email: serverUser.email || serverUser.emailId || user.email,
+          emailId: serverUser.emailId || serverUser.email || user.emailId,
+          phone: serverUser.phone !== undefined ? serverUser.phone : (data.phone !== undefined ? data.phone : user.phone),
+          upiId: serverUser.upiId !== undefined ? serverUser.upiId : (data.upiId !== undefined ? data.upiId : user.upiId),
+          travelStyle: serverUser.travelStyle || data.travelStyle || user.travelStyle,
+          currency: serverUser.currency || data.currency || user.currency,
+          dob: serverUser.dob !== undefined ? serverUser.dob : (data.dob !== undefined ? data.dob : user.dob),
+        };
+        setUser(merged);
+        await storage.setAuthUser(merged);
+        return { success: true, user: merged };
+      }
+      return { success: false, error: 'Server did not return valid user data' };
+    } catch (err: any) {
+      console.error('[AuthContext] updateUser server error:', err.message);
+      return { success: false, error: err.message || 'Failed to update profile on server' };
+    }
   };
 
   return (
@@ -266,6 +338,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginWithGoogle,
         logout,
         updateUser,
+        refreshProfile,
       }}
     >
       {children}

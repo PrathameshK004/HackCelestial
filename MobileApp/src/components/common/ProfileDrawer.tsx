@@ -31,6 +31,7 @@ import {
 } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { IllustrationAvatar } from './IllustrationAvatar';
 
 const { width } = Dimensions.get('window');
 const DRAWER_WIDTH = Math.min(width * 0.82, 330);
@@ -199,9 +200,12 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
 
               {/* User Mini Card */}
               <View style={styles.userCard}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{displayInitials}</Text>
-                </View>
+                <IllustrationAvatar
+                  avatar={user?.avatar}
+                  name={displayName}
+                  size={48}
+                  backgroundColor={user?.avatarBg}
+                />
                 <View style={styles.userInfo}>
                   <Text style={styles.userName} numberOfLines={1}>
                     {displayName}

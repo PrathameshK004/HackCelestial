@@ -17,6 +17,7 @@ const toUser = (row) => row && new User({
     avatar: row.avatar || null,
     travelStyle: row.travel_style || 'Boutique',
     currency: row.currency || 'INR',
+    dob: row.dob || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
 });
@@ -52,8 +53,8 @@ class User {
         }
 
         const result = await pool.query(`
-            INSERT INTO users (id, username, email_id, password_hash, is_temp, code_hash, code_expiry, phone, upi_id, avatar, travel_style, currency)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            INSERT INTO users (id, username, email_id, password_hash, is_temp, code_hash, code_expiry, phone, upi_id, avatar, travel_style, currency, dob)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (id) DO UPDATE SET
                 username = EXCLUDED.username,
                 email_id = EXCLUDED.email_id,
@@ -66,6 +67,7 @@ class User {
                 avatar = COALESCE(EXCLUDED.avatar, users.avatar),
                 travel_style = COALESCE(EXCLUDED.travel_style, users.travel_style),
                 currency = COALESCE(EXCLUDED.currency, users.currency),
+                dob = COALESCE(EXCLUDED.dob, users.dob),
                 updated_at = NOW()
             RETURNING *
         `, [
@@ -80,7 +82,8 @@ class User {
             this.upiId !== undefined ? this.upiId : null,
             this.avatar !== undefined ? this.avatar : null,
             this.travelStyle !== undefined ? this.travelStyle : null,
-            this.currency !== undefined ? this.currency : 'INR'
+            this.currency !== undefined ? this.currency : 'INR',
+            this.dob !== undefined ? this.dob : null
         ]);
 
         Object.assign(this, toUser(result.rows[0]));

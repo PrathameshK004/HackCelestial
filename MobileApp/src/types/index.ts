@@ -9,9 +9,13 @@ export interface User {
   username?: string;
   email?: string;
   emailId?: string;
-  phone?: string;
+  phone?: string | null;
+  avatar?: string | null;
   avatarBg?: string;
-  upiId?: string;
+  upiId?: string | null;
+  travelStyle?: 'Boutique' | 'Coastal' | 'Nature' | 'Urban' | 'Mountain' | string;
+  currency?: string;
+  dob?: string | null;
 }
 
 export interface AuthResponse {
