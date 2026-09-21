@@ -53,6 +53,7 @@ import {
   SimplifiedTransfer
 } from '../mock/dashboardMockData';
 import { RoundtableGroupsIcon } from '../components/common/RoundtableGroupsIcon';
+import { IllustrationAvatar } from '../components/IllustrationAvatar';
 
 interface HomePageProps {
   onCreateGroup: () => void;
@@ -1167,8 +1168,18 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
               type="button"
               className="dock-tab-btn"
               onClick={() => setIsProfileOpen(true)}
+              title="My Profile"
             >
-              <User size={20} />
+              {user?.avatar ? (
+                <IllustrationAvatar
+                  avatar={user.avatar}
+                  name={displayName}
+                  size={22}
+                  style={{ marginBottom: 2 }}
+                />
+              ) : (
+                <User size={20} />
+              )}
               <span>Profile</span>
             </button>
           </div>
@@ -1181,9 +1192,34 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const renderProfileMenuItems = () => (
     <>
       {/* User Mini Card */}
-      <div className="profile-menu-user-header">
-        <div className="profile-menu-avatar">
-          {displayInitials}
+      <div 
+        className="profile-menu-user-header"
+        onClick={() => {
+          setIsProfileMenuOpen(false);
+          setIsProfileOpen(true);
+        }}
+        style={{ cursor: 'pointer' }}
+        title="View & Edit Profile"
+      >
+        <div 
+          className="profile-menu-avatar"
+          style={{
+            padding: 0,
+            overflow: 'hidden',
+            background: 'transparent',
+            border: user?.avatar ? '2px solid var(--badge-match-bg)' : undefined
+          }}
+        >
+          {user?.avatar ? (
+            <IllustrationAvatar
+              avatar={user.avatar}
+              name={displayName}
+              size={40}
+              style={{ width: '100%', height: '100%', borderRadius: '50%' }}
+            />
+          ) : (
+            displayInitials
+          )}
         </div>
         <div className="profile-menu-user-info">
           <div className="profile-menu-name">{displayName}</div>
@@ -1395,15 +1431,30 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
               </button>
 
               <div className="profile-menu-anchor" ref={profileMenuRef}>
-                {/* Mobile Hamburger Menu Button */}
+                {/* Mobile Hamburger / Profile Menu Button */}
                 <button
                   type="button"
                   className={`btn-icon-circle mobile-hamburger-btn ${isProfileMenuOpen ? 'active' : ''}`}
                   onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                   title="Toggle Navigation Menu"
                   aria-label="Toggle navigation menu"
+                  style={{
+                    padding: 0,
+                    overflow: 'hidden',
+                    border: user?.avatar ? '2px solid var(--badge-match-bg)' : undefined,
+                    cursor: 'pointer'
+                  }}
                 >
-                  <Menu size={18} />
+                  {user?.avatar ? (
+                    <IllustrationAvatar
+                      avatar={user.avatar}
+                      name={displayName}
+                      size={36}
+                      style={{ width: '100%', height: '100%', borderRadius: '50%' }}
+                    />
+                  ) : (
+                    <Menu size={18} />
+                  )}
                 </button>
 
                 {/* Desktop Profile Button */}
@@ -1413,8 +1464,23 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                   onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                   title="Account Menu"
                   aria-label="Toggle account menu"
+                  style={{
+                    padding: 0,
+                    overflow: 'hidden',
+                    border: user?.avatar ? '2px solid var(--badge-match-bg)' : undefined,
+                    cursor: 'pointer'
+                  }}
                 >
-                  <User size={18} />
+                  {user?.avatar ? (
+                    <IllustrationAvatar
+                      avatar={user.avatar}
+                      name={displayName}
+                      size={36}
+                      style={{ width: '100%', height: '100%', borderRadius: '50%' }}
+                    />
+                  ) : (
+                    <User size={18} />
+                  )}
                 </button>
 
                 {/* Desktop Profile Dropdown (attached directly beneath avatar) */}
@@ -1637,8 +1703,25 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
               <div>
                 {/* User Match Banner */}
                 <div className="curated-user-banner">
-                  <div className="curated-avatar-circle">
-                    <span>{displayInitials.charAt(0)}</span>
+                  <div 
+                    className="curated-avatar-circle"
+                    style={{
+                      padding: 0,
+                      overflow: 'hidden',
+                      background: 'transparent',
+                      border: user?.avatar ? '2px solid #FFFFFF' : undefined
+                    }}
+                  >
+                    {user?.avatar ? (
+                      <IllustrationAvatar
+                        avatar={user.avatar}
+                        name={displayName}
+                        size={36}
+                        style={{ width: '100%', height: '100%', borderRadius: '50%' }}
+                      />
+                    ) : (
+                      <span>{displayInitials.charAt(0)}</span>
+                    )}
                   </div>
                   <div className="curated-user-text">
                     <h2>

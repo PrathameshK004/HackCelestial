@@ -91,15 +91,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(null);
     };
 
+    // Real-time synchronization across components & browser tabs
+    const handleProfileUpdated = (e: any) => {
+      if (e.detail) {
+        setUser(e.detail);
+      }
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === USER_STORAGE_KEY && e.newValue) {
+        try {
+          setUser(JSON.parse(e.newValue));
+        } catch {
+          // ignore parsing error
+        }
+      }
+    };
+
     window.addEventListener('auth:session-expired', handleSessionExpired);
+    window.addEventListener('triptual:profile-updated', handleProfileUpdated);
+    window.addEventListener('storage', handleStorageChange);
+
     return () => {
       window.removeEventListener('auth:session-expired', handleSessionExpired);
+      window.removeEventListener('triptual:profile-updated', handleProfileUpdated);
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
   const saveAuthSession = (newUser: User, newAccessToken?: string, newRefreshToken?: string) => {
     setUser(newUser);
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
+    try {
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
+      window.dispatchEvent(new CustomEvent('triptual:profile-updated', { detail: newUser }));
+    } catch (e) {
+      console.warn('Failed to save user session to localStorage:', e);
+    }
 
     if (newAccessToken) {
       setToken(newAccessToken);

@@ -142,6 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: data.emailId || fallbackEmail,
       phone: data.phone || null,
       upiId: data.upiId || null,
+      avatar: data.avatar || data.user?.avatar || null,
       avatarBg: '#059669',
     };
 
@@ -308,6 +309,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           emailId: serverUser.emailId || serverUser.email || user.emailId,
           phone: serverUser.phone !== undefined ? serverUser.phone : (data.phone !== undefined ? data.phone : user.phone),
           upiId: serverUser.upiId !== undefined ? serverUser.upiId : (data.upiId !== undefined ? data.upiId : user.upiId),
+          avatar: serverUser.avatar !== undefined ? serverUser.avatar : (data.avatar !== undefined ? data.avatar : user.avatar),
           travelStyle: serverUser.travelStyle || data.travelStyle || user.travelStyle,
           currency: serverUser.currency || data.currency || user.currency,
           dob: serverUser.dob !== undefined ? serverUser.dob : (data.dob !== undefined ? data.dob : user.dob),

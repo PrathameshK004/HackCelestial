@@ -15,6 +15,7 @@ import {
 import { Search, Inbox } from 'lucide-react-native';
 import { colors, radii } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { IllustrationAvatar } from './IllustrationAvatar';
 
 interface HeaderProps {
   onPressProfile?: () => void;
@@ -34,14 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { user } = useAuth();
   const inputRef = useRef<TextInput>(null);
 
-  const displayName = user?.name || 'Yogesh Dandawalkar';
-  const userInitial = displayName
-    .split(' ')
-    .filter(Boolean)
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'YD';
+  const displayName = user?.name || user?.username || 'Yogesh Dandawalkar';
 
   return (
     <View style={styles.container}>
@@ -52,14 +46,13 @@ export const Header: React.FC<HeaderProps> = ({
         activeOpacity={0.85}
         accessibilityLabel="Open profile menu"
       >
-        <View
-          style={[
-            styles.avatarCircle,
-            { backgroundColor: user?.avatarBg || '#464B29' },
-          ]}
-        >
-          <Text style={styles.avatarText}>{userInitial}</Text>
-        </View>
+        <IllustrationAvatar
+          avatar={user?.avatar}
+          name={displayName}
+          size={40}
+          backgroundColor={user?.avatarBg || '#464B29'}
+          style={styles.avatarCircle}
+        />
       </TouchableOpacity>
 
       {/* Center: Pill search bar */}
@@ -129,6 +122,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#E5E7EB',
+    overflow: 'hidden',
   },
   avatarText: {
     color: '#FFFFFF',

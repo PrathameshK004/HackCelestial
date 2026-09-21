@@ -8,7 +8,11 @@
     "icon": "./assets/triptual-logo.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yog7284.MobileApp",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Triptual to access your camera to scan merchant UPI QR codes at counters."
+      }
     },
     "androidStatusBar": {
       "barStyle": "dark-content",
