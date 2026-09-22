@@ -25,7 +25,9 @@ const optionalVerifyToken = async (req, res, next) => {
 
 router.get('/', optionalVerifyToken, notificationController.getUserNotifications);
 router.post('/read', verifyToken, notificationController.markNotificationAsRead);
+router.post('/mark-read', verifyToken, notificationController.markNotificationAsRead);
 router.delete('/clear-all', verifyToken, notificationController.clearAllNotifications);
+router.delete('/clear', verifyToken, notificationController.clearAllNotifications);
 router.delete('/:id', verifyToken, notificationController.deleteNotification);
 
 module.exports = router;

@@ -12,9 +12,16 @@ export interface InAppNotificationItem {
 
 export class NotificationService {
   async getUserNotifications(): Promise<{ message: string; data: InAppNotificationItem[] }> {
-    return apiRequest<{ message: string; data: InAppNotificationItem[] }>('/notifications', {
-      method: 'GET',
-    });
+    try {
+      return await apiRequest<{ message: string; data: InAppNotificationItem[] }>('/notifications', {
+        method: 'GET',
+      });
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        return { message: 'Unauthenticated', data: [] };
+      }
+      throw err;
+    }
   }
 
   async markAsRead(notificationId?: string, markAll = false): Promise<{ message: string; data: any }> {

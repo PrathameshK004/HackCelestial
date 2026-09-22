@@ -47,33 +47,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   const lastBackPressRef = useRef<number>(0);
 
   // Notifications & Invitations State matching WebApp
-  const [notifications, setNotifications] = useState<InboxNotification[]>([
-    {
-      id: 'notif-1',
-      title: 'Welcome to Triptual Mobile',
-      description: 'Your collaborative group travel ledger is initialized and ready.',
-      timestamp: 'Just now',
-      isRead: false,
-      category: 'system',
-    },
-    {
-      id: 'notif-2',
-      title: 'Offline Sync Ready',
-      description: 'Expenses and settlements sync automatically when back online.',
-      timestamp: '5m ago',
-      isRead: false,
-      category: 'security',
-    },
-    {
-      id: 'notif-3',
-      title: 'Ledger Rebalancing Active',
-      description: 'Min-cash-flow transfer algorithms simplify all group debts.',
-      timestamp: '1h ago',
-      isRead: true,
-      category: 'expense',
-      actionTab: 'expenses',
-    },
-  ]);
+  const [notifications, setNotifications] = useState<InboxNotification[]>([]);
 
   const [pendingInvitations, setPendingInvitations] = useState<PendingInvitation[]>([]);
   const [isProcessingInviteCode, setIsProcessingInviteCode] = useState<string | null>(null);
@@ -109,7 +83,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   const loadNotifications = useCallback(async () => {
     try {
       const res = await notificationService.getUserNotifications();
-      if (res && Array.isArray(res.data) && res.data.length > 0) {
+      if (res && Array.isArray(res.data)) {
         const mapped: InboxNotification[] = res.data.map(item => ({
           id: item.id,
           title: item.title,
@@ -129,6 +103,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   useEffect(() => {
     loadPendingInvitations();
     loadNotifications();
+    const intervalId = setInterval(() => {
+      loadPendingInvitations();
+      loadNotifications();
+    }, 3000);
+    return () => clearInterval(intervalId);
   }, [loadPendingInvitations, loadNotifications]);
 
   const unreadInboxCount = notifications.filter((n) => !n.isRead).length + pendingInvitations.length;

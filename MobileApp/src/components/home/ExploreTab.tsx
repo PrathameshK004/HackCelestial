@@ -5,7 +5,7 @@
  * Active Flight Ticket Ledgers, and Full Stay Detail Modal with SVG Circular Gauges.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import {
   Alert,
   Modal,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import {
@@ -40,6 +41,7 @@ import {
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { useTrips } from '../../context/TripContext';
+import { apiRequest } from '../../api/apiClient';
 
 export interface CuratedStay {
   id: string;
@@ -70,191 +72,7 @@ export interface CuratedStay {
   }[];
 }
 
-export const CURATED_STAYS: CuratedStay[] = [
-  {
-    id: 'stay-oasis',
-    name: 'Oasis',
-    type: 'Villa',
-    category: 'villa',
-    destination: 'San Francisco',
-    dateRange: 'Jun 15-22',
-    guests: 5,
-    matchScore: 95,
-    rating: 4.96,
-    pricePerNight: 280,
-    totalNights: 7,
-    style: 'Modern Minimalist',
-    distance: '0.5 km',
-    featured: true,
-    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=80',
-    altImages: [
-      'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=600&q=80',
-    ],
-    metrics: { walk: 94, food: 96, activity: 88 },
-    whyMatched: [
-      {
-        icon: 'walk',
-        title: 'Central location near Golden Gate parks',
-        description: 'Direct cycling route and cable car access within 400m',
-      },
-      {
-        icon: 'food',
-        title: 'Artisanal bakeries & cafes nearby',
-        description: 'Top-rated breakfast spots and organic roasters within 3 minutes',
-      },
-      {
-        icon: 'quiet',
-        title: 'Hillside retreat with sunset views',
-        description: 'Sound-insulated architecture with private terrace garden',
-      },
-    ],
-  },
-  {
-    id: 'stay-cozy-den',
-    name: 'Cozy Den',
-    type: 'Hotel',
-    category: 'hotel',
-    destination: 'Barcelona',
-    dateRange: 'Jun 15-22',
-    guests: 2,
-    matchScore: 91,
-    rating: 4.78,
-    pricePerNight: 146,
-    totalNights: 7,
-    style: 'Boutique',
-    distance: '0.3 km',
-    featured: true,
-    image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1000&q=80',
-    altImages: [
-      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=600&q=80',
-    ],
-    metrics: { walk: 91, food: 91, activity: 91 },
-    whyMatched: [
-      {
-        icon: 'walk',
-        title: 'Walkable to your saved spots',
-        description: '4 of your wishlist places and Gothic Quarter within 800m',
-      },
-      {
-        icon: 'food',
-        title: 'Food scene fits your trips',
-        description: 'Matches tapas & wine bars you rated in Lisbon & Rome',
-      },
-      {
-        icon: 'quiet',
-        title: 'Quiet area, like your last 3 stays',
-        description: 'Residential pedestrian alleyway with low night noise',
-      },
-    ],
-  },
-  {
-    id: 'stay-garden-escape',
-    name: 'Garden Escape',
-    type: 'House',
-    category: 'villa',
-    destination: 'Provence',
-    dateRange: 'Jun 15-22',
-    guests: 3,
-    matchScore: 87,
-    rating: 4.89,
-    pricePerNight: 132,
-    totalNights: 7,
-    style: 'Coastal',
-    distance: '1.2 km',
-    image: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=800&q=80',
-    altImages: [],
-    metrics: { walk: 85, food: 89, activity: 84 },
-    whyMatched: [
-      {
-        icon: 'walk',
-        title: 'Lush botanical garden proximity',
-        description: 'Surrounded by lavender fields and centuries-old olive groves',
-      },
-      {
-        icon: 'food',
-        title: 'Local winery tours and organic markets',
-        description: 'Farm-to-table dining and olive oil tasting at your doorstep',
-      },
-      {
-        icon: 'quiet',
-        title: 'Private estate with solar heated pool',
-        description: 'Zero road noise and crystal clear stargazing night skies',
-      },
-    ],
-  },
-  {
-    id: 'stay-coastal-villa',
-    name: 'Coastal Villa',
-    type: 'Resort',
-    category: 'resort',
-    destination: 'Santorini',
-    dateRange: 'Jun 15-22',
-    guests: 4,
-    matchScore: 83,
-    rating: 4.62,
-    pricePerNight: 195,
-    totalNights: 7,
-    style: 'Mediterranean',
-    distance: '0.8 km',
-    image: 'https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=800&q=80',
-    altImages: [],
-    metrics: { walk: 82, food: 88, activity: 90 },
-    whyMatched: [
-      {
-        icon: 'walk',
-        title: 'Direct cliff path to private bay',
-        description: 'Private stone staircase down to crystal blue waters',
-      },
-      {
-        icon: 'food',
-        title: 'Fresh seafood taverns on the pier',
-        description: 'Matched with your Mediterranean seafood favorites',
-      },
-      {
-        icon: 'quiet',
-        title: 'Panoramic Aegean sea horizon',
-        description: 'Private infinity plunge pool facing the iconic caldera sunset',
-      },
-    ],
-  },
-  {
-    id: 'stay-wilderness-escape',
-    name: 'Wilderness Escape',
-    type: 'Camping',
-    category: 'camping',
-    destination: 'Banff',
-    dateRange: 'Jun 15-22',
-    guests: 2,
-    matchScore: 79,
-    rating: 4.94,
-    pricePerNight: 120,
-    totalNights: 7,
-    style: 'Classic Eco-Yurt',
-    distance: '2.0 km',
-    image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=800&q=80',
-    altImages: [],
-    metrics: { walk: 90, food: 74, activity: 96 },
-    whyMatched: [
-      {
-        icon: 'walk',
-        title: 'Trailhead at your doorstep',
-        description: 'Direct access to Alpine ridges and turquoise glacial lakes',
-      },
-      {
-        icon: 'food',
-        title: 'Woodfired cooking & campfire grill',
-        description: 'Artisanal local provisions delivered daily in timber hampers',
-      },
-      {
-        icon: 'quiet',
-        title: 'Pure silence under pine canopy',
-        description: 'Off-grid comfort with woodburning stove and heated sheepskins',
-      },
-    ],
-  },
-];
+export const CURATED_STAYS: CuratedStay[] = [];
 
 const CATEGORIES = [
   { id: 'all', label: 'All options', icon: Building },
@@ -326,11 +144,31 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
 }) => {
   const { trips, refreshTrips } = useTrips();
   const [refreshing, setRefreshing] = useState(false);
+  const [exploreStays, setExploreStays] = useState<CuratedStay[]>([]);
+  const [isLoadingStays, setIsLoadingStays] = useState<boolean>(true);
+
+  const loadExplorePackages = async () => {
+    try {
+      const res: any = await apiRequest('/packages/explore');
+      const pkgs = res?.data?.packages || res?.packages;
+      if (Array.isArray(pkgs)) {
+        setExploreStays(pkgs);
+      }
+    } catch (err) {
+      console.warn('Failed to load real tour packages from database:', err);
+    } finally {
+      setIsLoadingStays(false);
+    }
+  };
+
+  useEffect(() => {
+    loadExplorePackages();
+  }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await refreshTrips();
+      await Promise.all([refreshTrips(), loadExplorePackages()]);
       if (onRefresh) await onRefresh();
     } catch (err) {
       console.warn('Refresh error in ExploreTab:', err);
@@ -356,7 +194,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   const [viewMode, setViewMode] = useState<'gallery' | 'list' | 'map'>('gallery');
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [selectedStay, setSelectedStay] = useState<CuratedStay | null>(null);
-  const [savedStayIds, setSavedStayIds] = useState<string[]>(['stay-cozy-den', 'stay-oasis']);
+  const [savedStayIds, setSavedStayIds] = useState<string[]>([]);
   const [isReserved, setIsReserved] = useState(false);
 
   // Toggle Save Stay
@@ -366,21 +204,21 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
     );
   };
 
-  // Filter Stays
+  // Filter Stays (Real DB Tour Packages)
   const filteredStays = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return CURATED_STAYS.filter((stay) => {
-      const matchCat = activeCategory === 'all' || stay.category === activeCategory;
+    return exploreStays.filter((stay) => {
+      const matchCat = activeCategory === 'all' || (stay.category && stay.category.toLowerCase() === activeCategory);
       const matchQuery =
         q === '' ||
-        stay.name.toLowerCase().includes(q) ||
-        stay.destination.toLowerCase().includes(q) ||
-        stay.type.toLowerCase().includes(q);
+        (stay.name && stay.name.toLowerCase().includes(q)) ||
+        (stay.destination && stay.destination.toLowerCase().includes(q)) ||
+        (stay.type && stay.type.toLowerCase().includes(q));
       return matchCat && matchQuery;
     });
-  }, [activeCategory, searchQuery]);
+  }, [exploreStays, activeCategory, searchQuery]);
 
-  const featuredStay = filteredStays[0] || CURATED_STAYS[0];
+  const featuredStay = filteredStays[0] || exploreStays[0];
   const gridMatches = filteredStays.slice(1, 5);
 
   return (
@@ -493,111 +331,128 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
         {/* ---------------- VIEW MODE: GALLERY ---------------- */}
         {viewMode === 'gallery' && (
           <View style={styles.galleryViewWrapper}>
-            {/* Stacked Featured Hero Card with Depth Layer */}
-            <View style={styles.heroStackWrapper}>
-              {/* Back depth layer */}
-              <View style={styles.heroStackBackCard}>
-                <Image
-                  source={{ uri: CURATED_STAYS[1]?.image || featuredStay.image }}
-                  style={styles.heroBackImg}
-                />
-                <View style={styles.heroBackOverlay} />
+            {isLoadingStays ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#464B29" />
+                <Text style={{ marginTop: 12, color: '#585952', fontSize: 14 }}>
+                  Fetching live tour packages...
+                </Text>
               </View>
+            ) : !featuredStay ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <Text style={{ color: '#585952', fontSize: 14 }}>
+                  No published tour packages found in database.
+                </Text>
+              </View>
+            ) : (
+              <>
+                {/* Stacked Featured Hero Card with Depth Layer */}
+                <View style={styles.heroStackWrapper}>
+                  {/* Back depth layer */}
+                  <View style={styles.heroStackBackCard}>
+                    <Image
+                      source={{ uri: exploreStays[1]?.image || featuredStay.image }}
+                      style={styles.heroBackImg}
+                    />
+                    <View style={styles.heroBackOverlay} />
+                  </View>
 
-              {/* Main Featured Hero Card */}
-              <TouchableOpacity
-                style={styles.heroFeaturedCard}
-                onPress={() => setSelectedStay(featuredStay)}
-                activeOpacity={0.92}
-              >
-                <Image source={{ uri: featuredStay.image }} style={styles.heroCardImg} />
-                <View style={styles.heroCardOverlay}>
-                  {/* Top Badges */}
-                  <View style={styles.heroCardTopBadges}>
-                    <View style={styles.badgesGroupLeft}>
-                      <View style={styles.featuredBadge}>
-                        <Text style={styles.badgeTextDark}>Featured</Text>
+                  {/* Main Featured Hero Card */}
+                  <TouchableOpacity
+                    style={styles.heroFeaturedCard}
+                    onPress={() => setSelectedStay(featuredStay)}
+                    activeOpacity={0.92}
+                  >
+                    <Image source={{ uri: featuredStay.image }} style={styles.heroCardImg} />
+                    <View style={styles.heroCardOverlay}>
+                      {/* Top Badges */}
+                      <View style={styles.heroCardTopBadges}>
+                        <View style={styles.badgesGroupLeft}>
+                          <View style={styles.featuredBadge}>
+                            <Text style={styles.badgeTextDark}>Featured</Text>
+                          </View>
+                          <View style={styles.matchBadge}>
+                            <Text style={styles.badgeTextDark}>
+                              {featuredStay.matchScore}% Match
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.starRatingBadge}>
+                          <Star size={14} color="#FFFFFF" fill="#FFFFFF" />
+                          <Text style={styles.starRatingText}>{featuredStay.rating}</Text>
+                        </View>
                       </View>
-                      <View style={styles.matchBadge}>
-                        <Text style={styles.badgeTextDark}>
-                          {featuredStay.matchScore}% Match
+
+                      {/* Bottom Info */}
+                      <View style={styles.heroCardBottomInfo}>
+                        <Text style={styles.heroCardTitle}>{featuredStay.name}</Text>
+                        <Text style={styles.heroCardSub}>
+                          {featuredStay.destination} · {featuredStay.type} · $
+                          {featuredStay.pricePerNight}/night
                         </Text>
                       </View>
                     </View>
-
-                    <View style={styles.starRatingBadge}>
-                      <Star size={14} color="#FFFFFF" fill="#FFFFFF" />
-                      <Text style={styles.starRatingText}>{featuredStay.rating}</Text>
-                    </View>
-                  </View>
-
-                  {/* Bottom Info */}
-                  <View style={styles.heroCardBottomInfo}>
-                    <Text style={styles.heroCardTitle}>{featuredStay.name}</Text>
-                    <Text style={styles.heroCardSub}>
-                      {featuredStay.destination} · {featuredStay.type} · $
-                      {featuredStay.pricePerNight}/night
-                    </Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
-            </View>
 
-            {/* Section Header: More matches for you */}
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionSerifTitle}>More matches for you</Text>
-              <Text style={styles.sectionCounterBadge}>
-                {gridMatches.length} of {CURATED_STAYS.length}
-              </Text>
-            </View>
+                {/* Section Header: More matches for you */}
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionSerifTitle}>More matches for you</Text>
+                  <Text style={styles.sectionCounterBadge}>
+                    {gridMatches.length} of {exploreStays.length}
+                  </Text>
+                </View>
 
-            {/* 2x2 Matches Grid */}
-            <View style={styles.matchesGrid}>
-              {gridMatches.map((stay) => (
+                {/* 2x2 Matches Grid */}
+                <View style={styles.matchesGrid}>
+                  {gridMatches.map((stay) => (
+                    <TouchableOpacity
+                      key={stay.id}
+                      style={styles.matchGridCard}
+                      onPress={() => setSelectedStay(stay)}
+                      activeOpacity={0.9}
+                    >
+                      <Image source={{ uri: stay.image }} style={styles.matchGridImg} />
+                      <View style={styles.matchGridOverlay}>
+                        <View style={styles.matchGridTopBadges}>
+                          <View style={styles.matchBadgeMini}>
+                            <Text style={styles.badgeTextDarkMini}>
+                              {stay.matchScore}%
+                            </Text>
+                          </View>
+                          <View style={styles.starRatingBadgeMini}>
+                            <Star size={11} color="#FFFFFF" fill="#FFFFFF" />
+                            <Text style={styles.starRatingTextMini}>{stay.rating}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.matchGridBottom}>
+                          <Text style={styles.matchGridTitle} numberOfLines={1}>
+                            {stay.name}
+                          </Text>
+                          <Text style={styles.matchGridPrice}>
+                            ${stay.pricePerNight}/night
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* View More Pill Button */}
                 <TouchableOpacity
-                  key={stay.id}
-                  style={styles.matchGridCard}
-                  onPress={() => setSelectedStay(stay)}
-                  activeOpacity={0.9}
+                  style={styles.btnViewMorePill}
+                  onPress={() => setViewMode('list')}
+                  activeOpacity={0.8}
                 >
-                  <Image source={{ uri: stay.image }} style={styles.matchGridImg} />
-                  <View style={styles.matchGridOverlay}>
-                    <View style={styles.matchGridTopBadges}>
-                      <View style={styles.matchBadgeMini}>
-                        <Text style={styles.badgeTextDarkMini}>
-                          {stay.matchScore}%
-                        </Text>
-                      </View>
-                      <View style={styles.starRatingBadgeMini}>
-                        <Star size={11} color="#FFFFFF" fill="#FFFFFF" />
-                        <Text style={styles.starRatingTextMini}>{stay.rating}</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.matchGridBottom}>
-                      <Text style={styles.matchGridTitle} numberOfLines={1}>
-                        {stay.name}
-                      </Text>
-                      <Text style={styles.matchGridPrice}>
-                        ${stay.pricePerNight}/night
-                      </Text>
-                    </View>
-                  </View>
+                  <Text style={styles.btnViewMoreText}>
+                    View More · {exploreStays.length} Total Picks
+                  </Text>
+                  <ArrowRight size={16} color="#181916" />
                 </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* View More Pill Button */}
-            <TouchableOpacity
-              style={styles.btnViewMorePill}
-              onPress={() => setViewMode('list')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.btnViewMoreText}>
-                View More · {CURATED_STAYS.length} Total Picks
-              </Text>
-              <ArrowRight size={16} color="#181916" />
-            </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 
@@ -704,118 +559,6 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             </TouchableOpacity>
           </View>
         )}
-
-        {/* ---------------- ACTIVE GROUP LEDGERS SECTION ---------------- */}
-        <View style={styles.activeLedgersSection}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionSerifTitle}>Active Group Ledgers</Text>
-              <Text style={styles.sectionSubMuted}>
-                Instant debt minimization and UPI expense splitting
-              </Text>
-            </View>
-            {onCreateTrip && (
-              <TouchableOpacity
-                style={styles.btnNewGroup}
-                onPress={onCreateTrip}
-                activeOpacity={0.8}
-              >
-                <Plus size={14} color="#181916" />
-                <Text style={styles.btnNewGroupText}>New Group</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Ticket Flight Cards */}
-          {uniqueTrips.length === 0 ? (
-            <View style={styles.emptyLedgersCard}>
-              <Text style={styles.emptyLedgersText}>
-                No active travel groups yet. Create a trip or join with an invite code.
-              </Text>
-            </View>
-          ) : (
-            uniqueTrips.map((group) => {
-              const isSettled = group.status === 'completed';
-              const originCode = (group.destination || 'SFO')
-                .slice(0, 3)
-                .toUpperCase();
-              const travelersCount = group.members?.length || 2;
-
-              return (
-                <TouchableOpacity
-                  key={group.id}
-                  style={styles.ticketRouteCard}
-                  onPress={() => onSelectTrip && onSelectTrip(group.id)}
-                  activeOpacity={0.88}
-                >
-                  {/* Route Nodes Row */}
-                  <View style={styles.routeNodesRow}>
-                    <View style={styles.routeNode}>
-                      <Text style={styles.routeNodeCode}>{originCode}</Text>
-                      <Text style={styles.routeNodeSub}>{group.destination}</Text>
-                    </View>
-
-                    <View style={styles.routeConnector}>
-                      <View style={styles.routeDottedLine} />
-                      <View style={styles.routePlaneBadge}>
-                        <Plane size={13} color="#464B29" />
-                      </View>
-                    </View>
-
-                    <View style={[styles.routeNode, { alignItems: 'flex-end' }]}>
-                      <Text style={styles.routeNodeCode}>{travelersCount} PAX</Text>
-                      <Text style={styles.routeNodeSub}>Travelers</Text>
-                    </View>
-                  </View>
-
-                  {/* Route Meta Row */}
-                  <View style={styles.routeMetaRow}>
-                    <View>
-                      <Text style={styles.metaTimeBold}>{group.name}</Text>
-                      <Text style={styles.metaDateSub}>
-                        {group.createdAt
-                          ? new Date(group.createdAt).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                            })
-                          : 'Jun 15'}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text
-                        style={[
-                          styles.metaTimeBold,
-                          isSettled ? styles.textEmerald : styles.textAmber,
-                        ]}
-                      >
-                        {isSettled ? 'Settled' : 'Active Split'}
-                      </Text>
-                      <Text style={styles.metaDateSub}>{group.currency} Ledger</Text>
-                    </View>
-                  </View>
-
-                  {/* Ticket Bottom Pill */}
-                  <View style={styles.ticketBottomPill}>
-                    <View style={styles.ticketProviderInfo}>
-                      <View style={styles.providerIconBadge}>
-                        <Text style={styles.providerBadgeText}>
-                          {(group.destination || 'G').slice(0, 1).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View>
-                        <Text style={styles.providerName}>{group.name}</Text>
-                        <Text style={styles.providerTag}>
-                          {isSettled ? 'Completed Trip' : 'Balanced Split'}
-                        </Text>
-                      </View>
-                    </View>
-                    <ArrowRight size={15} color="#8E8F87" />
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
 
         {/* Extra spacing for floating bottom dock */}
         <View style={{ height: 110 }} />
@@ -925,7 +668,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                       </View>
                       <View style={styles.compareCol}>
                         <Image
-                          source={{ uri: CURATED_STAYS[1]?.image }}
+                          source={{ uri: exploreStays[1]?.image || selectedStay.image }}
                           style={styles.compareThumb}
                         />
                         <View style={styles.altBadge}>
@@ -934,7 +677,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                       </View>
                       <View style={styles.compareCol}>
                         <Image
-                          source={{ uri: CURATED_STAYS[2]?.image }}
+                          source={{ uri: exploreStays[2]?.image || selectedStay.image }}
                           style={styles.compareThumb}
                         />
                         <View style={styles.altBadge}>

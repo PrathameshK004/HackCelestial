@@ -343,34 +343,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
   // Git-style Inbox Notifications State
   const [isInboxOpen, setIsInboxOpen] = useState(false);
-  const [notifications, setNotifications] = useState<InboxNotification[]>([
-    {
-      id: 'notif-1',
-      title: 'Security Verified',
-      description: 'Zero plaintext OTP leak vulnerability eliminated. Direct SMTP delivery active.',
-      timestamp: 'Just now',
-      isRead: false,
-      category: 'security'
-    },
-    {
-      id: 'notif-2',
-      title: 'Personalized Stays Available',
-      description: 'Explore curated stays in Barcelona, San Francisco, and Banff.',
-      timestamp: '20m ago',
-      isRead: false,
-      category: 'trip',
-      actionTab: 'explore'
-    },
-    {
-      id: 'notif-3',
-      title: 'Automated Bill Splitter',
-      description: 'Real-time ledger engine ready to balance shared group expenses.',
-      timestamp: '2h ago',
-      isRead: true,
-      category: 'expense',
-      actionTab: 'expenses'
-    }
-  ]);
+  const [notifications, setNotifications] = useState<InboxNotification[]>([]);
 
   const [pendingInvitations, setPendingInvitations] = useState<PendingInvitation[]>([]);
   const [isProcessingInviteCode, setIsProcessingInviteCode] = useState<string | null>(null);
@@ -458,7 +431,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const loadNotifications = async () => {
     try {
       const items = await fetchUserNotifications();
-      if (items && Array.isArray(items) && items.length > 0) {
+      if (items && Array.isArray(items)) {
         const mapped: InboxNotification[] = items.map(i => ({
           id: i.id,
           title: i.title,

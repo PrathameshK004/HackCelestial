@@ -14,9 +14,16 @@ export const groupService = {
   },
 
   async getMyGroups(): Promise<{ message: string; data: any[] }> {
-    return apiRequest<{ message: string; data: any[] }>('/groups/my-groups', {
-      method: 'GET',
-    });
+    try {
+      return await apiRequest<{ message: string; data: any[] }>('/groups/my-groups', {
+        method: 'GET',
+      });
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        return { message: 'Unauthenticated', data: [] };
+      }
+      throw err;
+    }
   },
 
   async getGroupById(groupId: string): Promise<{ message: string; data: any }> {
@@ -137,15 +144,29 @@ export const groupService = {
   },
 
   async getMyPendingInvitations(): Promise<{ message: string; data: any[] }> {
-    return apiRequest<{ message: string; data: any[] }>('/invites/my-pending', {
-      method: 'GET',
-    });
+    try {
+      return await apiRequest<{ message: string; data: any[] }>('/invites/my-pending', {
+        method: 'GET',
+      });
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        return { message: 'Unauthenticated', data: [] };
+      }
+      throw err;
+    }
   },
 
   async getUserPayments(): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>('/payments/my-payments', {
-      method: 'GET',
-    });
+    try {
+      return await apiRequest<{ message: string; data: any }>('/payments/my-payments', {
+        method: 'GET',
+      });
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        return { message: 'Unauthenticated', data: { totalSpent: 0, totalReceived: 0, count: 0, transactions: [] } };
+      }
+      throw err;
+    }
   },
 
   async createRazorpayOrder(payload: { amount: number; currency?: string; receipt?: string; notes?: any }): Promise<{ message: string; data: any }> {

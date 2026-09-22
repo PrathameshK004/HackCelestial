@@ -70,9 +70,16 @@ export const groupService = {
    * Get all trips for the authenticated user
    */
   async getMyGroups(): Promise<{ err?: any; message: string; data: any[] }> {
-    return request<{ err?: any; message: string; data: any[] }>('/groups/my-groups', {
-      method: 'GET',
-    });
+    try {
+      return await request<{ err?: any; message: string; data: any[] }>('/groups/my-groups', {
+        method: 'GET',
+      });
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        return { message: 'Unauthenticated', data: [] };
+      }
+      throw err;
+    }
   },
 
   /**
@@ -265,9 +272,16 @@ export const groupService = {
       transactions: any[];
     };
   }> {
-    return request('/payments/my-payments', {
-      method: 'GET',
-    });
+    try {
+      return await request('/payments/my-payments', {
+        method: 'GET',
+      });
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        return { message: 'Unauthenticated', data: { totalSpent: 0, totalReceived: 0, count: 0, transactions: [] } };
+      }
+      throw err;
+    }
   },
 
   /**

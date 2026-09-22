@@ -24,5 +24,6 @@ router.use('/notifications', notificationRoutes);
 router.use('/user-notifications', notificationRoutes);
 router.use('/packages', packageRoutes);
 router.post('/user-push-tokens', verifyToken, userController.registerPushToken);
+router.delete('/user-push-tokens', verifyToken, userController.unregisterPushToken);
 
 module.exports = router;
