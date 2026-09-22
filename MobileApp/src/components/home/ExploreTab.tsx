@@ -72,7 +72,192 @@ export interface CuratedStay {
   }[];
 }
 
-export const CURATED_STAYS: CuratedStay[] = [];
+export const CURATED_STAYS: CuratedStay[] = [
+  {
+    id: 'stay-cozy-den',
+    name: 'Cozy Den',
+    type: 'Hotel',
+    category: 'hotel',
+    destination: 'Barcelona',
+    dateRange: 'Jun 15-22',
+    guests: 2,
+    matchScore: 91,
+    rating: 4.78,
+    pricePerNight: 146,
+    totalNights: 7,
+    style: 'Boutique',
+    distance: '0.3 km',
+    featured: true,
+    image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1000&q=80',
+    altImages: [
+      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=600&q=80',
+    ],
+    metrics: { walk: 91, food: 91, activity: 91 },
+    whyMatched: [
+      {
+        icon: 'walk',
+        title: 'Walkable to your saved spots',
+        description: '4 of your wishlist places within 800m',
+      },
+      {
+        icon: 'food',
+        title: 'Food scene fits your trips',
+        description: 'Matches where you ate in Lisbon & Rome',
+      },
+      {
+        icon: 'quiet',
+        title: 'Quiet area, like your last 3 stays',
+        description: 'Residential street, low night noise',
+      },
+    ],
+  },
+  {
+    id: 'stay-oasis',
+    name: 'Oasis',
+    type: 'Villa',
+    category: 'villa',
+    destination: 'San Francisco',
+    dateRange: 'Jun 15-22',
+    guests: 5,
+    matchScore: 95,
+    rating: 4.96,
+    pricePerNight: 280,
+    totalNights: 7,
+    style: 'Modern Minimalist',
+    distance: '0.5 km',
+    featured: true,
+    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=80',
+    altImages: [
+      'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=600&q=80',
+    ],
+    metrics: { walk: 94, food: 96, activity: 88 },
+    whyMatched: [
+      {
+        icon: 'walk',
+        title: 'Central location near Golden Gate parks',
+        description: 'Direct cycling route and cable car access',
+      },
+      {
+        icon: 'food',
+        title: 'Artisanal bakeries & cafes nearby',
+        description: 'Top-rated breakfast spots within 3 minutes',
+      },
+      {
+        icon: 'quiet',
+        title: 'Hillside retreat with sunset views',
+        description: 'Sound-insulated architecture with private terrace',
+      },
+    ],
+  },
+  {
+    id: 'stay-garden-escape',
+    name: 'Garden Escape',
+    type: 'House',
+    category: 'villa',
+    destination: 'Provence',
+    dateRange: 'Jun 15-22',
+    guests: 3,
+    matchScore: 87,
+    rating: 4.89,
+    pricePerNight: 132,
+    totalNights: 7,
+    style: 'Coastal',
+    distance: '1.2 km',
+    image: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=800&q=80',
+    altImages: [],
+    metrics: { walk: 85, food: 89, activity: 84 },
+    whyMatched: [
+      {
+        icon: 'walk',
+        title: 'Lush botanical garden proximity',
+        description: 'Surrounded by lavender fields and olive groves',
+      },
+      {
+        icon: 'food',
+        title: 'Local winery tours and organic markets',
+        description: 'Farm-to-table dining matches your profile',
+      },
+      {
+        icon: 'quiet',
+        title: 'Private estate with solar heated pool',
+        description: 'Zero road noise and clear stargazing skies',
+      },
+    ],
+  },
+  {
+    id: 'stay-coastal-villa',
+    name: 'Coastal Villa',
+    type: 'Resort',
+    category: 'resort',
+    destination: 'Santorini',
+    dateRange: 'Jun 15-22',
+    guests: 4,
+    matchScore: 83,
+    rating: 4.62,
+    pricePerNight: 195,
+    totalNights: 7,
+    style: 'Mediterranean',
+    distance: '0.8 km',
+    image: 'https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=800&q=80',
+    altImages: [],
+    metrics: { walk: 82, food: 88, activity: 90 },
+    whyMatched: [
+      {
+        icon: 'walk',
+        title: 'Direct cliff path to private bay',
+        description: 'Private access to crystal blue waters',
+      },
+      {
+        icon: 'food',
+        title: 'Fresh seafood taverns on the pier',
+        description: 'Matched with your Greek cuisine favorites',
+      },
+      {
+        icon: 'quiet',
+        title: 'Panoramic Aegean sea horizon',
+        description: 'Private infinity pool facing the sunset',
+      },
+    ],
+  },
+  {
+    id: 'stay-wilderness-escape',
+    name: 'Wilderness Escape',
+    type: 'Camping',
+    category: 'camping',
+    destination: 'Banff',
+    dateRange: 'Jun 15-22',
+    guests: 2,
+    matchScore: 79,
+    rating: 4.94,
+    pricePerNight: 120,
+    totalNights: 7,
+    style: 'Classic Eco-Yurt',
+    distance: '2.0 km',
+    image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=800&q=80',
+    altImages: [],
+    metrics: { walk: 90, food: 74, activity: 96 },
+    whyMatched: [
+      {
+        icon: 'walk',
+        title: 'Trailhead at your doorstep',
+        description: 'Direct access to Alpine ridges and glacial lakes',
+      },
+      {
+        icon: 'food',
+        title: 'Woodfired cooking & campfire grill',
+        description: 'Artisanal local provisions delivered daily',
+      },
+      {
+        icon: 'quiet',
+        title: 'Pure silence under the pine canopy',
+        description: 'Off-grid comfort with woodburning stove',
+      },
+    ],
+  },
+];
 
 const CATEGORIES = [
   { id: 'all', label: 'All options', icon: Building },
@@ -144,14 +329,14 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
 }) => {
   const { trips, refreshTrips } = useTrips();
   const [refreshing, setRefreshing] = useState(false);
-  const [exploreStays, setExploreStays] = useState<CuratedStay[]>([]);
+  const [exploreStays, setExploreStays] = useState<CuratedStay[]>(CURATED_STAYS);
   const [isLoadingStays, setIsLoadingStays] = useState<boolean>(true);
 
   const loadExplorePackages = async () => {
     try {
       const res: any = await apiRequest('/packages/explore');
       const pkgs = res?.data?.packages || res?.packages;
-      if (Array.isArray(pkgs)) {
+      if (Array.isArray(pkgs) && pkgs.length > 0) {
         setExploreStays(pkgs);
       }
     } catch (err) {

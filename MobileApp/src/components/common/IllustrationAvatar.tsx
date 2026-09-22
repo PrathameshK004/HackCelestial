@@ -11,6 +11,7 @@ import {
 import { Camera as CameraIcon } from 'lucide-react-native';
 import { getIllustrationById, getIllustrationAsset } from '../../constants/illustrations';
 import { colors } from '../../theme/colors';
+import { SERVER_BASE } from '../../api/apiClient';
 
 interface IllustrationAvatarProps {
   avatar?: string | null;
@@ -74,8 +75,8 @@ export const IllustrationAvatar: React.FC<IllustrationAvatarProps> = ({
 
     // 2. HTTP / Data URL / Server Image
     if (isHttpImage && avatar) {
-      const uri = avatar.startsWith('/illustrations/')
-        ? `http://10.0.2.2:4000${avatar}`
+      const uri = avatar.startsWith('/illustrations/') || avatar.startsWith('/')
+        ? `${SERVER_BASE}${avatar}`
         : avatar;
 
       return (

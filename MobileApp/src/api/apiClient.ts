@@ -1,6 +1,6 @@
 /**
  * Production-Grade API Client for MobileApp
- * Live Backend: https://hackcelestial-api.onrender.com/api
+ * Live Backend: https://triptual-api.onrender.com/api
  * Features: Silent Token Rotation, Request Replay, Network Timeout Handling
  */
 
@@ -8,14 +8,21 @@ import { Platform } from 'react-native';
 import { storage } from '../database/storage';
 
 export const getApiBase = (): string => {
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:4000/api';
+  const envUrl =
+    process.env.EXPO_PUBLIC_API_URL ||
+    process.env.REACT_APP_API_URL ||
+    process.env.VITE_API_URL;
+
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.trim().replace(/\/+$/, '');
   }
-  return 'http://127.0.0.1:4000/api';
+
+  return 'https://triptual-api.onrender.com/api';
 };
 
 export const API_BASE = getApiBase();
-export const FALLBACK_API_BASE = 'http://192.168.0.113:4000/api';
+export const FALLBACK_API_BASE = API_BASE;
+export const SERVER_BASE = API_BASE.replace(/\/api\/?$/, '');
 
 export interface RequestOptions extends RequestInit {
   token?: string | null;
