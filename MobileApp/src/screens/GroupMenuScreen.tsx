@@ -13,6 +13,8 @@ import {
   TouchableOpacity,
   Alert,
   BackHandler,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -31,10 +33,11 @@ import {
   CheckCircle2,
   Clock,
   ChevronRight,
+  Lock,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
 import { useTrips } from '../context/TripContext';
-import { useSync } from '../context/SyncContext';
+import { groupService } from '../api/group.service';
 import { ledgerEngine } from '../sync/ledgerEngine';
 import { AddExpenseModal } from '../components/group/AddExpenseModal';
 import { SettleUpModal } from '../components/group/SettleUpModal';
@@ -50,8 +53,21 @@ interface GroupMenuScreenProps {
 }
 
 export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack }) => {
-  const { trips, addExpense, deleteExpense, addMember, recordSettlement } = useTrips();
-  const { isOnline, syncNow, isSyncing } = useSync();
+  const { trips, addExpense, deleteExpense, addMember, recordSettlement, refreshTrips } = useTrips();
+  const isSyncing = false;
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshTrips();
+    } catch (err) {
+      console.warn('Refresh error:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const [activeTab, setActiveTab] = useState<LedgerTab>('expenses');
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
@@ -72,11 +88,48 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const settlements = trip?.settlements || [];
 
   const confirmedMembers = members.filter(
-    (m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer'
+    (m) => m.role === 'Organizer' || m.status === 'ACCEPTED'
   );
   const pendingMembers = members.filter(
-    (m) => m.status === 'PENDING' && m.role !== 'Organizer'
+    (m) => m.role !== 'Organizer' && (m.status === 'PENDING' || !m.status)
   );
+  const declinedMembers = members.filter(
+    (m) => m.role !== 'Organizer' && (m.status === 'REJECTED' || m.status === 'DECLINED')
+  );
+
+  const isExpenseLocked = members.length > 1 && (pendingMembers.length > 0 || declinedMembers.length > 0 || confirmedMembers.length < members.length);
+
+  const handleAttemptAddExpense = () => {
+    if (isExpenseLocked) {
+      const pendingCount = pendingMembers.length;
+      const declinedCount = declinedMembers.length;
+      let reasonText = '';
+      if (pendingCount > 0 && declinedCount > 0) {
+        reasonText = `${pendingCount} traveler${pendingCount > 1 ? 's' : ''} awaiting invitation acceptance and ${declinedCount} traveler${declinedCount > 1 ? 's' : ''} declined.`;
+      } else if (pendingCount > 0) {
+        reasonText = `${pendingCount} traveler${pendingCount > 1 ? 's have' : ' has'} not yet accepted the trip invitation.`;
+      } else if (declinedCount > 0) {
+        reasonText = `${declinedCount} traveler${declinedCount > 1 ? 's have' : ' has'} declined the trip invitation.`;
+      } else {
+        reasonText = `Unconfirmed group members present in roster.`;
+      }
+
+      Alert.alert(
+        'Expense Management Locked 🔒',
+        `Expense logging and cost distribution are disabled until all invited group members accept their trip invitations.\n\nStatus: ${confirmedMembers.length}/${members.length} Confirmed.\nReason: ${reasonText}\n\nPlease review your roster and share invitation links to complete group setup.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'View Traveler Roster',
+            style: 'default',
+            onPress: () => setIsMembersModalOpen(true),
+          },
+        ]
+      );
+      return;
+    }
+    setIsAddExpenseOpen(true);
+  };
 
   // Optimal debts calculation
   const optimalResult = useMemo(() => {
@@ -178,10 +231,14 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         <View style={styles.navActions}>
           <TouchableOpacity
             style={styles.actionIconBtn}
-            onPress={() => syncNow()}
+            onPress={() => handleRefresh()}
             activeOpacity={0.7}
           >
-            <RefreshCw size={16} color={isSyncing ? colors.accentBlue : colors.slate600} />
+            {isSyncing || refreshing ? (
+              <ActivityIndicator size="small" color={colors.primary600} />
+            ) : (
+              <RefreshCw size={16} color={colors.slate600} />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -195,22 +252,48 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
       </View>
 
       {/* Main Content Area */}
-      <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
-        {/* Unstop Acceptance Alert Banner */}
-        {pendingMembers.length > 0 && (
+      <ScrollView
+        style={styles.scrollBody}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary600]}
+            tintColor={colors.primary600}
+          />
+        }
+      >
+        {/* Unstop Acceptance Alert Banner & Lock Indicator */}
+        {isExpenseLocked ? (
           <TouchableOpacity
-            style={styles.unstopStatusBanner}
+            style={[styles.unstopStatusBanner, { backgroundColor: '#fffbe6', borderColor: '#fde68a' }]}
             onPress={() => setIsMembersModalOpen(true)}
             activeOpacity={0.85}
           >
-            <View style={styles.unstopBannerIcon}>
-              <Clock size={13} color="#b45309" />
+            <View style={[styles.unstopBannerIcon, { backgroundColor: '#fef3c7' }]}>
+              <Lock size={13} color="#b45309" />
             </View>
             <Text style={styles.unstopStatusText}>
-              <Text style={{ fontWeight: '700', color: '#78350f' }}>{pendingMembers.length} traveler{pendingMembers.length > 1 ? 's' : ''}</Text> awaiting invitation acceptance. Expenses are split only among confirmed travelers.
+              <Text style={{ fontWeight: '800', color: '#92400e' }}>Expense Logging Locked 🔒</Text> •{' '}
+              {pendingMembers.length > 0 ? (
+                <Text style={{ color: '#78350f' }}>{pendingMembers.length} traveler invitation{pendingMembers.length > 1 ? 's' : ''} pending acceptance. </Text>
+              ) : (
+                <Text style={{ color: '#78350f' }}>{declinedMembers.length} member{declinedMembers.length > 1 ? 's' : ''} declined invitation. </Text>
+              )}
+              Tap to view roster.
             </Text>
             <ChevronRight size={14} color="#b45309" />
           </TouchableOpacity>
+        ) : (
+          <View style={[styles.unstopStatusBanner, { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }]}>
+            <View style={[styles.unstopBannerIcon, { backgroundColor: '#d1fae5' }]}>
+              <CheckCircle2 size={13} color="#059669" />
+            </View>
+            <Text style={[styles.unstopStatusText, { color: '#065f46' }]}>
+              <Text style={{ fontWeight: '700' }}>100% Team Confirmed</Text> • All {members.length} members active in split ledger.
+            </Text>
+          </View>
         )}
 
         {/* Personal Balance Callout Card */}
@@ -306,7 +389,13 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
             {/* Quick Natural Language Parser */}
             <NaturalExpenseParser
               members={members}
+              disabled={isExpenseLocked}
+              onDisabledPress={handleAttemptAddExpense}
               onParsedExpense={(parsed) => {
+                if (isExpenseLocked) {
+                  handleAttemptAddExpense();
+                  return;
+                }
                 addExpense(trip.id, { ...parsed, paymentMethod: 'UPI' });
               }}
             />
@@ -530,12 +619,18 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
       {/* Floating Bottom Action Bar */}
       <View style={styles.floatingActionBar}>
         <TouchableOpacity
-          style={styles.primaryAddExpenseBtn}
-          onPress={() => setIsAddExpenseOpen(true)}
+          style={[styles.primaryAddExpenseBtn, isExpenseLocked && { backgroundColor: '#475569' }]}
+          onPress={handleAttemptAddExpense}
           activeOpacity={0.85}
         >
-          <Plus size={18} color="#ffffff" strokeWidth={2.6} />
-          <Text style={styles.primaryAddExpenseText}>Add Expense</Text>
+          {isExpenseLocked ? (
+            <Lock size={16} color="#ffffff" strokeWidth={2.4} />
+          ) : (
+            <Plus size={18} color="#ffffff" strokeWidth={2.6} />
+          )}
+          <Text style={styles.primaryAddExpenseText}>
+            {isExpenseLocked ? 'Expenses Locked 🔒' : 'Add Expense'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity

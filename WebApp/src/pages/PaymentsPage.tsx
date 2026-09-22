@@ -19,6 +19,7 @@ import {
   QrCode
 } from 'lucide-react';
 import { groupService } from '../services/group.service';
+import { useRealtimePoller } from '../hooks/useRealtimePoller';
 import { VendorUpiPaymentModal } from '../components/payment/VendorUpiPaymentModal';
 
 interface PaymentsPageProps {
@@ -66,8 +67,8 @@ export const PaymentsPage: React.FC<PaymentsPageProps> = ({ onBack }) => {
   const [autoStartCamera, setAutoStartCamera] = useState(false);
 
   // Load Real Data from PostgreSQL
-  const loadPaymentsData = async () => {
-    setIsLoading(true);
+  const loadPaymentsData = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const [paymentsRes, groupsRes] = await Promise.all([
         groupService.getUserPayments().catch(() => ({ data: { totalSpent: 0, totalReceived: 0, transactions: [] } })),
@@ -86,13 +87,18 @@ export const PaymentsPage: React.FC<PaymentsPageProps> = ({ onBack }) => {
     } catch (err) {
       console.warn('Error loading payments ledger:', err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     loadPaymentsData();
   }, []);
+
+  // Real-time Database Status Sync (3s interval, tab focus, mutation events)
+  useRealtimePoller(() => {
+    loadPaymentsData(true);
+  }, { intervalMs: 3000 });
 
   const countAll = transactions.length;
   const countReceived = useMemo(() => transactions.filter((t) => t.type === 'received').length, [transactions]);

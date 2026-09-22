@@ -18,7 +18,6 @@ import {
 import { X, Smartphone, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { Participant } from '../../types';
-import { useSync } from '../../context/SyncContext';
 
 interface SettleUpModalProps {
   visible: boolean;
@@ -57,7 +56,7 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   onClose,
   onConfirmSettlement,
 }) => {
-  const { isOnline } = useSync();
+  const isOnline = true;
   const [fromId, setFromId] = useState(initialPayerId || members[1]?.id || members[0]?.id || 'user-2');
   const [toId, setToId] = useState(initialReceiverId || members[0]?.id || 'user-1');
   const [amount, setAmount] = useState(initialAmount ? String(initialAmount) : '');

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Users, ShieldCheck, Mail, Smartphone, Copy, Check } from 'lucide-react';
+import React from 'react';
+import { X, Users, ShieldCheck, Mail } from 'lucide-react';
 import { SettlementData } from '../../types/group';
 
 interface GroupMembersModalProps {
@@ -18,15 +18,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
   destination,
   members,
 }) => {
-  const [copiedUpiId, setCopiedUpiId] = useState<string | null>(null);
-
   if (!isOpen) return null;
-
-  const handleCopyUpi = (upiId: string) => {
-    navigator.clipboard.writeText(upiId);
-    setCopiedUpiId(upiId);
-    setTimeout(() => setCopiedUpiId(null), 2000);
-  };
 
   const getAvatarBg = (_name: string, index: number) => {
     const colors = ['#059669', '#2563EB', '#D97706', '#7C3AED', '#DB2777', '#0D9488'];
@@ -46,7 +38,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
               </span>
             </div>
             <h3 className="modal-main-title" style={{ fontSize: '1.15rem', marginTop: '4px' }}>
-              Group Members
+              Group Members & Roster
             </h3>
             <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: 0 }}>
               {groupName} · {destination}
@@ -62,12 +54,19 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
           </button>
         </div>
 
+        {/* Unstop Policy Banner */}
+        <div style={{ padding: '10px 14px', background: '#f8fafc', borderBottom: '1px solid var(--border-light)', fontSize: '0.72rem', color: '#475569', lineHeight: 1.4 }}>
+          <strong>Unstop Policy:</strong> Expense logging and cost sharing are locked until all group members accept their invitations.
+        </div>
+
         {/* Members List (Scrollable) */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {members.map((member, index) => {
             const initial = (member.name || 'T')[0].toUpperCase();
             const avatarBg = getAvatarBg(member.name, index);
             const isOrganizer = index === 0 || member.role === 'Organizer';
+            const isConfirmed = isOrganizer || member.status === 'ACCEPTED';
+            const isDeclined = !isOrganizer && (member.status === 'REJECTED' || member.status === 'DECLINED');
 
             return (
               <div
@@ -78,8 +77,8 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                   justifyContent: 'space-between',
                   gap: '12px',
                   padding: '10px 14px',
-                  background: 'var(--bg-surface-warm)',
-                  border: '1px solid var(--border-light)',
+                  background: isDeclined ? '#fff1f2' : 'var(--bg-surface-warm)',
+                  border: isDeclined ? '1px solid #fecdd3' : '1px solid var(--border-light)',
                   borderRadius: 'var(--radius-lg)'
                 }}
               >
@@ -90,7 +89,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                       width: '36px',
                       height: '36px',
                       borderRadius: '50%',
-                      backgroundColor: avatarBg,
+                      backgroundColor: isDeclined ? '#e11d48' : avatarBg,
                       color: '#FFFFFF',
                       display: 'flex',
                       alignItems: 'center',
@@ -123,7 +122,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                           }}
                         >
                           <ShieldCheck size={10} />
-                          <span>Lead</span>
+                          <span>Organizer</span>
                         </span>
                       )}
                     </div>
@@ -139,33 +138,19 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                   </div>
                 </div>
 
-                {/* Right: UPI VPA or Verified Tag */}
+                {/* Right: Status Pill */}
                 <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                  {member.upiId ? (
-                    <button
-                      type="button"
-                      onClick={() => handleCopyUpi(member.upiId!)}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '4px 8px',
-                        background: copiedUpiId === member.upiId ? '#ecfdf5' : 'var(--bg-surface)',
-                        border: '1px solid var(--border-card)',
-                        borderRadius: 'var(--radius-md)',
-                        fontSize: '0.68rem',
-                        color: copiedUpiId === member.upiId ? '#059669' : 'var(--text-secondary)',
-                        cursor: 'pointer'
-                      }}
-                      title="Copy UPI ID"
-                    >
-                      <Smartphone size={11} />
-                      <span>{copiedUpiId === member.upiId ? 'Copied!' : member.upiId}</span>
-                      {copiedUpiId === member.upiId ? <Check size={11} /> : <Copy size={11} />}
-                    </button>
+                  {isConfirmed ? (
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669', padding: '3px 8px', background: '#ecfdf5', borderRadius: '999px', border: '1px solid #a7f3d0' }}>
+                      Confirmed
+                    </span>
+                  ) : isDeclined ? (
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#e11d48', padding: '3px 8px', background: '#ffe4e6', borderRadius: '999px', border: '1px solid #fecdd3' }}>
+                      Declined
+                    </span>
                   ) : (
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                      Active
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#b45309', padding: '3px 8px', background: '#fffbeb', borderRadius: '999px', border: '1px solid #fde68a' }}>
+                      Pending Invite
                     </span>
                   )}
                 </div>

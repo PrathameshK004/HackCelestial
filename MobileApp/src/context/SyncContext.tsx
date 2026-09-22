@@ -33,24 +33,43 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Initial fetch of network status
+    // Initial fetch of network status & initial sync
     NetInfo.fetch().then((state) => {
-      setIsOnline(Boolean(state.isConnected && state.isInternetReachable !== false));
+      const online = Boolean(state.isConnected && state.isInternetReachable !== false);
+      setIsOnline(online);
+      if (online) {
+        syncService.downloadServerData().catch(() => {});
+      }
     });
 
     // Start background network listener
     const unsubscribe = syncEngine.startNetworkListener((online) => {
       setIsOnline(online);
       refreshPendingCount();
+      if (online) {
+        syncService.downloadServerData().catch(() => {});
+      }
     });
 
-    // Poll pending count periodically
-    const interval = setInterval(refreshPendingCount, 4000);
+    // ── Live Background Synchronization Heartbeat Loop ─────────────────────
+    // Runs every 5 seconds to process queued actions and sync live server updates automatically
+    const syncInterval = setInterval(async () => {
+      refreshPendingCount();
+      const net = await NetInfo.fetch();
+      const online = Boolean(net.isConnected && net.isInternetReachable !== false);
+      if (online) {
+        try {
+          await syncEngine.processQueue();
+          await syncService.downloadServerData();
+        } catch (_) {}
+      }
+    }, 5000);
+
     refreshPendingCount();
 
     return () => {
       unsubscribe();
-      clearInterval(interval);
+      clearInterval(syncInterval);
     };
   }, []);
 

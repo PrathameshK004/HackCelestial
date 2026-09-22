@@ -241,7 +241,25 @@ async function sendPushToEmail(email, { title, body, data = {} }) {
 }
 
 /**
- * High-level helper: Trigger notification for a Group Invitation
+ * Helper to save a persistent in-app notification in DB
+ */
+async function createInAppNotification(userId, { type, title, body, data = {} }) {
+    if (!userId) return null;
+    try {
+        const id = crypto.randomUUID();
+        await pool.query(`
+            INSERT INTO in_app_notifications (id, user_id, type, title, body, data, is_read, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
+        `, [id, userId, type, title, body, JSON.stringify(data)]);
+        return id;
+    } catch (err) {
+        console.warn('Failed to insert in_app_notification for user', userId, err.message);
+        return null;
+    }
+}
+
+/**
+ * High-level helper: Trigger notification for a Group Invitation (Push + Persistent In-App)
  */
 async function sendGroupInviteNotification({ inviteeEmail, inviterName, groupName, groupId, inviteCode }) {
     try {
@@ -256,10 +274,60 @@ async function sendGroupInviteNotification({ inviteeEmail, inviterName, groupNam
         };
 
         if (inviteeEmail) {
-            await sendPushToEmail(inviteeEmail, { title, body, data });
+            const trimmed = inviteeEmail.trim().toLowerCase();
+            const userRes = await pool.query('SELECT id FROM users WHERE LOWER(email_id) = $1 LIMIT 1', [trimmed]);
+            if (userRes.rows.length > 0) {
+                const inviteeUserId = userRes.rows[0].id;
+                await createInAppNotification(inviteeUserId, { type: 'GROUP_INVITE', title, body, data });
+                await sendPushToUser(inviteeUserId, { title, body, data });
+            }
         }
     } catch (err) {
-        console.warn('Failed to dispatch invite push notification:', err.message);
+        console.warn('Failed to dispatch invite notification:', err.message);
+    }
+}
+
+/**
+ * High-level helper: Trigger notification when a member ACCEPTS an invitation
+ */
+async function sendInviteAcceptedNotification({ organizerUserId, memberName, groupName, groupId }) {
+    try {
+        if (!organizerUserId) return;
+        const title = `Invitation Accepted!`;
+        const body = `${memberName || 'A traveler'} accepted your invitation to join "${groupName}"!`;
+        const data = {
+            type: 'INVITE_ACCEPTED',
+            groupId: String(groupId),
+            groupName: String(groupName),
+            screen: 'GroupDetailScreen'
+        };
+
+        await createInAppNotification(organizerUserId, { type: 'INVITE_ACCEPTED', title, body, data });
+        await sendPushToUser(organizerUserId, { title, body, data });
+    } catch (err) {
+        console.warn('Failed to dispatch invite accepted notification:', err.message);
+    }
+}
+
+/**
+ * High-level helper: Trigger notification when a member REJECTS an invitation
+ */
+async function sendInviteRejectedNotification({ organizerUserId, memberName, groupName, groupId }) {
+    try {
+        if (!organizerUserId) return;
+        const title = `Invitation Declined`;
+        const body = `${memberName || 'A traveler'} declined your invitation to join "${groupName}".`;
+        const data = {
+            type: 'INVITE_REJECTED',
+            groupId: String(groupId),
+            groupName: String(groupName),
+            screen: 'GroupDetailScreen'
+        };
+
+        await createInAppNotification(organizerUserId, { type: 'INVITE_REJECTED', title, body, data });
+        await sendPushToUser(organizerUserId, { title, body, data });
+    } catch (err) {
+        console.warn('Failed to dispatch invite rejected notification:', err.message);
     }
 }
 
@@ -313,7 +381,10 @@ async function sendExpenseNotification({
                 screen: 'GroupDetailScreen'
             };
 
-            // Dispatch push notification asynchronously
+            // Save persistent in-app notification & dispatch push notification
+            createInAppNotification(member.user_id, { type: 'EXPENSE_ADDED', title, body, data }).catch(e =>
+                console.warn(`Failed inserting in-app notification for user ${member.user_id}:`, e.message)
+            );
             sendPushToUser(member.user_id, { title, body, data }).catch(e =>
                 console.warn(`Failed sending expense push to user ${member.user_id}:`, e.message)
             );
@@ -330,6 +401,9 @@ module.exports = {
     sendNotificationToTokens,
     sendPushToUser,
     sendPushToEmail,
+    createInAppNotification,
     sendGroupInviteNotification,
+    sendInviteAcceptedNotification,
+    sendInviteRejectedNotification,
     sendExpenseNotification
 };

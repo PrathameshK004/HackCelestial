@@ -4,7 +4,11 @@ const { sendSuccess, sendError } = require('../utils/response.util');
 const { sendEmail } = require('../utils/mail.util');
 const { getLiveAppUrl } = require('../utils/url.util');
 const { verifyGroupAccess } = require('../utils/groupAuth.util');
-const { sendGroupInviteNotification } = require('../utils/notification.util');
+const { 
+    sendGroupInviteNotification, 
+    sendInviteAcceptedNotification, 
+    sendInviteRejectedNotification 
+} = require('../utils/notification.util');
 
 module.exports = {
     createGroupInvite,
@@ -248,31 +252,63 @@ async function acceptInvite(req, res) {
         const userName = userRes.rows[0].username;
         const userEmail = userRes.rows[0].email_id.toLowerCase();
 
+        // Fetch group organizer user_id
+        const groupRes = await client.query('SELECT created_by FROM groups WHERE id = $1', [invite.group_id]);
+        const organizerUserId = groupRes.rows[0]?.created_by || null;
+
         await client.query('BEGIN');
 
         // Approve and activate group membership (updates status to ACCEPTED)
-        const memberId = crypto.randomUUID();
-        await client.query(`
-            INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, status, joined_at)
-            VALUES ($1, $2, $3, $4, $5, $6, '#059669', TRUE, 'ACCEPTED', NOW())
-            ON CONFLICT (group_id, email) DO UPDATE SET
-                user_id = EXCLUDED.user_id,
-                name = EXCLUDED.name,
-                is_registered = TRUE,
-                status = 'ACCEPTED',
-                joined_at = NOW()
-        `, [memberId, invite.group_id, userId, userName, userEmail, invite.role || 'Traveler']);
+        const updateResult = await client.query(`
+            UPDATE group_members 
+            SET user_id = $1, name = $2, is_registered = TRUE, status = 'ACCEPTED', joined_at = NOW()
+            WHERE group_id = $3 AND (LOWER(TRIM(email)) = LOWER(TRIM($4)) OR (user_id = $1 AND user_id IS NOT NULL))
+        `, [userId, userName, invite.group_id, userEmail]);
 
-        // Update invite status to ACCEPTED
-        await client.query('UPDATE group_invitations SET status = $1 WHERE id = $2', ['ACCEPTED', invite.id]);
+        if (updateResult.rowCount === 0) {
+            // If no pre-existing member row, insert new member with ACCEPTED status
+            await client.query(`
+                INSERT INTO group_members (id, group_id, user_id, name, email, role, avatar_bg, is_registered, status, joined_at)
+                VALUES ($1, $2, $3, $4, $5, $6, '#059669', TRUE, 'ACCEPTED', NOW())
+                ON CONFLICT (group_id, email) DO UPDATE SET
+                    user_id = EXCLUDED.user_id,
+                    name = EXCLUDED.name,
+                    is_registered = TRUE,
+                    status = 'ACCEPTED',
+                    joined_at = NOW()
+            `, [crypto.randomUUID(), invite.group_id, userId, userName, userEmail, invite.role || 'Traveler']);
+        }
 
-        // Also if this user had another pending invitation for this group by email, mark accepted
+        // Update invitation status to ACCEPTED for all user invites in this group
         await client.query(`
-            UPDATE group_invitations SET status = 'ACCEPTED' 
-            WHERE group_id = $1 AND LOWER(invited_email) = LOWER($2)
-        `, [invite.group_id, userEmail]);
+            UPDATE group_invitations 
+            SET status = 'ACCEPTED' 
+            WHERE id = $1 OR (group_id = $2 AND LOWER(TRIM(invited_email)) = LOWER(TRIM($3)))
+        `, [invite.id, invite.group_id, userEmail]);
+
+        // Log audit event for member acceptance
+        await client.query(`
+            INSERT INTO ledger_audit_log (id, group_id, event_type, actor_id, actor_name, description, created_at)
+            VALUES ($1, $2, 'MEMBER_JOINED', $3, $4, $5, NOW())
+        `, [
+            crypto.randomUUID(),
+            invite.group_id,
+            userId,
+            userName,
+            `${userName} accepted the invitation and joined the trip!`
+        ]);
 
         await client.query('COMMIT');
+
+        // Send notifications asynchronously to organizer
+        if (organizerUserId && String(organizerUserId) !== String(userId)) {
+            sendInviteAcceptedNotification({
+                organizerUserId,
+                memberName: userName,
+                groupName: invite.groupName,
+                groupId: invite.group_id
+            }).catch(e => console.warn('Async invite accepted notify error:', e.message));
+        }
 
         return sendSuccess(res, `Successfully joined "${invite.groupName}"!`, {
             groupId: invite.group_id,
@@ -317,24 +353,23 @@ async function rejectInvite(req, res) {
 
         const invite = inviteQuery.rows[0];
 
-        // Fetch user email
-        const userRes = await client.query('SELECT email_id FROM users WHERE id = $1', [userId]);
-        const userEmail = userRes.rows[0]?.email_id?.toLowerCase() || '';
+        // Fetch user email & username
+        const userRes = await client.query('SELECT username, email_id FROM users WHERE id = $1', [userId]);
+        const userName = userRes.rows[0]?.username || 'Traveler';
+        const userEmail = (userRes.rows[0]?.email_id || '').trim().toLowerCase();
+
+        // Fetch organizer user_id
+        const groupRes = await client.query('SELECT created_by FROM groups WHERE id = $1', [invite.group_id]);
+        const organizerUserId = groupRes.rows[0]?.created_by || null;
 
         await client.query('BEGIN');
 
-        // Update invitation status: only mark this invite row as REJECTED if it was specific, or if general don't deactivate for other people
-        if (invite.invited_email && userEmail && invite.invited_email.toLowerCase() === userEmail) {
-            await client.query('UPDATE group_invitations SET status = $1 WHERE id = $2', ['REJECTED', invite.id]);
-        }
-
-        // Also mark any invitations addressed to this user's email for this group as REJECTED
-        if (userEmail) {
-            await client.query(`
-                UPDATE group_invitations SET status = 'REJECTED' 
-                WHERE group_id = $1 AND LOWER(invited_email) = LOWER($2)
-            `, [invite.group_id, userEmail]);
-        }
+        // Mark invitations for this user & group as REJECTED
+        await client.query(`
+            UPDATE group_invitations 
+            SET status = 'REJECTED' 
+            WHERE id = $1 OR (group_id = $2 AND LOWER(TRIM(invited_email)) = LOWER(TRIM($3)))
+        `, [invite.id, invite.group_id, userEmail]);
 
         // Mark REJECTED in group_members so this group never shows as pending or joined
         if (userEmail || userId) {
@@ -342,13 +377,35 @@ async function rejectInvite(req, res) {
                 UPDATE group_members 
                 SET status = 'REJECTED' 
                 WHERE group_id = $1 AND (
-                    (LOWER(email) = LOWER($2) AND $2 != '') OR 
+                    (LOWER(TRIM(email)) = LOWER(TRIM($2)) AND $2 != '') OR 
                     (user_id = $3 AND $3 IS NOT NULL)
                 )
             `, [invite.group_id, userEmail, userId || null]);
         }
 
+        // Log audit event for member decline
+        await client.query(`
+            INSERT INTO ledger_audit_log (id, group_id, event_type, actor_id, actor_name, description, created_at)
+            VALUES ($1, $2, 'MEMBER_DECLINED', $3, $4, $5, NOW())
+        `, [
+            crypto.randomUUID(),
+            invite.group_id,
+            userId,
+            userName,
+            `${userName} declined the invitation.`
+        ]);
+
         await client.query('COMMIT');
+
+        // Send notifications asynchronously to organizer
+        if (organizerUserId && String(organizerUserId) !== String(userId)) {
+            sendInviteRejectedNotification({
+                organizerUserId,
+                memberName: userName,
+                groupName: invite.groupName,
+                groupId: invite.group_id
+            }).catch(e => console.warn('Async invite rejected notify error:', e.message));
+        }
 
         return sendSuccess(res, `Declined invitation for "${invite.groupName}"`, {
             groupId: invite.group_id,
@@ -394,22 +451,23 @@ async function getMyPendingInvitations(req, res) {
             JOIN groups g ON gi.group_id = g.id
             LEFT JOIN users u ON gi.invited_by = u.id
             WHERE (
-                (LOWER(gi.invited_email) = LOWER($1) AND gi.status = 'PENDING')
+                (LOWER(TRIM(gi.invited_email)) = LOWER(TRIM($1)) AND gi.status = 'PENDING')
                 OR (
                     gi.invited_email IS NULL 
                     AND gi.status = 'PENDING'
                     AND gi.group_id IN (
-                        SELECT group_id FROM group_members WHERE LOWER(email) = LOWER($1) AND status = 'PENDING'
+                        SELECT group_id FROM group_members WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND status = 'PENDING'
                     )
                 )
             )
             AND gi.expires_at > NOW()
+            AND g.created_by != $2
             AND g.id NOT IN (
                 SELECT group_id FROM group_members 
-                WHERE ((LOWER(email) = LOWER($1) AND $1 != '') OR user_id = $2) 
+                WHERE ((LOWER(TRIM(email)) = LOWER(TRIM($1)) AND $1 != '') OR user_id = $2) 
                   AND status IN ('ACCEPTED', 'REJECTED')
             )
-            ORDER BY g.id, (CASE WHEN LOWER(gi.invited_email) = LOWER($1) THEN 0 ELSE 1 END), gi.created_at DESC
+            ORDER BY g.id, (CASE WHEN LOWER(TRIM(gi.invited_email)) = LOWER(TRIM($1)) THEN 0 ELSE 1 END), gi.created_at DESC
         `, [userEmail, userId]);
 
         return sendSuccess(res, "Pending invitations fetched successfully", pendingInvites.rows);

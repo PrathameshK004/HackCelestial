@@ -23,7 +23,6 @@ import {
 } from '../types';
 import { authService } from '../api/auth.service';
 import { storage } from '../database/storage';
-import { syncService } from '../sync/syncService';
 import { notificationService } from '../services/notificationService';
 
 interface AuthContextType {
@@ -109,7 +108,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // Token may be expired — silent fail, keep local session alive
             });
 
-          syncService.downloadServerData();
           // Register device for push notifications in background
           notificationService.registerForPushNotifications().catch(() => {});
         }
@@ -159,7 +157,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await authService.login(payload);
       if (res.data?.accessToken) {
         await persistSession(res.data, payload.emailId.split('@')[0], payload.emailId);
-        syncService.downloadServerData();
         return { success: true };
       }
       return { success: false, error: res.message || 'Login failed. Please check your credentials.' };
@@ -190,7 +187,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await authService.verifyAndRegister(payload);
       if (res.data?.accessToken) {
         await persistSession(res.data, payload.username, payload.emailId);
-        syncService.downloadServerData();
         return { success: true, message: res.message };
       }
       return { success: false, message: res.message || 'Verification failed. Please check the code.' };
@@ -237,7 +233,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await authService.loginWithGoogle(credentialOrPayload);
       if (res.data?.accessToken) {
         await persistSession(res.data, (res.data as any).username || res.data.user?.username, res.data.emailId || res.data.user?.emailId);
-        syncService.downloadServerData();
         return { success: true };
       }
       return { success: false, error: res.message || 'Google sign-in failed.' };

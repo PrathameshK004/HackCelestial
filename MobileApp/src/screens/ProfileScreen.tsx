@@ -35,7 +35,6 @@ import {
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
-import { useSync } from '../context/SyncContext';
 import { useTrips } from '../context/TripContext';
 import { Trip } from '../types';
 import { DatePickerModal } from '../components/common/DatePickerModal';
@@ -63,8 +62,7 @@ interface ProfileScreenProps {
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
   const insets = useSafeAreaInsets();
   const { user, updateUser, refreshProfile } = useAuth();
-  const { isOnline, isSyncing, pendingCount, syncNow } = useSync();
-  const { trips } = useTrips();
+  const { trips, refreshTrips } = useTrips();
 
   // ── Hardware Back Press Handler ───────────────────────────────────────────
   useEffect(() => {
@@ -104,7 +102,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
     try {
       await Promise.all([
         refreshProfile?.(),
-        syncNow?.(),
+        refreshTrips(),
       ]);
     } catch (err) {
       console.log('Profile refresh error:', err);
@@ -228,15 +226,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
 
         <View style={styles.headerRight}>
           <TouchableOpacity
-            onPress={() => syncNow?.()}
+            onPress={() => handleRefresh()}
             style={styles.headerWifiBtn}
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityLabel={isOnline ? 'Online & Connected' : 'Offline'}
+            accessibilityLabel="Refresh Profile"
           >
             <Wifi
               size={20}
-              color={isOnline ? '#10B981' : '#EF4444'}
+              color="#10B981"
               strokeWidth={2.4}
             />
           </TouchableOpacity>

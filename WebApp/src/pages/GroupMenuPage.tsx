@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import QrScanner from 'qr-scanner';
 import { groupService } from '../services/group.service';
+import { useRealtimePoller } from '../hooks/useRealtimePoller';
 import { GroupSummary, SettlementData, SettlementExpense, SettlementTransfer } from '../types/group';
 import { GroupMembersModal } from '../components/group/GroupMembersModal';
 
@@ -109,6 +110,11 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
       setIsLoading(false);
     }
   }, [initialSettlement, group.id]);
+
+  // Real-time Database Status Sync (3s interval, tab focus, mutation events)
+  useRealtimePoller(() => {
+    loadSettlement(true);
+  }, { intervalMs: 3000 });
 
   // Cleanup QR Scanner on unmount
   useEffect(() => () => {

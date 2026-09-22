@@ -16,6 +16,7 @@ import {
   Platform,
   Alert,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import {
@@ -314,14 +315,29 @@ interface ExploreTabProps {
   searchQuery?: string;
   onSelectTrip?: (tripId: string) => void;
   onCreateTrip?: () => void;
+  onRefresh?: () => Promise<void> | void;
 }
 
 export const ExploreTab: React.FC<ExploreTabProps> = ({
   searchQuery = '',
   onSelectTrip,
   onCreateTrip,
+  onRefresh,
 }) => {
-  const { trips } = useTrips();
+  const { trips, refreshTrips } = useTrips();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshTrips();
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.warn('Refresh error in ExploreTab:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Strictly deduplicate trips by ID to guarantee zero redundant cards in explore tab
   const uniqueTrips = useMemo(() => {
@@ -373,6 +389,14 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#464B29', '#059669']}
+            tintColor="#464B29"
+          />
+        }
       >
         {/* Curated Header Info */}
         <View style={styles.curatedHeader}>

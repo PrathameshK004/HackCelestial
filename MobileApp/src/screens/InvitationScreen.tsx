@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -34,6 +35,7 @@ import { colors, radii, shadows } from '../theme/colors';
 import { groupService } from '../api/group.service';
 import { InviteDetails } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { notificationService } from '../services/notificationService';
 
 interface InvitationScreenProps {
   inviteCode?: string | null;
@@ -90,6 +92,19 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
     }
   };
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    const code = details?.inviteCode || inviteCode;
+    if (!code) return;
+    setRefreshing(true);
+    try {
+      await loadDetails(code);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleAccept = async () => {
     const code = details?.inviteCode || inviteCode;
     if (!code) return;
@@ -101,6 +116,14 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
       const res = await groupService.acceptInvite(cleanCode);
       setDecisionState('ACCEPTED');
       setActionSuccess(res.message || `You have officially joined "${details?.groupName}"!`);
+
+      // 1. Trigger push notification
+      await notificationService.sendLocalNotification(
+        'Invitation Accepted 🎉',
+        `You have officially accepted the invitation to join "${details?.groupName || 'Trip'}".`,
+        'invites'
+      );
+
       if (onAccepted) {
         onAccepted(details?.groupId, cleanCode);
       }
@@ -131,6 +154,14 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
               const res = await groupService.rejectInvite(cleanCode);
               setDecisionState('REJECTED');
               setActionSuccess(res.message || 'Invitation declined.');
+
+              // 1. Trigger push notification
+              await notificationService.sendLocalNotification(
+                'Invitation Declined',
+                `You have declined the invitation to join "${details?.groupName || 'Trip'}".`,
+                'invites'
+              );
+
               if (onDeclined) {
                 onDeclined(cleanCode);
               }
@@ -206,6 +237,14 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
           style={styles.pageScroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={['#059669']}
+              tintColor="#059669"
+            />
+          }
         >
           {/* Trip Header Hero Card */}
           <View style={styles.heroCard}>

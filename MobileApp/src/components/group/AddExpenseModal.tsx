@@ -53,11 +53,16 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 }) => {
   // Unstop-Style Team Ledger: Only confirmed / accepted travelers can participate in splits
   const acceptedMembers = members.filter(
-    (m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer'
+    (m) => m.role === 'Organizer' || m.status === 'ACCEPTED'
   );
   const pendingMembers = members.filter(
-    (m) => m.status === 'PENDING' && m.role !== 'Organizer'
+    (m) => m.role !== 'Organizer' && (m.status === 'PENDING' || !m.status)
   );
+  const declinedMembers = members.filter(
+    (m) => m.role !== 'Organizer' && (m.status === 'REJECTED' || m.status === 'DECLINED')
+  );
+
+  const isExpenseLocked = members.length > 1 && (pendingMembers.length > 0 || declinedMembers.length > 0 || acceptedMembers.length < members.length);
 
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
@@ -83,6 +88,13 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   };
 
   const handleSave = async () => {
+    if (isExpenseLocked) {
+      Alert.alert(
+        'Expense Management Locked 🔒',
+        'Adding expenses is restricted until all invited group members accept their trip invitations.'
+      );
+      return;
+    }
     if (!title.trim()) {
       Alert.alert('Required', 'Please enter an expense title / description.');
       return;

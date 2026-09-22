@@ -11,7 +11,25 @@ import { settlementRepo } from '../database/repositories/settlementRepo';
 import { getDatabase } from '../database/sqlite';
 import { Trip, Participant, Expense, SettlementTransfer } from '../types';
 
+type SyncListener = () => void;
+const syncListeners: Set<SyncListener> = new Set();
+
 export const syncService = {
+  subscribe(listener: SyncListener): () => void {
+    syncListeners.add(listener);
+    return () => {
+      syncListeners.delete(listener);
+    };
+  },
+
+  notifyListeners(): void {
+    syncListeners.forEach((l) => {
+      try {
+        l();
+      } catch (_) {}
+    });
+  },
+
   /**
    * Initial synchronization run after authentication or manual refresh
    */
@@ -77,6 +95,14 @@ export const syncService = {
           }
         }
 
+        // Reconcile: Purge any local SQLite trips that no longer exist on the remote server
+        const allLocalTrips = tripRepo.getAllTrips();
+        for (const localTrip of allLocalTrips) {
+          if (!seenGroupIds.has(localTrip.id) && localTrip.syncStatus !== 'LOCAL_ONLY') {
+            tripRepo.deleteTrip(localTrip.id);
+          }
+        }
+
         // Store sync timestamp
         db.runSync(`
           INSERT INTO sync_metadata (key, value, last_synced_at)
@@ -85,11 +111,16 @@ export const syncService = {
         `, [new Date().toISOString()]);
       });
 
-      // Synchronize detailed expenses & authoritative members for each group
-      for (const g of serverGroups) {
-        const tripId = String(g.id || g.group_id);
-        try {
-          const detailRes = await groupService.getGroupById(tripId);
+      // Synchronize detailed expenses & authoritative members for all groups concurrently (Ultra-Fast Parallel Fetch)
+      await Promise.all(
+        serverGroups.map(async (g: any) => {
+          const tripId = String(g.id || g.group_id);
+          const [detailRes, expRes, settleRes] = await Promise.all([
+            groupService.getGroupById(tripId).catch(() => null),
+            groupService.getExpenses(tripId).catch(() => null),
+            groupService.getSettlement(tripId).catch(() => null),
+          ]);
+
           if (detailRes?.data?.members && Array.isArray(detailRes.data.members)) {
             for (const m of detailRes.data.members) {
               const member: Participant = {
@@ -110,9 +141,7 @@ export const syncService = {
               memberRepo.upsertMember(member);
             }
           }
-        } catch (_) {}
-        try {
-          const expRes = await groupService.getExpenses(tripId);
+
           if (Array.isArray(expRes?.data)) {
             for (const e of expRes.data) {
               const exp: Expense = {
@@ -136,12 +165,7 @@ export const syncService = {
               expenseRepo.addExpense(exp);
             }
           }
-        } catch {
-          // Continue if single group sub-query has transient error
-        }
 
-        try {
-          const settleRes = await groupService.getSettlement(tripId);
           if (settleRes?.data?.settlementPlan?.transfers) {
             for (const t of settleRes.data.settlementPlan.transfers) {
               const st: SettlementTransfer = {
@@ -161,11 +185,10 @@ export const syncService = {
               settlementRepo.upsertSettlement(st);
             }
           }
-        } catch {
-          // Continue
-        }
-      }
+        })
+      );
 
+      this.notifyListeners();
       return { success: true, tripCount: serverGroups.length };
     } catch (err: any) {
       console.warn('Initial data sync encountered error (offline fallback active):', err);

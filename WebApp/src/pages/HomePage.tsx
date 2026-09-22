@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { groupService } from '../services/group.service';
+import { useRealtimePoller } from '../hooks/useRealtimePoller';
 import { GroupSummary, SettlementData, PendingInvitation } from '../types/group';
 import { GroupMenuPage } from './GroupMenuPage';
 import { ProfilePage } from './ProfilePage';
@@ -43,11 +44,18 @@ import { PaymentsPage } from './PaymentsPage';
 import { SavedTripsPage } from './SavedTripsPage';
 import { SecuritySettingsPage } from './SecuritySettingsPage';
 import { HelpSupportPage } from './HelpSupportPage';
+import { apiRequest } from '../services/apiClient';
 import { AboutPage } from './AboutPage';
 import { QuickExpenseModal } from '../components/home/QuickExpenseModal';
 import { JoinGroupModal } from '../components/home/JoinGroupModal';
 import { SettleUpModal } from '../components/settlement/SettleUpModal';
 import { GitInboxDrawer, InboxNotification } from '../components/common/GitInboxDrawer';
+import { 
+  fetchUserNotifications, 
+  requestWebPushPermission, 
+  markNotificationAsRead as apiMarkRead, 
+  clearAllNotifications as apiClearAll
+} from '../services/webNotificationService';
 import {
   GroupCardItem,
   SimplifiedTransfer
@@ -289,6 +297,24 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const [activeCategory, setActiveCategory] = useState<StayCategory>('all');
   const [selectedStay, setSelectedStay] = useState<CuratedStay | null>(null);
   const [savedStayIds, setSavedStayIds] = useState<string[]>(['stay-cozy-den', 'stay-oasis']);
+  const [exploreStays, setExploreStays] = useState<CuratedStay[]>(CURATED_STAYS);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchExploreStays = async () => {
+      try {
+        const res: any = await apiRequest('/packages/explore');
+        const pkgs = res?.data?.packages || res?.packages;
+        if (Array.isArray(pkgs) && pkgs.length > 0 && isMounted) {
+          setExploreStays(pkgs);
+        }
+      } catch (err) {
+        console.warn('Explored packages fetch fallback to default stays:', err);
+      }
+    };
+    fetchExploreStays();
+    return () => { isMounted = false; };
+  }, []);
 
   // Backend & Real Data States
   const [groups, setGroups] = useState<GroupSummary[]>([]);
@@ -429,14 +455,41 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     }
   };
 
+  const loadNotifications = async () => {
+    try {
+      const items = await fetchUserNotifications();
+      if (items && Array.isArray(items) && items.length > 0) {
+        const mapped: InboxNotification[] = items.map(i => ({
+          id: i.id,
+          title: i.title,
+          description: i.body,
+          timestamp: i.createdAt ? new Date(i.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+          isRead: i.isRead,
+          category: (i.type?.toLowerCase().includes('invite') ? 'trip' : i.type?.toLowerCase().includes('expense') ? 'expense' : 'system') as any,
+          actionTab: i.type?.toLowerCase().includes('invite') ? 'trips' : 'expenses'
+        }));
+        setNotifications(mapped);
+      }
+    } catch (err: any) {
+      console.warn('Could not load in-app notifications:', err?.message);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+    requestWebPushPermission().catch(() => {});
+  }, []);
+
   const handleMarkAllNotificationsRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    apiMarkRead(undefined, true).catch(() => {});
   };
 
   const handleSelectNotification = (item: InboxNotification) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
     );
+    apiMarkRead(item.id).catch(() => {});
     if (item.actionTab) {
       setDockTab(item.actionTab);
       setIsInboxOpen(false);
@@ -445,6 +498,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
   const handleClearAllNotifications = () => {
     setNotifications([]);
+    apiClearAll().catch(() => {});
   };
 
   const profileMenuRef = React.useRef<HTMLDivElement>(null);
@@ -467,8 +521,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   }, []);
 
   // Load Groups from API (real-time from PostgreSQL database)
-  const loadGroups = async () => {
-    setIsLoadingGroups(true);
+  const loadGroups = async (silent: boolean = false) => {
+    if (!silent) setIsLoadingGroups(true);
     try {
       const response = await groupService.getMyGroups();
       if (response.data && Array.isArray(response.data)) {
@@ -500,13 +554,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
       console.warn('Could not load user groups:', err.message);
       setGroups([]);
     } finally {
-      setIsLoadingGroups(false);
+      if (!silent) setIsLoadingGroups(false);
     }
   };
 
-  const loadExpenseGroupData = async (grpId: string) => {
+  const loadExpenseGroupData = async (grpId: string, silent: boolean = false) => {
     if (!grpId) return;
-    setIsLoadingExpenseData(true);
+    if (!silent) setIsLoadingExpenseData(true);
     try {
       const [settlementRes, expensesRes] = await Promise.all([
         groupService.getSettlement(grpId).catch(() => null),
@@ -521,7 +575,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     } catch (e) {
       console.warn('Failed to load expense group data:', e);
     } finally {
-      setIsLoadingExpenseData(false);
+      if (!silent) setIsLoadingExpenseData(false);
     }
   };
 
@@ -529,6 +583,22 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     loadGroups();
     loadPendingInvitations();
   }, []);
+
+  // Real-time Database Status Poller (3s interval, tab focus sync, mutation event sync)
+  useRealtimePoller(async () => {
+    await loadGroups(true);
+    await loadPendingInvitations();
+    await loadNotifications();
+    if (selectedExpenseGroupId) {
+      await loadExpenseGroupData(selectedExpenseGroupId, true);
+    }
+    if (selectedGroup?.id) {
+      try {
+        const res = await groupService.getSettlement(selectedGroup.id);
+        if (res?.data) setSettlement(res.data);
+      } catch (_) {}
+    }
+  }, { intervalMs: 3000 });
 
   useEffect(() => {
     if (isInboxOpen) {
@@ -565,14 +635,14 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
   // Filtered Stays
   const filteredStays = useMemo(() => {
-    return CURATED_STAYS.filter((stay) => {
+    return exploreStays.filter((stay) => {
       const matchCategory =
         activeCategory === 'all' || stay.category === activeCategory;
       return matchCategory;
     });
-  }, [activeCategory]);
+  }, [exploreStays, activeCategory]);
 
-  const featuredStay = filteredStays[0] || CURATED_STAYS[0];
+  const featuredStay = filteredStays[0] || exploreStays[0] || CURATED_STAYS[0];
   const gridMatches = filteredStays.slice(1);
 
   const displayName = user?.username || 'Guest';
@@ -1587,7 +1657,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                   <div
                     className="hero-stack-back-card"
                     style={{
-                      backgroundImage: `url(${CURATED_STAYS[1]?.image || featuredStay.image})`
+                      backgroundImage: `url(${exploreStays[1]?.image || featuredStay.image})`
                     }}
                   />
 
@@ -1633,7 +1703,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 <div className="section-header-row">
                   <h3 className="section-serif-title">More matches for you</h3>
                   <span className="section-counter-badge">
-                    {gridMatches.length} of {CURATED_STAYS.length}
+                    {gridMatches.length} of {exploreStays.length}
                   </span>
                 </div>
 
@@ -1692,7 +1762,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                   className="btn-view-more-pill"
                   onClick={() => setViewMode('list')}
                 >
-                  <span>View More · {CURATED_STAYS.length} Total Picks</span>
+                  <span>View More · {exploreStays.length} Total Picks</span>
                   <ArrowRight size={16} />
                 </button>
               </div>
@@ -1916,8 +1986,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
             return (
               <main className="expense-split-dashboard animate-fade-in" style={{ padding: '24px 16px' }}>
                 <div className="curated-header-info">
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(36, 62, 54, 0.08)', color: '#243E36', padding: '3px 12px', borderRadius: '9999px', fontSize: '0.74rem', fontWeight: 700, marginBottom: '6px' }}>
-                    <Zap size={13} color="#10B981" /> AI Debt Graph Active
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--accent-olive-subtle)', color: 'var(--accent-olive-dark)', padding: '4px 14px', borderRadius: '9999px', fontSize: '0.74rem', fontWeight: 700, marginBottom: '6px', border: '1px solid rgba(70, 75, 41, 0.15)' }}>
+                    <Zap size={13} color="var(--accent-emerald)" /> AI Debt Graph Active
                   </div>
                   <h2 className="curated-title">Expense Split & Settlement</h2>
                   <div className="curated-meta">
@@ -1925,21 +1995,21 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                   </div>
                 </div>
 
-                <div style={{ textAlign: 'center', padding: '50px 20px', background: 'var(--bg-surface)', borderRadius: '24px', border: '1px solid var(--border-light)', margin: '20px 0' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(36, 62, 54, 0.08)', color: '#243E36', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                    <Zap size={26} color="#10B981" />
+                <div style={{ textAlign: 'center', padding: '50px 24px', background: 'var(--bg-surface)', borderRadius: 'var(--radius-xl)', border: '1.5px solid var(--border-light)', margin: '20px 0', boxShadow: 'var(--shadow-sm)' }}>
+                  <div style={{ width: '58px', height: '58px', borderRadius: '50%', background: 'var(--accent-olive-subtle)', color: 'var(--accent-olive-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                    <Zap size={26} color="var(--accent-emerald)" />
                   </div>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+                  <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
                     No Active Expeditions Yet
                   </h3>
-                  <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', maxWidth: '380px', margin: '0 auto 20px', lineHeight: 1.5 }}>
-                    Create your first trip group with travel companions to start logging expenses with real-time graph debt simplification and zero breakpoints.
+                  <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', maxWidth: '380px', margin: '0 auto 24px', lineHeight: 1.55 }}>
+                    Create your first trip group with travel companions to start logging expenses with real-time graph debt simplification.
                   </p>
                   <button
                     type="button"
                     className="btn-primary"
                     onClick={onCreateGroup}
-                    style={{ padding: '10px 24px', borderRadius: '9999px', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: '0 auto' }}
+                    style={{ padding: '10px 24px', borderRadius: '9999px', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: '0 auto', background: 'var(--accent-olive)', color: '#FFFFFF', fontWeight: 600, boxShadow: '0 4px 14px rgba(70, 75, 41, 0.25)' }}
                   >
                     <Plus size={16} strokeWidth={2.4} />
                     <span>Create Your First Trip</span>
@@ -1978,8 +2048,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
             <main className="expense-split-dashboard animate-fade-in">
               {/* Header Info */}
               <div className="curated-header-info">
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(36, 62, 54, 0.08)', color: '#243E36', padding: '3px 12px', borderRadius: '9999px', fontSize: '0.74rem', fontWeight: 700, marginBottom: '6px' }}>
-                  <Zap size={13} color="#10B981" /> {isLoadingExpenseData ? 'Syncing Ledger...' : 'AI Debt Graph Active'}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--accent-olive-subtle)', color: 'var(--accent-olive-dark)', padding: '4px 14px', borderRadius: '9999px', fontSize: '0.74rem', fontWeight: 700, marginBottom: '6px', border: '1px solid rgba(70, 75, 41, 0.15)' }}>
+                  <Zap size={13} color="var(--accent-emerald)" /> {isLoadingExpenseData ? 'Syncing Ledger...' : 'AI Debt Graph Active'}
                 </div>
                 <h2 className="curated-title">Expense Split & Settlement</h2>
                 <div className="curated-meta">
@@ -2011,7 +2081,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
               <div className="split-hero-card">
                 <div className="split-hero-top">
                   <div className="split-hero-badge">
-                    <Zap size={12} color="#10B981" />
+                    <Zap size={12} color="var(--accent-emerald)" />
                     <span>Debt Simplification Graph ({activeGrp.expenseSplit || 'Equal'} Ratio)</span>
                   </div>
 
@@ -2021,7 +2091,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                     onClick={handleCopyShare}
                     title="Copy WhatsApp Summary"
                   >
-                    {isCopiedShare ? <Check size={13} color="#10B981" /> : <Share2 size={13} />}
+                    {isCopiedShare ? <Check size={13} color="var(--accent-emerald)" /> : <Share2 size={13} />}
                     <span>{isCopiedShare ? 'Copied' : 'Share'}</span>
                   </button>
                 </div>
@@ -2033,7 +2103,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                   <div
                     className="split-hero-balance-amount"
                     style={{
-                      color: userBalance > 0 ? '#10B981' : userBalance < 0 ? '#EF4444' : 'var(--text-primary)'
+                      color: userBalance > 0 ? 'var(--accent-emerald, #059669)' : userBalance < 0 ? 'var(--accent-rose, #E11D48)' : 'var(--text-primary)'
                     }}
                   >
                     {userBalance > 0
@@ -2064,7 +2134,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
                   <div className="split-metric-item">
                     <span className="split-metric-k">Transfers Needed</span>
-                    <span className="split-metric-v" style={{ color: '#10B981' }}>
+                    <span className="split-metric-v" style={{ color: 'var(--accent-emerald, #059669)' }}>
                       {transfers.length} direct {transfers.length === 1 ? 'transfer' : 'transfers'}
                     </span>
                   </div>
@@ -2124,7 +2194,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                       </p>
                     </div>
 
-                    <span style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: 600 }}>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600 }}>
                       {transfers.filter((t: any) => completedTransferIds.includes(t.id)).length}/{transfers.length} cleared
                     </span>
                   </div>
@@ -2136,11 +2206,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                         <div
                           key={tx.id}
                           className="split-transfer-item"
-                          style={{ opacity: isCompleted ? 0.6 : 1 }}
+                          style={{ opacity: isCompleted ? 0.55 : 1 }}
                         >
                           <div className="split-transfer-parties">
                             <div className="split-party-chip">
-                              <div className="split-party-avatar" style={{ background: tx.from?.avatarBg || '#243E36' }}>
+                              <div className="split-party-avatar" style={{ background: tx.from?.avatarBg || 'var(--accent-olive)' }}>
                                 {(tx.from?.name || 'T')[0]}
                               </div>
                               <div className="split-party-info">
@@ -2149,10 +2219,10 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                               </div>
                             </div>
 
-                            <ArrowRight size={14} color="#94A3B8" style={{ flexShrink: 0, margin: '0 4px' }} />
+                            <ArrowRight size={14} color="var(--text-muted)" style={{ flexShrink: 0, margin: '0 4px' }} />
 
                             <div className="split-party-chip">
-                              <div className="split-party-avatar" style={{ background: tx.to?.avatarBg || '#10B981' }}>
+                              <div className="split-party-avatar" style={{ background: tx.to?.avatarBg || 'var(--accent-emerald)' }}>
                                 {(tx.to?.name || 'C')[0]}
                               </div>
                               <div className="split-party-info">
@@ -2173,8 +2243,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                                 className="split-upi-btn"
                                 onClick={() => setSettleTransferData({
                                   id: tx.id,
-                                  from: { id: tx.fromMemberId || tx.from?.id, name: tx.from?.name || 'Payer', avatarBg: tx.from?.avatarBg || '#243E36' },
-                                  to: { id: tx.toMemberId || tx.to?.id, name: tx.to?.name || 'Recipient', avatarBg: tx.to?.avatarBg || '#10B981' },
+                                  from: { id: tx.fromMemberId || tx.from?.id, name: tx.from?.name || 'Payer', avatarBg: tx.from?.avatarBg || 'var(--accent-olive)' },
+                                  to: { id: tx.toMemberId || tx.to?.id, name: tx.to?.name || 'Recipient', avatarBg: tx.to?.avatarBg || 'var(--accent-emerald)' },
                                   amount: tx.amount,
                                   currency: tx.currency || activeGrp.currency,
                                   currencySymbol
@@ -2207,13 +2277,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                     })}
 
                     {transfers.length === 0 && (
-                      <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94A3B8' }}>
-                        <Check size={28} style={{ margin: '0 auto 6px', color: '#10B981' }} />
-                        <div style={{ fontWeight: 600, color: '#0F172A', fontSize: '0.88rem' }}>
+                      <div style={{ textAlign: 'center', padding: '36px 14px', color: 'var(--text-muted)' }}>
+                        <Check size={32} style={{ margin: '0 auto 8px', color: 'var(--accent-emerald)' }} />
+                        <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.96rem' }}>
                           All Settled!
                         </div>
-                        <p style={{ fontSize: '0.74rem', margin: '4px 0 0' }}>
-                          No pending transfers needed for this trip.
+                        <p style={{ fontSize: '0.78rem', margin: '4px 0 0', color: 'var(--text-muted)' }}>
+                          No pending peer transfers needed for this trip.
                         </p>
                       </div>
                     )}
@@ -2236,8 +2306,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                       style={{
                         background: 'none',
                         border: 'none',
-                        color: '#243E36',
-                        fontSize: '0.76rem',
+                        color: 'var(--accent-olive)',
+                        fontSize: '0.78rem',
                         fontWeight: 600,
                         cursor: 'pointer',
                         display: 'inline-flex',
@@ -2256,38 +2326,38 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                         switch (cat) {
                           case 'Stay':
                             return (
-                              <div className="split-cat-bubble" style={{ background: '#E8F5E9', color: '#2E7D32' }}>
+                              <div className="split-cat-bubble" style={{ background: 'var(--accent-emerald-light, #DCFCE7)', color: 'var(--accent-emerald, #059669)' }}>
                                 <Home size={17} strokeWidth={2.2} />
                               </div>
                             );
                           case 'Food':
                             return (
-                              <div className="split-cat-bubble" style={{ background: '#FFF3E0', color: '#E65100' }}>
+                              <div className="split-cat-bubble" style={{ background: 'var(--accent-amber-light, #FEF3C7)', color: 'var(--accent-amber, #D97706)' }}>
                                 <Utensils size={17} strokeWidth={2.2} />
                               </div>
                             );
                           case 'Transport':
                             return (
-                              <div className="split-cat-bubble" style={{ background: '#E0F7FA', color: '#00838F' }}>
+                              <div className="split-cat-bubble" style={{ background: '#E0F2FE', color: '#0284C7' }}>
                                 <Car size={17} strokeWidth={2.2} />
                               </div>
                             );
                           case 'Activities':
                             return (
-                              <div className="split-cat-bubble" style={{ background: '#F3E8FF', color: '#7E22CE' }}>
+                              <div className="split-cat-bubble" style={{ background: '#F3E8FF', color: '#7C3AED' }}>
                                 <Compass size={17} strokeWidth={2.2} />
                               </div>
                             );
                           case 'Supplies':
                             return (
-                              <div className="split-cat-bubble" style={{ background: '#FEF3C7', color: '#D97706' }}>
+                              <div className="split-cat-bubble" style={{ background: 'var(--accent-olive-subtle, #EFF1E4)', color: 'var(--accent-olive, #464B29)' }}>
                                 <ShoppingBag size={17} strokeWidth={2.2} />
                               </div>
                             );
                           case 'Other':
                           default:
                             return (
-                              <div className="split-cat-bubble" style={{ background: '#F1F5F9', color: '#475569' }}>
+                              <div className="split-cat-bubble" style={{ background: 'var(--bg-surface-subtle, #F2EFE8)', color: 'var(--text-secondary, #585952)' }}>
                                 <Receipt size={17} strokeWidth={2.2} />
                               </div>
                             );
@@ -2323,7 +2393,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                                     loadExpenseGroupData(activeGrp.id);
                                   }
                                 }}
-                                style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '2px' }}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', transition: 'color 0.15s ease' }}
                                 title="Delete expense"
                               >
                                 <X size={13} />
@@ -2335,12 +2405,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                     })}
 
                     {bills.length === 0 && (
-                      <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94A3B8' }}>
-                        <Receipt size={28} style={{ margin: '0 auto 6px', opacity: 0.4 }} />
-                        <div style={{ fontWeight: 600, color: '#0F172A', fontSize: '0.88rem' }}>
+                      <div style={{ textAlign: 'center', padding: '36px 14px', color: 'var(--text-muted)' }}>
+                        <Receipt size={32} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
+                        <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.96rem' }}>
                           No expenses yet
                         </div>
-                        <p style={{ fontSize: '0.74rem', margin: '4px 0 0' }}>
+                        <p style={{ fontSize: '0.78rem', margin: '4px 0 0', color: 'var(--text-muted)' }}>
                           Click "+ Add Bill" to record your first group expense.
                         </p>
                       </div>

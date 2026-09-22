@@ -8,7 +8,6 @@ import { View, StyleSheet, BackHandler, ToastAndroid, Platform, Alert } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { Header } from '../components/common/Header';
-import { SyncBanner } from '../components/common/SyncBanner';
 import { BottomDock, DockTab } from '../components/common/BottomDock';
 import { ExploreTab } from '../components/home/ExploreTab';
 import { TripsTab } from '../components/home/TripsTab';
@@ -22,7 +21,9 @@ import { NotificationsScreen } from './NotificationsScreen';
 import { InvitationScreen } from './InvitationScreen';
 import { useTrips } from '../context/TripContext';
 import { groupService } from '../api/group.service';
-import { syncService } from '../sync/syncService';
+import { notificationService as apiNotificationService } from '../api/notification.service';
+import { notificationService } from '../services/notificationService';
+import { useAuth } from '../context/AuthContext';
 import { InboxNotification, PendingInvitation } from '../types';
 
 interface HomeScreenProps {
@@ -31,6 +32,7 @@ interface HomeScreenProps {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTrip }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<DockTab>('explore');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -103,9 +105,31 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
     }
   }, []);
 
+  // Load Live In-App Notifications from API
+  const loadNotifications = useCallback(async () => {
+    try {
+      const res = await notificationService.getUserNotifications();
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        const mapped: InboxNotification[] = res.data.map(item => ({
+          id: item.id,
+          title: item.title,
+          description: item.body,
+          timestamp: item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+          isRead: item.isRead,
+          category: (item.type?.toLowerCase().includes('invite') ? 'trip' : item.type?.toLowerCase().includes('expense') ? 'expense' : 'system') as any,
+          actionTab: item.type?.toLowerCase().includes('invite') ? 'trips' : 'expenses'
+        }));
+        setNotifications(mapped);
+      }
+    } catch (err: any) {
+      console.warn('Could not load in-app notifications:', err?.message);
+    }
+  }, []);
+
   useEffect(() => {
     loadPendingInvitations();
-  }, [loadPendingInvitations]);
+    loadNotifications();
+  }, [loadPendingInvitations, loadNotifications]);
 
   const unreadInboxCount = notifications.filter((n) => !n.isRead).length + pendingInvitations.length;
 
@@ -116,26 +140,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   };
 
   // Notification Inbox Actions
-  const handleMarkAllNotificationsRead = () => {
+  const handleMarkAllNotificationsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    notificationService.markAsRead(undefined, true).catch(() => {});
   };
 
   const handleSelectNotification = (item: InboxNotification) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
     );
+    notificationService.markAsRead(item.id).catch(() => {});
     if (item.actionTab) {
       setActiveTab(item.actionTab as DockTab);
       setScreenMode('main');
     }
   };
 
-  const handleClearAllNotifications = () => {
+  const handleClearAllNotifications = async () => {
     setNotifications([]);
+    notificationService.clearAllNotifications().catch(() => {});
   };
 
-  const handleDeleteNotification = (id: string) => {
+  const handleDeleteNotification = async (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+    notificationService.deleteNotification(id).catch(() => {});
   };
 
   const handleAcceptInvite = async (inviteCode: string, groupName: string) => {
@@ -161,7 +189,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
     try {
       const res = await groupService.acceptInvite(cleanCode);
 
-      // Append success notification
+      // 1. Trigger push notification
+      await notificationService.sendLocalNotification(
+        'Invitation Accepted 🎉',
+        `You have officially joined "${groupName}". Expenses are now enabled.`,
+        'invites'
+      );
+
+      // 3. Append success in-app notification
       setNotifications((prev) => [
         {
           id: `notif-accept-${Date.now()}`,
@@ -175,10 +210,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
         ...prev,
       ]);
 
-      // 2. Authoritative server refresh
+      // 4. Authoritative server refresh & local trips reload
       await loadPendingInvitations();
-      await syncService.downloadServerData().catch(() => {});
-      refreshTrips();
+      await refreshTrips();
 
       Alert.alert('Joined Trip!', `You are now a member of "${groupName}". The trip has been synced to your workspace.`);
     } catch (err: any) {
@@ -220,6 +254,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
 
             try {
               await groupService.rejectInvite(cleanCode);
+
+              // 1. Trigger push notification
+              await notificationService.sendLocalNotification(
+                'Invitation Declined',
+                `You have declined the invitation to join "${groupName}".`,
+                'invites'
+              );
+
+              // 3. Append in-app notification
               setNotifications((prev) => [
                 {
                   id: `notif-declined-${Date.now()}`,
@@ -231,8 +274,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
                 },
                 ...prev,
               ]);
-              // 2. Authoritative server refresh
+
+              // 4. Refresh
               await loadPendingInvitations();
+              await refreshTrips();
             } catch (err: any) {
               await loadPendingInvitations();
               Alert.alert('Error', err.message || 'Failed to decline invitation.');
@@ -244,6 +289,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
       ]
     );
   };
+
+  const handleFullRefresh = useCallback(async () => {
+    await loadPendingInvitations();
+    await loadNotifications();
+    await refreshTrips();
+  }, [loadPendingInvitations, loadNotifications, refreshTrips]);
 
   // ── Back Navigation Handler ──────────────────────────────────
   useEffect(() => {
@@ -329,7 +380,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
           setInviteOrigin('notifications');
           setScreenMode('invitation');
         }}
-        onRefresh={loadPendingInvitations}
+        onRefresh={handleFullRefresh}
         isProcessingInviteCode={isProcessingInviteCode}
       />
     );
@@ -356,8 +407,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
             );
           }
           await loadPendingInvitations();
-          await syncService.downloadServerData().catch(() => {});
-          refreshTrips();
+          await refreshTrips();
           if (tripId) {
             onSelectTrip(tripId);
           } else {
@@ -396,9 +446,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
             />
-
-            {/* Sync Status Banner */}
-            <SyncBanner />
           </>
         )}
 
@@ -409,6 +456,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
               searchQuery={searchQuery}
               onSelectTrip={onSelectTrip}
               onCreateTrip={onCreateTrip}
+              onRefresh={handleFullRefresh}
             />
           )}
           {activeTab === 'trips' && (
@@ -417,9 +465,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
               onCreateTrip={onCreateTrip}
               onJoinTrip={() => setIsJoinModalOpen(true)}
               searchQuery={searchQuery}
+              onRefresh={handleFullRefresh}
             />
           )}
-          {activeTab === 'expenses' && <ExpensesTab searchQuery={searchQuery} />}
+          {activeTab === 'expenses' && (
+            <ExpensesTab
+              searchQuery={searchQuery}
+              onRefresh={handleFullRefresh}
+            />
+          )}
           {activeTab === 'payments' && (
             <PaymentsScreen onBack={() => setActiveTab('explore')} />
           )}
@@ -442,8 +496,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
           visible={isJoinModalOpen}
           onClose={() => setIsJoinModalOpen(false)}
           onJoined={async () => {
-            await syncService.downloadServerData().catch(() => {});
-            refreshTrips();
+            await refreshTrips();
           }}
           onReviewInvite={(code) => {
             setIsJoinModalOpen(false);

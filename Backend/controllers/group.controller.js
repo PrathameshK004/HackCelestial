@@ -255,6 +255,18 @@ async function createGroup(req, res) {
             VALUES ($1, $2, $3, $4, 'Traveler', 'PENDING', $5, NOW())
         `, [crypto.randomUUID(), groupId, generalInviteCode, userId || null, inviteExpiry]);
 
+        // 5. Audit Log Entry for Group Creation
+        await client.query(`
+            INSERT INTO ledger_audit_log (id, group_id, event_type, actor_id, actor_name, description, created_at)
+            VALUES ($1, $2, 'GROUP_CREATED', $3, $4, $5, NOW())
+        `, [
+            crypto.randomUUID(),
+            groupId,
+            userId || null,
+            organizerName,
+            `Trip "${createdGroup.name}" created by ${organizerName}. Invited ${pendingInviteEmails.length} member(s).`
+        ]);
+
         await client.query('COMMIT');
 
         const generalInviteUrl = `${baseUrl}/join/${generalInviteCode}`;
@@ -365,7 +377,7 @@ async function getGroupById(req, res) {
         // Fetch members with approval status and their personal invite link if pending
         const membersQuery = await pool.query(`
             SELECT gm.id, gm.user_id as "userId", gm.name, gm.email, gm.role, gm.avatar_bg as "avatarBg", 
-                   gm.is_registered as "isRegistered", COALESCE(gm.status, 'ACCEPTED') as status, gm.joined_at as "joinedAt",
+                   gm.is_registered as "isRegistered", gm.status as status, gm.joined_at as "joinedAt",
                    gi.invite_code as "inviteCode"
             FROM group_members gm
             LEFT JOIN LATERAL (

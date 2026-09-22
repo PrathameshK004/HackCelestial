@@ -12,7 +12,6 @@ import {
 import { X, KeyRound, ArrowRight, Eye } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { groupService } from '../../api/group.service';
-import { useSync } from '../../context/SyncContext';
 import { InvitationModal } from './InvitationModal';
 
 interface JoinGroupModalProps {
@@ -26,7 +25,7 @@ export const JoinGroupModal: React.FC<JoinGroupModalProps> = ({ visible, onClose
   const [inviteCode, setInviteCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const { isOnline } = useSync();
+  const isOnline = true;
 
   const handleJoin = async () => {
     if (!inviteCode.trim()) {

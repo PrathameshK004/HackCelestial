@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
@@ -41,8 +42,6 @@ import { useTrips } from '../context/TripContext';
 import { groupService } from '../api/group.service';
 import { PaymentModal } from '../components/group/PaymentModal';
 import { AddTravelerModal } from '../components/group/AddTravelerModal';
-import { tripRepo } from '../database/repositories/tripRepo';
-import { memberRepo } from '../database/repositories/memberRepo';
 import { DatePickerModal } from '../components/common/DatePickerModal';
 
 interface CreateGroupScreenProps {
@@ -105,6 +104,16 @@ export const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ onBack, on
   const isSubmittingRef = useRef(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentRecord, setPaymentRecord] = useState<any>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      refreshTrips();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Organizer details from auth state
   const organizerName = user?.username || user?.name || 'Organizer';
@@ -271,61 +280,7 @@ export const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ onBack, on
       const createdGroupId = newGroup?.id || newGroup?.groupId;
 
       if (createdGroupId) {
-        // Upsert into local SQLite database for instant offline access
-        tripRepo.upsertTrip({
-          id: createdGroupId,
-          name: newGroup.name || groupName.trim(),
-          destination: newGroup.destination || destination.trim(),
-          tripType: newGroup.trip_type || newGroup.tripType || tripType,
-          status: 'active',
-          startDate: newGroup.start_date || newGroup.startDate || startDate.trim(),
-          endDate: newGroup.end_date || newGroup.endDate || endDate.trim(),
-          currency: newGroup.currency || 'INR',
-          currencySymbol: '₹',
-          totalBudget: 0,
-          totalSpent: 0,
-          userBalance: 0,
-          inviteCode: newGroup.invite_code || newGroup.inviteCode || '',
-          description: newGroup.description || '',
-          coverGradient: 'linear-gradient(135deg, #0ea5e9 0%, #10b981 100%)',
-          syncStatus: 'SYNCED',
-          createdAt: newGroup.created_at || newGroup.createdAt || new Date().toISOString(),
-        });
-
-        // Upsert organizer into SQLite members
-        memberRepo.upsertMember({
-          id: 'organizer-' + createdGroupId,
-          tripId: createdGroupId,
-          name: organizerName,
-          email: organizerEmail,
-          role: 'Organizer',
-          avatarBg: '#059669',
-          isUser: true,
-          balance: 0,
-          syncStatus: 'SYNCED',
-        });
-
-        // Upsert companion members
-        if (newGroup.members && Array.isArray(newGroup.members)) {
-          newGroup.members.forEach((m: any) => {
-            if (m.email?.toLowerCase() !== organizerEmail.toLowerCase()) {
-              memberRepo.upsertMember({
-                id: m.id || ('companion-' + Math.random().toString(36).substring(2, 9)),
-                tripId: createdGroupId,
-                name: m.name,
-                email: m.email,
-                role: m.role || 'Traveler',
-                avatarBg: m.avatarBg || m.avatar_bg || '#0284c7',
-                isUser: Boolean(m.isRegistered || m.is_registered),
-                balance: 0,
-                syncStatus: 'SYNCED',
-              });
-            }
-          });
-        }
-
-        // Refresh global trips list & trigger navigation
-        refreshTrips();
+        await refreshTrips();
         onSuccess(createdGroupId);
       } else {
         Alert.alert('Error', 'Unable to retrieve group information from server.');
@@ -397,6 +352,14 @@ export const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ onBack, on
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={['#059669']}
+              tintColor="#059669"
+            />
+          }
         >
           {/* STEP 1: Trip Essentials */}
           {step === 1 && (

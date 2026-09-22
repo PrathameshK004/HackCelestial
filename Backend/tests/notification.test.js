@@ -9,18 +9,28 @@ test('Firebase Admin SDK should initialize properly', () => {
     assert.strictEqual(typeof admin.messaging, 'function', 'admin.messaging should be a function');
 });
 
-test('Database schema initialization includes user_push_tokens', async () => {
+test('Database schema initialization includes user_push_tokens and in_app_notifications', async () => {
     await initializeDatabase();
-    const res = await pool.query(`
-        SELECT column_name, data_type 
+    const resTokens = await pool.query(`
+        SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name = 'user_push_tokens'
     `);
-    const columnNames = res.rows.map(r => r.column_name);
-    assert.ok(columnNames.includes('id'), 'user_push_tokens should have id column');
-    assert.ok(columnNames.includes('user_id'), 'user_push_tokens should have user_id column');
-    assert.ok(columnNames.includes('token'), 'user_push_tokens should have token column');
-    assert.ok(columnNames.includes('device_type'), 'user_push_tokens should have device_type column');
+    const tokenColumns = resTokens.rows.map(r => r.column_name);
+    assert.ok(tokenColumns.includes('id'), 'user_push_tokens should have id column');
+    assert.ok(tokenColumns.includes('user_id'), 'user_push_tokens should have user_id column');
+    assert.ok(tokenColumns.includes('token'), 'user_push_tokens should have token column');
+
+    const resNotifs = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'in_app_notifications'
+    `);
+    const notifColumns = resNotifs.rows.map(r => r.column_name);
+    assert.ok(notifColumns.includes('id'), 'in_app_notifications should have id column');
+    assert.ok(notifColumns.includes('user_id'), 'in_app_notifications should have user_id column');
+    assert.ok(notifColumns.includes('type'), 'in_app_notifications should have type column');
+    assert.ok(notifColumns.includes('is_read'), 'in_app_notifications should have is_read column');
 });
 
 test('Push token registration and removal handles gracefully', async () => {

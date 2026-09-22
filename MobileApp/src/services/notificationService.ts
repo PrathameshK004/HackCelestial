@@ -193,6 +193,72 @@ export const notificationService = {
   },
 
   /**
+   * Fetch in-app notifications from backend or local fallback
+   */
+  async getUserNotifications(): Promise<{ message: string; data: any[] }> {
+    try {
+      const res = await apiRequest<{ message: string; data: any[] }>('/notifications', { method: 'GET' });
+      return res;
+    } catch {
+      return { message: 'Local notifications', data: [] };
+    }
+  },
+
+  /**
+   * Mark notification(s) as read
+   */
+  async markAsRead(notificationId?: string, markAll: boolean = false): Promise<void> {
+    try {
+      await apiRequest('/notifications/mark-read', {
+        method: 'POST',
+        body: JSON.stringify({ notificationId, markAll }),
+      });
+    } catch (_) {}
+  },
+
+  /**
+   * Clear all notifications
+   */
+  async clearAllNotifications(): Promise<void> {
+    try {
+      await apiRequest('/notifications/clear', { method: 'DELETE' });
+    } catch (_) {}
+  },
+
+  /**
+   * Delete single notification
+   */
+  async deleteNotification(id: string): Promise<void> {
+    try {
+      await apiRequest(`/notifications/${id}`, { method: 'DELETE' });
+    } catch (_) {}
+  },
+
+  /**
+   * Send instant local/push notification to device system tray & banner
+   */
+  async sendLocalNotification(title: string, body: string, channelId: string = 'invites', data?: any): Promise<void> {
+    const Notifications = getNotifications();
+    if (!Notifications) {
+      console.log(`[Push Notification] ${title}: ${body}`);
+      return;
+    }
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: 'default',
+          data: data || {},
+        },
+        trigger: null,
+      });
+    } catch (err: any) {
+      console.warn('[Push] Error scheduling local notification:', err?.message);
+    }
+  },
+
+  /**
    * Attach foreground and tap listeners for push notifications
    */
   addNotificationListeners(

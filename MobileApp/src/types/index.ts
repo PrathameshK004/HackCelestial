@@ -81,7 +81,7 @@ export interface Participant {
   avatarBg: string;
   isUser?: boolean;
   balance: number;
-  status?: 'ACCEPTED' | 'PENDING' | 'REJECTED';
+  status?: 'ACCEPTED' | 'PENDING' | 'REJECTED' | 'DECLINED';
   inviteCode?: string;
   inviteUrl?: string;
   syncStatus?: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';

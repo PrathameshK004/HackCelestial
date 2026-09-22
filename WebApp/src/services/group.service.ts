@@ -1,4 +1,5 @@
 import { apiRequest } from './apiClient';
+import { triggerStatusRefresh } from '../hooks/useRealtimePoller';
 import { 
   TripFormData, 
   CreatedGroupData, 
@@ -32,7 +33,7 @@ export const groupService = {
    * Create a new group trip with full details, members, and auto-generated invites
    */
   async createGroup(formData: TripFormData): Promise<{ err?: any; message: string; data: CreatedGroupData }> {
-    return request<{ err?: any; message: string; data: CreatedGroupData }>('/groups', {
+    const res = await request<{ err?: any; message: string; data: CreatedGroupData }>('/groups', {
       method: 'POST',
       body: JSON.stringify({
         groupName: formData.groupName.trim(),
@@ -52,6 +53,8 @@ export const groupService = {
         payment: formData.payment || null,
       }),
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   /**
@@ -116,18 +119,22 @@ export const groupService = {
    * Accept an invitation code and join group (approves membership)
    */
   async acceptInvite(inviteCode: string): Promise<{ err?: any; message: string; data: any }> {
-    return request<{ err?: any; message: string; data: any }>(`/invites/${inviteCode}/accept`, {
+    const res = await request<{ err?: any; message: string; data: any }>(`/invites/${inviteCode}/accept`, {
       method: 'POST',
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   /**
    * Reject / decline an invitation
    */
   async rejectInvite(inviteCode: string): Promise<{ err?: any; message: string; data: any }> {
-    return request<{ err?: any; message: string; data: any }>(`/invites/${inviteCode}/reject`, {
+    const res = await request<{ err?: any; message: string; data: any }>(`/invites/${inviteCode}/reject`, {
       method: 'POST',
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   /**
@@ -165,10 +172,12 @@ export const groupService = {
     paymentMethod?: string;
     paymentReference?: string;
   }): Promise<{ message: string; data: SettlementExpense }> {
-    return request<{ message: string; data: SettlementExpense }>(`/groups/${groupId}/expenses`, {
+    const res = await request<{ message: string; data: SettlementExpense }>(`/groups/${groupId}/expenses`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   async getExpenses(groupId: string): Promise<{ message: string; data: SettlementExpense[] }> {
@@ -178,9 +187,11 @@ export const groupService = {
   },
 
   async deleteExpense(groupId: string, expenseId: string): Promise<{ message: string; data: any }> {
-    return request<{ message: string; data: any }>(`/groups/${groupId}/expenses/${expenseId}`, {
+    const res = await request<{ message: string; data: any }>(`/groups/${groupId}/expenses/${expenseId}`, {
       method: 'DELETE',
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   async getSettlement(groupId: string): Promise<{ message: string; data: SettlementData }> {
@@ -198,16 +209,20 @@ export const groupService = {
     paymentMethod?: string;
     paymentReference?: string;
   }): Promise<{ message: string; data: any }> {
-    return request<{ message: string; data: any }>(`/groups/${groupId}/settlements`, {
+    const res = await request<{ message: string; data: any }>(`/groups/${groupId}/settlements`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   async settleGroup(groupId: string): Promise<{ message: string; data: any }> {
-    return request<{ message: string; data: any }>(`/groups/${groupId}/settle`, {
+    const res = await request<{ message: string; data: any }>(`/groups/${groupId}/settle`, {
       method: 'POST',
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   async getAuditLog(groupId: string): Promise<{ message: string; data: any[] }> {
@@ -222,16 +237,20 @@ export const groupService = {
     role?: string;
     avatarBg?: string;
   }): Promise<{ err?: any; message: string; data: any }> {
-    return request<{ err?: any; message: string; data: any }>(`/groups/${groupId}/members`, {
+    const res = await request<{ err?: any; message: string; data: any }>(`/groups/${groupId}/members`, {
       method: 'POST',
       body: JSON.stringify(member),
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   async removeGroupMember(groupId: string, memberId: string): Promise<{ err?: any; message: string; data: any }> {
-    return request<{ err?: any; message: string; data: any }>(`/groups/${groupId}/members/${memberId}`, {
+    const res = await request<{ err?: any; message: string; data: any }>(`/groups/${groupId}/members/${memberId}`, {
       method: 'DELETE',
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   /**
@@ -268,10 +287,12 @@ export const groupService = {
     toMemberId?: string;
     splitModel?: string;
   }): Promise<{ message: string; data: any }> {
-    return request('/payments/record', {
+    const res = await request<{ message: string; data: any }>('/payments/record', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    triggerStatusRefresh();
+    return res;
   },
 
   /**
@@ -289,10 +310,12 @@ export const groupService = {
     vendorUpi?: string;
     vendorName?: string;
   }): Promise<{ message: string; data: any }> {
-    return request('/payments/verify-status', {
+    const res = await request<{ message: string; data: any }>('/payments/verify-status', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    triggerStatusRefresh();
+    return res;
   },
 };
 

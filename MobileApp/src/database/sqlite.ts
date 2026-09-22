@@ -38,11 +38,13 @@ export function initializeDatabase(): void {
     db.execSync("ALTER TABLE participants ADD COLUMN invite_code TEXT;");
   } catch (_) {}
   
-  // Check if trips exist; if not, populate initial sample trips so user can test offline immediately!
-  const countRow = db.getFirstSync<{ count: number }>('SELECT COUNT(*) as count FROM trips');
-  if (!countRow || countRow.count === 0) {
-    seedInitialOfflineData(db);
-  }
+  // Purge legacy dummy offline seed data so SQLite reflects real user/server trips only
+  try {
+    db.execSync("DELETE FROM trips WHERE id IN ('grp-goa-2026', 'grp-manali-2026');");
+    db.execSync("DELETE FROM participants WHERE trip_id IN ('grp-goa-2026', 'grp-manali-2026');");
+    db.execSync("DELETE FROM expenses WHERE trip_id IN ('grp-goa-2026', 'grp-manali-2026');");
+    db.execSync("DELETE FROM settlements WHERE trip_id IN ('grp-goa-2026', 'grp-manali-2026');");
+  } catch (_) {}
 }
 
 function seedInitialOfflineData(db: SQLite.SQLiteDatabase): void {

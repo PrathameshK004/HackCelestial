@@ -31,6 +31,7 @@ import {
   Alert,
   Share,
   BackHandler,
+  RefreshControl,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -152,7 +153,7 @@ interface PaymentsScreenProps {
 
 // ══════════════════════════════════════════════════════════════════════════════
 export const PaymentsScreen: React.FC<PaymentsScreenProps> = ({ onBack }) => {
-  const { trips } = useTrips();
+  const { trips, refreshTrips } = useTrips();
   const { token } = useAuth();
 
   // ── Data State ────────────────────────────────────────────────────────────
@@ -160,6 +161,19 @@ export const PaymentsScreen: React.FC<PaymentsScreenProps> = ({ onBack }) => {
   const [totalSpent, setTotalSpent]     = useState(0);
   const [totalReceived, setTotalReceived] = useState(0);
   const [isLoading, setIsLoading]       = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshTrips();
+      await loadPaymentsData();
+    } catch (err) {
+      console.warn('Refresh error in PaymentsScreen:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // ── UI State ─────────────────────────────────────────────────────────────
   const [filterDir, setFilterDir]   = useState<FilterDirection>('all');
@@ -463,6 +477,14 @@ export const PaymentsScreen: React.FC<PaymentsScreenProps> = ({ onBack }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#059669', '#243E36']}
+            tintColor="#059669"
+          />
+        }
       >
         {/* ── Search Bar + Sort/Filter ── */}
         <View style={styles.searchBox}>

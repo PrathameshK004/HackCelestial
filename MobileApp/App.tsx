@@ -1,14 +1,12 @@
 /**
- * GroupTrip Ledger Mobile Application (Production-Quality Offline-First)
- * React Native / Expo with SQLite Local Relational Database
+ * GroupTrip Ledger Mobile Application
+ * React Native / Expo with Direct Live PostgreSQL Backend Architecture
  */
 
 import React, { useState, useEffect } from 'react';
 import { Platform, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { initializeDatabase } from './src/database/sqlite';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
-import { SyncProvider } from './src/context/SyncContext';
 import { TripProvider, useTrips } from './src/context/TripContext';
 import { SplashScreen } from './src/components/common/SplashScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -16,11 +14,10 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { GroupMenuScreen } from './src/screens/GroupMenuScreen';
 import { CreateGroupScreen } from './src/screens/CreateGroupScreen';
 import { notificationService } from './src/services/notificationService';
-import { syncService } from './src/sync/syncService';
 
 const RootNavigator: React.FC = () => {
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
-  const { selectTrip, selectedTrip, clearSelectedTrip } = useTrips();
+  const { selectTrip, selectedTrip, clearSelectedTrip, refreshTrips } = useTrips();
 
   const [showSplash, setShowSplash] = useState(true);
   const [currentView, setCurrentView] = useState<'dashboard' | 'create-group'>('dashboard');
@@ -40,8 +37,8 @@ const RootNavigator: React.FC = () => {
 
     const cleanup = notificationService.addNotificationListeners(
       () => {
-        // Automatically sync fresh server data into local SQLite when push notification arrives
-        syncService.downloadServerData().catch(() => {});
+        // Reload live server trips when push notification arrives
+        refreshTrips().catch(() => {});
       },
       (response) => {
         const data = response.notification.request.content.data;
@@ -52,7 +49,7 @@ const RootNavigator: React.FC = () => {
     );
 
     return cleanup;
-  }, [isAuthenticated, selectTrip]);
+  }, [isAuthenticated, selectTrip, refreshTrips]);
 
   if (showSplash || isAuthLoading) {
     return <SplashScreen onSkip={() => setShowSplash(false)} />;
@@ -95,14 +92,7 @@ const RootNavigator: React.FC = () => {
 };
 
 export default function App() {
-  // Initialize SQLite Database schema & initial offline seed
   useEffect(() => {
-    try {
-      initializeDatabase();
-    } catch (e) {
-      console.warn('SQLite init error:', e);
-    }
-
     // Explicitly set Android status bar to white with dark icons
     if (Platform.OS === 'android') {
       StatusBar.setBackgroundColor('#FFFFFF', true);
@@ -114,11 +104,9 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={false} />
       <AuthProvider>
-        <SyncProvider>
-          <TripProvider>
-            <RootNavigator />
-          </TripProvider>
-        </SyncProvider>
+        <TripProvider>
+          <RootNavigator />
+        </TripProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

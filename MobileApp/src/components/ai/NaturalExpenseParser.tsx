@@ -15,11 +15,12 @@ import {
 } from 'react-native';
 import { Sparkles, ArrowRight, WifiOff, CheckCircle2 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
-import { useSync } from '../../context/SyncContext';
 import { Participant, CostSharingModel } from '../../types';
 
 interface NaturalExpenseParserProps {
   members: Participant[];
+  disabled?: boolean;
+  onDisabledPress?: () => void;
   onParsedExpense: (parsed: {
     title: string;
     amount: number;
@@ -32,12 +33,19 @@ interface NaturalExpenseParserProps {
 
 export const NaturalExpenseParser: React.FC<NaturalExpenseParserProps> = ({
   members,
+  disabled = false,
+  onDisabledPress,
   onParsedExpense,
 }) => {
-  const { isOnline } = useSync();
+  const isOnline = true;
   const [input, setInput] = useState('');
 
   const handleParse = () => {
+    if (disabled) {
+      if (onDisabledPress) onDisabledPress();
+      return;
+    }
+
     if (!input.trim()) {
       Alert.alert('Empty Input', 'Please type an expense sentence, e.g.: "Dinner 3500 paid by Rahul"');
       return;
@@ -102,9 +110,9 @@ export const NaturalExpenseParser: React.FC<NaturalExpenseParserProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <View style={styles.badge}>
+        <View style={[styles.badge, disabled && { backgroundColor: colors.slate400 }]}>
           <Sparkles size={12} color="#ffffff" />
-          <Text style={styles.badgeText}>Quick AI Parser</Text>
+          <Text style={styles.badgeText}>{disabled ? 'Expenses Locked 🔒' : 'Quick AI Parser'}</Text>
         </View>
 
         {!isOnline ? (
@@ -120,19 +128,32 @@ export const NaturalExpenseParser: React.FC<NaturalExpenseParserProps> = ({
         )}
       </View>
 
-      <Text style={styles.label}>Type in plain English:</Text>
-      <View style={styles.inputRow}>
+      <Text style={styles.label}>
+        {disabled ? 'Expense logging locked until all members accept invitations:' : 'Type in plain English:'}
+      </Text>
+      <TouchableOpacity
+        activeOpacity={disabled ? 0.7 : 1}
+        onPress={() => {
+          if (disabled && onDisabledPress) onDisabledPress();
+        }}
+        style={styles.inputRow}
+      >
         <TextInput
-          style={styles.textInput}
-          placeholder='e.g. "Dinner 4200 paid by Yogesh"'
+          style={[styles.textInput, disabled && { backgroundColor: '#f1f5f9', color: colors.slate500 }]}
+          placeholder={disabled ? '🔒 Locked until all travelers accept invite' : 'e.g. "Dinner 4200 paid by Yogesh"'}
           placeholderTextColor={colors.slate400}
           value={input}
           onChangeText={setInput}
+          editable={!disabled}
         />
-        <TouchableOpacity style={styles.parseBtn} onPress={handleParse} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={[styles.parseBtn, disabled && { backgroundColor: colors.slate400 }]}
+          onPress={handleParse}
+          activeOpacity={0.8}
+        >
           <ArrowRight size={16} color="#ffffff" />
         </TouchableOpacity>
-      </View>
+      </TouchableOpacity>
 
       {!isOnline && (
         <Text style={styles.offlineHint}>

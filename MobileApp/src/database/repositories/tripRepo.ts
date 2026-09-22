@@ -73,6 +73,9 @@ export const tripRepo = {
   deleteTrip(id: string): void {
     const db = getDatabase();
     db.runSync('DELETE FROM trips WHERE id = ?', [id]);
+    db.runSync('DELETE FROM participants WHERE trip_id = ?', [id]);
+    db.runSync('DELETE FROM expenses WHERE trip_id = ?', [id]);
+    db.runSync('DELETE FROM settlements WHERE trip_id = ?', [id]);
   },
 
   updateTripSyncStatus(id: string, serverId: string, status: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY'): void {

@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
 import { Plus, Share2, Compass, ArrowRight } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
@@ -15,6 +16,7 @@ interface TripsTabProps {
   onCreateTrip: () => void;
   onJoinTrip: () => void;
   searchQuery?: string;
+  onRefresh?: () => Promise<void> | void;
 }
 
 export const TripsTab: React.FC<TripsTabProps> = ({
@@ -22,8 +24,23 @@ export const TripsTab: React.FC<TripsTabProps> = ({
   onCreateTrip,
   onJoinTrip,
   searchQuery = '',
+  onRefresh,
 }) => {
-  const { trips } = useTrips();
+  const { trips, refreshTrips } = useTrips();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshTrips();
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.warn('Refresh error in TripsTab:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const q = searchQuery.trim().toLowerCase();
 
   // Strictly deduplicate trips by ID to guarantee zero redundant cards in this section
@@ -49,7 +66,18 @@ export const TripsTab: React.FC<TripsTabProps> = ({
   });
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          colors={['#464B29', '#059669']}
+          tintColor="#464B29"
+        />
+      }
+    >
       {/* Header Info */}
       <View style={styles.headerInfo}>
         <Text style={styles.pageTitle}>All Expeditions & Trips</Text>

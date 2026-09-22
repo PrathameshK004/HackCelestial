@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { groupService } from '../services/group.service';
 import { useAuth } from '../context/AuthContext';
+import { useRealtimePoller } from '../hooks/useRealtimePoller';
 import { InviteDetails } from '../types/group';
 
 interface JoinTripPageProps {
@@ -76,6 +77,22 @@ export const JoinTripPage: React.FC<JoinTripPageProps> = ({
       isMounted = false;
     };
   }, [inviteCode]);
+
+  // Real-time Database Invitation Status Sync (3s interval)
+  useRealtimePoller(async () => {
+    if (!inviteCode) return;
+    try {
+      const res = await groupService.getInviteDetails(inviteCode);
+      if (res?.data) {
+        setInviteDetails(res.data);
+        if (res.data.status === 'ACCEPTED') {
+          setDecisionState('ACCEPTED');
+        } else if (res.data.status === 'REJECTED') {
+          setDecisionState('REJECTED');
+        }
+      }
+    } catch (_) {}
+  }, { enabled: Boolean(inviteCode), intervalMs: 3000 });
 
   const handleAccept = async () => {
     if (!isAuthenticated) {

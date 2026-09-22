@@ -12,24 +12,68 @@ export const memberRepo = {
       'SELECT * FROM participants WHERE trip_id = ? ORDER BY is_user DESC, role DESC, name ASC',
       [tripId]
     );
-    return rows.map((r) => ({
-      id: r.id,
-      tripId: r.trip_id,
-      userId: r.user_id,
-      name: r.name,
-      email: r.email,
-      role: r.role,
-      avatarBg: r.avatar_bg,
-      isUser: Boolean(r.is_user),
-      balance: Number(r.balance || 0),
-      status: (r.status || (r.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')) as any,
-      inviteCode: r.invite_code,
-      syncStatus: r.sync_status
-    }));
+
+    // Strict deduplication by email or name to prevent duplicate rows for same person
+    const seenEmails = new Set<string>();
+    const seenNames = new Set<string>();
+    const result: Participant[] = [];
+
+    for (const r of rows) {
+      const email = (r.email || '').trim().toLowerCase();
+      const name = (r.name || '').trim().toLowerCase();
+
+      if (email && seenEmails.has(email)) continue;
+      if (name && seenNames.has(name)) continue;
+
+      if (email) seenEmails.add(email);
+      if (name) seenNames.add(name);
+
+      result.push({
+        id: r.id,
+        tripId: r.trip_id,
+        userId: r.user_id,
+        name: r.name,
+        email: r.email,
+        role: r.role,
+        avatarBg: r.avatar_bg,
+        isUser: Boolean(r.is_user),
+        balance: Number(r.balance || 0),
+        status: r.status ? (r.status as any) : (r.role === 'Organizer' ? 'ACCEPTED' : 'PENDING'),
+        inviteCode: r.invite_code,
+        syncStatus: r.sync_status
+      });
+    }
+
+    return result;
   },
 
   upsertMember(member: Participant): void {
     const db = getDatabase();
+    const resolvedStatus = member.status || (member.role === 'Organizer' ? 'ACCEPTED' : 'PENDING');
+    
+    // Check if an existing placeholder row matches email or name for this trip
+    const cleanEmail = (member.email || '').trim().toLowerCase();
+    const cleanName = (member.name || '').trim().toLowerCase();
+
+    let existing: any = null;
+    if (cleanEmail) {
+      existing = db.getFirstSync<any>(
+        'SELECT id FROM participants WHERE trip_id = ? AND LOWER(email) = ?',
+        [member.tripId, cleanEmail]
+      );
+    }
+    if (!existing && cleanName) {
+      existing = db.getFirstSync<any>(
+        'SELECT id FROM participants WHERE trip_id = ? AND LOWER(name) = ?',
+        [member.tripId, cleanName]
+      );
+    }
+
+    if (existing && existing.id !== member.id) {
+      // Remove old placeholder row (e.g. companion-12345) to prevent duplicate entries
+      db.runSync('DELETE FROM participants WHERE id = ? AND trip_id = ?', [existing.id, member.tripId]);
+    }
+
     db.runSync(`
       INSERT INTO participants (id, trip_id, user_id, name, email, role, avatar_bg, is_user, balance, status, invite_code, sync_status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -53,10 +97,19 @@ export const memberRepo = {
       member.avatarBg || '#059669',
       member.isUser ? 1 : 0,
       member.balance || 0,
-      member.status || (member.role === 'Organizer' ? 'ACCEPTED' : 'PENDING'),
+      resolvedStatus,
       member.inviteCode || null,
       member.syncStatus || 'SYNCED'
     ]);
+  },
+
+  updateMemberStatus(tripId: string, memberIdOrEmail: string, status: 'ACCEPTED' | 'PENDING' | 'REJECTED' | 'DECLINED'): void {
+    const db = getDatabase();
+    const cleanTarget = memberIdOrEmail.trim().toLowerCase();
+    db.runSync(
+      `UPDATE participants SET status = ? WHERE trip_id = ? AND (id = ? OR LOWER(email) = ? OR user_id = ?)`,
+      [status, tripId, memberIdOrEmail, cleanTarget, memberIdOrEmail]
+    );
   },
 
   deleteMember(memberId: string, tripId: string): void {

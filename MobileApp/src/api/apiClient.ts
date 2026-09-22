@@ -8,16 +8,14 @@ import { Platform } from 'react-native';
 import { storage } from '../database/storage';
 
 export const getApiBase = (): string => {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://127.0.0.1:4000/api';
-    }
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:4000/api';
   }
-  return 'http://192.168.0.113:4000/api';
+  return 'http://127.0.0.1:4000/api';
 };
 
 export const API_BASE = getApiBase();
+export const FALLBACK_API_BASE = 'http://192.168.0.113:4000/api';
 
 export interface RequestOptions extends RequestInit {
   token?: string | null;
@@ -86,10 +84,10 @@ async function refreshAccessToken(): Promise<string> {
 }
 
 /**
- * Fetch wrapper with configurable abort timeout
+ * Fetch wrapper with configurable abort timeout and fallback URL retry
  */
 async function fetchWithTimeout(url: string, options: RequestOptions = {}): Promise<Response> {
-  const { timeoutMs = 15000, ...fetchOptions } = options;
+  const { timeoutMs = 8000, ...fetchOptions } = options;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -100,6 +98,23 @@ async function fetchWithTimeout(url: string, options: RequestOptions = {}): Prom
     });
     return res;
   } catch (err: any) {
+    clearTimeout(timeoutId);
+    // If primary URL failed and wasn't explicit fallback URL, attempt fallback API base
+    if (url.startsWith(API_BASE) && API_BASE !== FALLBACK_API_BASE) {
+      const fallbackUrl = url.replace(API_BASE, FALLBACK_API_BASE);
+      try {
+        const fallbackController = new AbortController();
+        const fallbackTimeout = setTimeout(() => fallbackController.abort(), timeoutMs);
+        const fallbackRes = await fetch(fallbackUrl, {
+          ...fetchOptions,
+          signal: fallbackController.signal,
+        });
+        clearTimeout(fallbackTimeout);
+        return fallbackRes;
+      } catch (fallbackErr) {
+        // Ignore fallback error and throw original error
+      }
+    }
     if (err.name === 'AbortError') {
       const timeoutError = new Error('Network request timed out. Please check your connection.');
       (timeoutError as any).status = 408;
@@ -196,8 +211,8 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 
 async function parseResponse<T>(response: Response): Promise<T> {
   let data: any;
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
     try {
       data = await response.json();
     } catch {
@@ -205,10 +220,14 @@ async function parseResponse<T>(response: Response): Promise<T> {
     }
   } else {
     const text = await response.text();
-    data = { message: text || response.statusText };
+    if (text.includes('Service Suspended') || text.includes('<!DOCTYPE html>')) {
+      data = { message: 'Cloud backend service is unreachable or suspended. Local/offline fallback active.' };
+    } else {
+      data = { message: text || response.statusText };
+    }
   }
 
-  if (!response.ok) {
+  if (!response.ok || (typeof data?.message === 'string' && data.message.includes('Cloud backend service is unreachable'))) {
     const errorMessage =
       data?.err?.message ||
       data?.message ||

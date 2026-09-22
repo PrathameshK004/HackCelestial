@@ -4,15 +4,15 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { WifiOff, RefreshCw, AlertTriangle } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { WifiOff, AlertTriangle } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { useSync } from '../../context/SyncContext';
 
 export const SyncBanner: React.FC = () => {
   const { isOnline, isSyncing, pendingCount, syncNow } = useSync();
 
-  if (isOnline && !isSyncing && pendingCount === 0) {
+  if (isOnline && pendingCount === 0) {
     return null;
   }
 
@@ -28,28 +28,27 @@ export const SyncBanner: React.FC = () => {
         activeOpacity={0.8}
       >
         {isSyncing ? (
-          <RefreshCw size={14} color={colors.accentBlue} />
+          <ActivityIndicator size="small" color={colors.accentBlue} />
         ) : !isOnline ? (
           <WifiOff size={14} color={colors.accentAmber} />
         ) : (
           <AlertTriangle size={14} color={colors.accentAmber} />
         )}
 
-        <Text
-          style={[
-            styles.bannerText,
-            !isOnline && styles.bannerTextOffline,
-            isSyncing && styles.bannerTextSyncing,
-          ]}
-        >
-          {isSyncing
-            ? `Syncing ${pendingCount} pending changes...`
-            : !isOnline
-            ? pendingCount > 0
-              ? `Offline • ${pendingCount} changes saved locally (will sync online)`
-              : "Offline mode • You can view and edit cached trips"
-            : `${pendingCount} changes waiting to sync • Tap to retry`}
-        </Text>
+        {!isSyncing && (
+          <Text
+            style={[
+              styles.bannerText,
+              !isOnline && styles.bannerTextOffline,
+            ]}
+          >
+            {!isOnline
+              ? pendingCount > 0
+                ? `Offline • ${pendingCount} changes saved locally (will sync online)`
+                : "Offline mode • You can view and edit cached trips"
+              : `${pendingCount} changes waiting to sync • Tap to retry`}
+          </Text>
+        )}
       </TouchableOpacity>
     </View>
   );

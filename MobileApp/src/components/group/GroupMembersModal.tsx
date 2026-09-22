@@ -22,11 +22,13 @@ import {
   Crown, 
   Clock, 
   CheckCircle2, 
+  XCircle,
   AlertCircle,
   Share2 
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { Participant } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 interface GroupMembersModalProps {
   visible: boolean;
@@ -45,6 +47,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
   onClose,
   onAddMember,
 }) => {
+  const { user } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [copied, setCopied] = useState(false);
@@ -53,11 +56,17 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
 
   // Group acceptance statistics (Unstop team model)
   const confirmedMembers = members.filter(
-    (m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer'
+    (m) => m.role === 'Organizer' || m.status === 'ACCEPTED'
   );
   const pendingMembers = members.filter(
-    (m) => m.status === 'PENDING' && m.role !== 'Organizer'
+    (m) => m.role !== 'Organizer' && (m.status === 'PENDING' || !m.status)
   );
+  const declinedMembers = members.filter(
+    (m) => m.role !== 'Organizer' && (m.status === 'REJECTED' || m.status === 'DECLINED')
+  );
+
+  const currentUserEmail = (user?.email || user?.emailId || '').toLowerCase();
+  const currentUserId = user?.id;
 
   const handleCopyCode = () => {
     setCopied(true);
@@ -106,7 +115,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
             <View>
               <Text style={styles.sheetTitle}>Trip Travelers & Roster</Text>
               <Text style={styles.sheetSubtitle}>
-                {confirmedMembers.length} confirmed • {pendingMembers.length} pending in {tripName}
+                {confirmedMembers.length} confirmed • {pendingMembers.length} pending • {declinedMembers.length} declined
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
@@ -127,14 +136,20 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                   {pendingMembers.length > 0 && (
                     <View style={styles.dashPendingPill}>
                       <Clock size={11} color="#b45309" />
-                      <Text style={styles.dashPendingText}>{pendingMembers.length} Awaiting</Text>
+                      <Text style={styles.dashPendingText}>{pendingMembers.length} Pending</Text>
+                    </View>
+                  )}
+                  {declinedMembers.length > 0 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3', paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 999 }}>
+                      <XCircle size={11} color="#e11d48" />
+                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#e11d48' }}>{declinedMembers.length} Declined</Text>
                     </View>
                   )}
                 </View>
               </View>
 
               <Text style={styles.dashRuleText}>
-                Unstop Policy: Expenses and splits are exclusively allocated to confirmed members. Unconfirmed members carry ₹0 liability.
+                Unstop Policy: Expense logging & cost-sharing are locked until all invited members accept their group invitation. Unconfirmed members carry ₹0 liability.
               </Text>
             </View>
 
@@ -158,15 +173,23 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
             </View>
 
             {members.map((m) => {
-              const isConfirmed = (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer';
-              const isPending = m.status === 'PENDING' && m.role !== 'Organizer';
+              const isConfirmed = m.role === 'Organizer' || m.status === 'ACCEPTED';
+              const isDeclined = m.role !== 'Organizer' && (m.status === 'REJECTED' || m.status === 'DECLINED');
+              const isPending = m.role !== 'Organizer' && !isConfirmed && !isDeclined;
               const isCopied = copiedMemberId === m.id;
 
+              // Check if member is the logged-in user strictly
+              const isSelfUser = Boolean(
+                m.isUser ||
+                (currentUserEmail && m.email?.toLowerCase() === currentUserEmail) ||
+                (currentUserId && (m.userId === currentUserId || m.id === currentUserId))
+              );
+
               return (
-                <View key={m.id} style={[styles.memberCard, isPending && styles.memberCardPending]}>
+                <View key={m.id} style={[styles.memberCard, isPending && styles.memberCardPending, isDeclined && { backgroundColor: '#fff1f2', borderColor: '#fecdd3' }]}>
                   <View style={styles.memberTopRow}>
                     {/* Avatar */}
-                    <View style={[styles.avatar, { backgroundColor: m.avatarBg || colors.primary600 }]}>
+                    <View style={[styles.avatar, { backgroundColor: isDeclined ? '#e11d48' : (m.avatarBg || colors.primary600) }]}>
                       <Text style={styles.avatarText}>{m.name.charAt(0).toUpperCase()}</Text>
                     </View>
 
@@ -174,7 +197,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                     <View style={styles.memberInfo}>
                       <View style={styles.nameRow}>
                         <Text style={styles.memberName}>{m.name}</Text>
-                        {m.isUser && <Text style={styles.youBadge}>(You)</Text>}
+                        {isSelfUser && <Text style={styles.youBadge}>(You)</Text>}
                         {m.role === 'Organizer' && (
                           <View style={styles.crownBadge}>
                             <Crown size={11} color="#d97706" />
@@ -203,6 +226,10 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                               : '₹0'}
                           </Text>
                         </View>
+                      ) : isDeclined ? (
+                        <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, backgroundColor: '#ffe4e6' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#be123c' }}>Declined</Text>
+                        </View>
                       ) : (
                         <View style={styles.pendingBalBadge}>
                           <Text style={styles.pendingBalText}>₹0 (Pending)</Text>
@@ -217,6 +244,26 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                       <View style={styles.statusAcceptedTag}>
                         <Check size={11} color="#059669" strokeWidth={2.6} />
                         <Text style={styles.statusAcceptedText}>Accepted & Confirmed • Active in Split Ledger</Text>
+                      </View>
+                    ) : isDeclined ? (
+                      <View style={styles.statusPendingWrap}>
+                        <View style={styles.statusPendingTag}>
+                          <XCircle size={11} color="#e11d48" strokeWidth={2.4} />
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: '#e11d48' }}>Invitation Declined • Excluded from Splits</Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={[styles.resendBtn, { backgroundColor: '#e11d48' }]}
+                          onPress={() => handleCopyMemberInvite(m)}
+                          activeOpacity={0.8}
+                        >
+                          {isCopied ? (
+                            <Check size={11} color="#ffffff" strokeWidth={2.5} />
+                          ) : (
+                            <Share2 size={11} color="#ffffff" strokeWidth={2} />
+                          )}
+                          <Text style={styles.resendBtnText}>{isCopied ? 'Copied' : 'Resend Invite'}</Text>
+                        </TouchableOpacity>
                       </View>
                     ) : (
                       <View style={styles.statusPendingWrap}>

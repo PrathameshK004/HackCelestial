@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   Linking,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import {
   Zap,
@@ -31,10 +32,25 @@ import { SettlementTransfer } from '../../types';
 interface ExpensesTabProps {
   onOpenSettleModal?: (transfer: SettlementTransfer) => void;
   searchQuery?: string;
+  onRefresh?: () => Promise<void> | void;
 }
 
-export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, searchQuery = '' }) => {
-  const { trips, recordSettlement } = useTrips();
+export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, searchQuery = '', onRefresh }) => {
+  const { trips, recordSettlement, refreshTrips } = useTrips();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshTrips();
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.warn('Refresh error in ExpensesTab:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const [subTab, setSubTab] = useState<'optimizer' | 'expenses'>('optimizer');
   const q = searchQuery.trim().toLowerCase();
 
@@ -119,7 +135,18 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          colors={['#464B29', '#059669']}
+          tintColor="#464B29"
+        />
+      }
+    >
       {/* 3-Card Financial Overview Header */}
       <View style={styles.metricsGrid}>
         <View style={styles.metricCard}>
@@ -312,7 +339,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bgApp,
+    backgroundColor: colors.warmCream || colors.bgApp,
   },
   content: {
     padding: 16,
@@ -324,16 +351,16 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flex: 1,
-    backgroundColor: colors.bgCard,
+    backgroundColor: colors.warmSurface || colors.bgCard,
     padding: 12,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: colors.borderWarmLight || colors.borderSubtle,
     ...shadows.sm,
   },
   metricCardOwed: {
-    backgroundColor: colors.primary50,
-    borderColor: colors.primary200,
+    backgroundColor: colors.accentOliveSubtle || colors.primary50,
+    borderColor: 'rgba(70, 75, 41, 0.2)',
   },
   metricCardOwes: {
     backgroundColor: colors.accentAmberLight,
@@ -347,23 +374,23 @@ const styles = StyleSheet.create({
   metricLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.slate500,
+    color: colors.editorialSubtle || colors.slate500,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
   metricValue: {
     fontSize: 15,
     fontWeight: '800',
-    color: colors.slate900,
+    color: colors.editorialDark || colors.slate900,
     marginVertical: 4,
   },
   metricFoot: {
     fontSize: 9.5,
-    color: colors.slate400,
+    color: colors.editorialSubtle || colors.slate400,
   },
   subTabRow: {
     flexDirection: 'row',
-    backgroundColor: colors.slate100,
+    backgroundColor: colors.warmSurfaceMuted || colors.slate100,
     padding: 4,
     borderRadius: radii.md,
     marginBottom: 16,
@@ -385,25 +412,25 @@ const styles = StyleSheet.create({
   subTabText: {
     fontSize: 11.5,
     fontWeight: '600',
-    color: colors.slate500,
+    color: colors.editorialMuted || colors.slate500,
   },
   subTabTextActive: {
-    color: colors.slate900,
+    color: colors.editorialDark || colors.slate900,
     fontWeight: '700',
   },
 
   sectionHeader: {
     fontSize: 14,
     fontWeight: '800',
-    color: colors.slate900,
+    color: colors.editorialDark || colors.slate900,
     marginBottom: 10,
   },
   transferCard: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: colors.warmSurface || colors.bgCard,
     borderRadius: radii.md,
     padding: 14,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: colors.borderWarmLight || colors.borderSubtle,
     marginBottom: 12,
     ...shadows.sm,
   },
@@ -434,7 +461,7 @@ const styles = StyleSheet.create({
   payerName: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.slate800,
+    color: colors.editorialDark || colors.slate800,
   },
   arrowWrap: {
     alignItems: 'center',
@@ -442,14 +469,14 @@ const styles = StyleSheet.create({
   transferAmount: {
     fontSize: 14,
     fontWeight: '800',
-    color: colors.primary700,
+    color: colors.accentOliveDark || colors.primary700,
     marginBottom: 2,
   },
   transferActions: {
     flexDirection: 'row',
     gap: 8,
     borderTopWidth: 1,
-    borderTopColor: colors.slate100,
+    borderTopColor: colors.borderWarmLight || colors.slate100,
     paddingTop: 10,
   },
   upiBtn: {
@@ -457,7 +484,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary600,
+    backgroundColor: colors.accentOlive || colors.primary600,
     paddingVertical: 7,
     borderRadius: radii.sm,
     gap: 5,
@@ -472,26 +499,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary50,
+    backgroundColor: colors.accentOliveSubtle || colors.primary50,
     paddingVertical: 7,
     borderRadius: radii.sm,
     borderWidth: 1,
-    borderColor: colors.primary200,
+    borderColor: 'rgba(70, 75, 41, 0.2)',
     gap: 5,
   },
   settleBtnText: {
-    color: colors.primary700,
+    color: colors.accentOliveDark || colors.primary700,
     fontSize: 11.5,
     fontWeight: '700',
   },
   expenseRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bgCard,
+    backgroundColor: colors.warmSurface || colors.bgCard,
     padding: 12,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: colors.borderWarmLight || colors.borderSubtle,
     marginBottom: 10,
     gap: 12,
     ...shadows.sm,
@@ -500,7 +527,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.primary50,
+    backgroundColor: colors.accentOliveSubtle || colors.primary50,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -510,11 +537,11 @@ const styles = StyleSheet.create({
   expenseTitle: {
     fontSize: 13.5,
     fontWeight: '700',
-    color: colors.slate900,
+    color: colors.editorialDark || colors.slate900,
   },
   expenseSub: {
     fontSize: 11,
-    color: colors.slate500,
+    color: colors.editorialSubtle || colors.slate500,
     marginTop: 2,
   },
   expenseAmountWrap: {
@@ -523,12 +550,12 @@ const styles = StyleSheet.create({
   expenseAmount: {
     fontSize: 14,
     fontWeight: '800',
-    color: colors.slate900,
+    color: colors.editorialDark || colors.slate900,
   },
   expenseCategory: {
     fontSize: 10,
     fontWeight: '600',
-    color: colors.primary600,
+    color: colors.accentOlive || colors.primary600,
     marginTop: 2,
   },
   emptyWrap: {
@@ -539,6 +566,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
-    color: colors.slate400,
+    color: colors.editorialSubtle || colors.slate400,
   },
 });
