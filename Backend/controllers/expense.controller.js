@@ -8,7 +8,12 @@ const {
     calculateNetBalances,
     calculateOptimalSettlements
 } = require('../utils/recalculation.engine');
-const { sendExpenseNotification } = require('../utils/notification.util');
+const {
+    sendExpenseNotification,
+    sendExpenseDeletedNotification,
+    sendSettlementNotification,
+    sendGroupSettledNotification
+} = require('../utils/notification.util');
 
 module.exports = {
     addExpense,
@@ -390,6 +395,16 @@ async function deleteExpense(req, res) {
 
         await client.query('COMMIT');
 
+        sendExpenseDeletedNotification({
+            groupId,
+            groupName: access.group?.name || 'Trip',
+            actorName,
+            actorUserId: userId,
+            description: exp.description,
+            amount: Number(exp.amount),
+            currency: exp.currency || access.group?.currency
+        }).catch(() => {});
+
         return sendSuccess(res, "Expense deleted and ledger updated successfully", { expenseId });
 
     } catch (error) {
@@ -670,6 +685,18 @@ async function recordSettlement(req, res) {
 
         await client.query('COMMIT');
 
+        sendSettlementNotification({
+            groupId,
+            groupName: access.group?.name || 'Trip',
+            fromName: fromMember.name,
+            fromUserId: fromMember.user_id || userId,
+            toName: toMember.name,
+            toUserId: toMember.user_id,
+            amount: numAmount,
+            currency,
+            paymentMethod
+        }).catch(() => {});
+
         return sendSuccess(res, "Settlement recorded successfully", {
             ...insertRes.rows[0],
             from: { id: fromMember.id, name: fromMember.name },
@@ -736,6 +763,13 @@ async function settleGroup(req, res) {
         ]);
 
         await client.query('COMMIT');
+
+        sendGroupSettledNotification({
+            groupId,
+            groupName: updateRes.rows[0].name,
+            organizerName: actorName,
+            organizerUserId: userId
+        }).catch(() => {});
 
         return sendSuccess(res, "Group trip marked as settled successfully", updateRes.rows[0]);
 

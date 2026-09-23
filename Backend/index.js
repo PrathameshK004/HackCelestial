@@ -74,14 +74,20 @@ app.use((error, req, res, next) => {
   return sendError(res, message, error, statusCode);
 });
 
+const http = require('http');
+const { initSocketServer } = require('./utils/socket.util');
+
 // Start Server
 const PORT = process.env.PORT || 4000;
-let server;
+const server = http.createServer(app);
+
+// Initialize Socket.io Server
+initSocketServer(server);
 
 initializeDatabase()
   .then(() => {
     console.log('PostgreSQL connected and users table is ready');
-    server = app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+    server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
   })
   .catch((error) => {
     console.error('PostgreSQL initialization error:', error.message);

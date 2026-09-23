@@ -240,17 +240,34 @@ async function sendPushToEmail(email, { title, body, data = {} }) {
     }
 }
 
+const { emitToUser, emitToGroup } = require('./socket.util');
+
 /**
- * Helper to save a persistent in-app notification in DB
+ * Helper to save a persistent in-app notification in DB & emit via Socket.io
  */
 async function createInAppNotification(userId, { type, title, body, data = {} }) {
     if (!userId) return null;
     try {
         const id = crypto.randomUUID();
+        const createdAt = new Date().toISOString();
         await pool.query(`
             INSERT INTO in_app_notifications (id, user_id, type, title, body, data, is_read, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
         `, [id, userId, type, title, body, JSON.stringify(data)]);
+
+        const notifPayload = {
+            id,
+            type,
+            title,
+            body,
+            data,
+            isRead: false,
+            createdAt
+        };
+
+        // Broadcast Real-Time Socket Event to User Room
+        emitToUser(userId, 'notification:new', notifPayload);
+
         return id;
     } catch (err) {
         console.warn('Failed to insert in_app_notification for user', userId, err.message);
@@ -259,7 +276,7 @@ async function createInAppNotification(userId, { type, title, body, data = {} })
 }
 
 /**
- * High-level helper: Trigger notification for a Group Invitation (Push + Persistent In-App)
+ * High-level helper: Trigger notification for a Group Invitation (Push + Persistent In-App + Socket)
  */
 async function sendGroupInviteNotification({ inviteeEmail, inviterName, groupName, groupId, inviteCode }) {
     try {
@@ -355,12 +372,10 @@ async function sendExpenseNotification({
         const currSymbol = currency === 'INR' ? '₹' : (currency + ' ');
 
         for (const member of membersRes.rows) {
-            // Don't notify the person who paid / recorded the expense
             if (member.user_id && String(member.user_id) === String(payerUserId)) {
                 continue;
             }
 
-            // Check if this member is in the split
             const memberSplit = splits.find(
                 s => String(s.memberId) === String(member.member_id) || (s.userId && String(s.userId) === String(member.user_id))
             );
@@ -381,7 +396,6 @@ async function sendExpenseNotification({
                 screen: 'GroupDetailScreen'
             };
 
-            // Save persistent in-app notification & dispatch push notification
             createInAppNotification(member.user_id, { type: 'EXPENSE_ADDED', title, body, data }).catch(e =>
                 console.warn(`Failed inserting in-app notification for user ${member.user_id}:`, e.message)
             );
@@ -389,8 +403,111 @@ async function sendExpenseNotification({
                 console.warn(`Failed sending expense push to user ${member.user_id}:`, e.message)
             );
         }
+        emitToGroup(groupId, 'trip:expense:added', { groupId, groupName, description, totalAmount });
     } catch (err) {
         console.warn('Failed to dispatch expense push notifications:', err.message);
+    }
+}
+
+/**
+ * High-level helper: Trigger notifications for Expense Deleted event
+ */
+async function sendExpenseDeletedNotification({ groupId, groupName, actorName, actorUserId, description, amount, currency = 'INR' }) {
+    try {
+        const membersRes = await pool.query(`
+            SELECT gm.user_id FROM group_members gm WHERE gm.group_id = $1 AND gm.user_id IS NOT NULL
+        `, [groupId]);
+
+        const currSymbol = currency === 'INR' ? '₹' : (currency + ' ');
+        const title = `Expense Removed in ${groupName}`;
+        const body = `${actorName} deleted expense "${description}" (${currSymbol}${Math.round(amount)})`;
+        const data = { type: 'EXPENSE_DELETED', groupId: String(groupId), groupName: String(groupName) };
+
+        for (const member of membersRes.rows) {
+            if (member.user_id && String(member.user_id) === String(actorUserId)) continue;
+            createInAppNotification(member.user_id, { type: 'EXPENSE_DELETED', title, body, data }).catch(() => {});
+            sendPushToUser(member.user_id, { title, body, data }).catch(() => {});
+        }
+        emitToGroup(groupId, 'trip:expense:deleted', { groupId, groupName, description });
+    } catch (err) {
+        console.warn('Failed to dispatch expense deleted notification:', err.message);
+    }
+}
+
+/**
+ * High-level helper: Trigger notifications for Settlement / Payment Recorded event
+ */
+async function sendSettlementNotification({
+    groupId,
+    groupName,
+    fromName,
+    fromUserId,
+    toName,
+    toUserId,
+    amount,
+    currency = 'INR',
+    paymentMethod = 'UPI'
+}) {
+    try {
+        const currSymbol = currency === 'INR' ? '₹' : (currency + ' ');
+        const title = `Payment Recorded in ${groupName}`;
+        const body = `${fromName} paid ${currSymbol}${Math.round(amount)} to ${toName} via ${paymentMethod}`;
+        const data = { type: 'SETTLEMENT_RECORDED', groupId: String(groupId), groupName: String(groupName) };
+
+        // Notify recipient specifically
+        if (toUserId && String(toUserId) !== String(fromUserId)) {
+            const recipientTitle = `Payment Received 🎉`;
+            const recipientBody = `${fromName} transferred ${currSymbol}${Math.round(amount)} to you in "${groupName}" via ${paymentMethod}.`;
+            createInAppNotification(toUserId, { type: 'SETTLEMENT_RECORDED', title: recipientTitle, body: recipientBody, data }).catch(() => {});
+            sendPushToUser(toUserId, { title: recipientTitle, body: recipientBody, data }).catch(() => {});
+        }
+
+        // Broadcast trip update socket event
+        emitToGroup(groupId, 'trip:settlement:recorded', { groupId, groupName, fromName, toName, amount });
+    } catch (err) {
+        console.warn('Failed to dispatch settlement notification:', err.message);
+    }
+}
+
+/**
+ * High-level helper: Trigger notification when entire group trip is marked as SETTLED
+ */
+async function sendGroupSettledNotification({ groupId, groupName, organizerName, organizerUserId }) {
+    try {
+        const membersRes = await pool.query(`
+            SELECT gm.user_id FROM group_members gm WHERE gm.group_id = $1 AND gm.user_id IS NOT NULL
+        `, [groupId]);
+
+        const title = `Trip Settled 🎉`;
+        const body = `"${groupName}" has been marked as fully settled by ${organizerName}. All balances cleared!`;
+        const data = { type: 'GROUP_SETTLED', groupId: String(groupId), groupName: String(groupName) };
+
+        for (const member of membersRes.rows) {
+            if (member.user_id && String(member.user_id) === String(organizerUserId)) continue;
+            createInAppNotification(member.user_id, { type: 'GROUP_SETTLED', title, body, data }).catch(() => {});
+            sendPushToUser(member.user_id, { title, body, data }).catch(() => {});
+        }
+        emitToGroup(groupId, 'trip:settled', { groupId, groupName });
+    } catch (err) {
+        console.warn('Failed to dispatch group settled notification:', err.message);
+    }
+}
+
+/**
+ * High-level helper: Trigger notification when a member is removed from a group
+ */
+async function sendMemberRemovedNotification({ groupId, groupName, removedUserId, removedMemberName, actorName }) {
+    try {
+        if (removedUserId) {
+            const title = `Removed from Trip`;
+            const body = `You were removed from trip "${groupName}" by ${actorName}.`;
+            const data = { type: 'MEMBER_REMOVED', groupId: String(groupId), groupName: String(groupName) };
+            createInAppNotification(removedUserId, { type: 'MEMBER_REMOVED', title, body, data }).catch(() => {});
+            sendPushToUser(removedUserId, { title, body, data }).catch(() => {});
+        }
+        emitToGroup(groupId, 'trip:member:removed', { groupId, groupName, removedMemberName });
+    } catch (err) {
+        console.warn('Failed to dispatch member removed notification:', err.message);
     }
 }
 
@@ -405,5 +522,9 @@ module.exports = {
     sendGroupInviteNotification,
     sendInviteAcceptedNotification,
     sendInviteRejectedNotification,
-    sendExpenseNotification
+    sendExpenseNotification,
+    sendExpenseDeletedNotification,
+    sendSettlementNotification,
+    sendGroupSettledNotification,
+    sendMemberRemovedNotification
 };

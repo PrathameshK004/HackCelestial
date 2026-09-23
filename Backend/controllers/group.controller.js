@@ -4,7 +4,7 @@ const { sendSuccess, sendError } = require('../utils/response.util');
 const { sendOfficialInviteEmail } = require('../utils/mail.util');
 const { getLiveAppUrl } = require('../utils/url.util');
 const { verifyGroupAccess } = require('../utils/groupAuth.util');
-const { sendGroupInviteNotification } = require('../utils/notification.util');
+const { sendGroupInviteNotification, sendMemberRemovedNotification } = require('../utils/notification.util');
 
 module.exports = {
     createGroup,
@@ -693,9 +693,20 @@ async function removeGroupMember(req, res) {
             return sendError(res, "Only the trip organizer can remove other travelers from this trip", null, 403);
         }
 
+        const memRes = await pool.query('SELECT name, user_id FROM group_members WHERE group_id = $1 AND (id = $2 OR email = $2)', [groupId, memberId]);
+        const removedMem = memRes.rows[0];
+
         await pool.query('DELETE FROM group_members WHERE group_id = $1 AND (id = $2 OR email = $2)', [groupId, memberId]);
         // Also cancel/expire any pending invitations for this email/member if matching
         await pool.query('UPDATE group_invitations SET status = $1 WHERE group_id = $2 AND (id = $3 OR invited_email = $3)', ['EXPIRED', groupId, memberId]);
+
+        sendMemberRemovedNotification({
+            groupId,
+            groupName: access.group?.name || 'Trip',
+            removedUserId: removedMem?.user_id,
+            removedMemberName: removedMem?.name || 'Traveler',
+            actorName: access.member?.name || 'Organizer'
+        }).catch(() => {});
 
         return sendSuccess(res, "Member removed successfully", { memberId });
 
