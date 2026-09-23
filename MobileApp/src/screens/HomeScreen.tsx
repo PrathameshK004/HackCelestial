@@ -24,6 +24,7 @@ import { groupService } from '../api/group.service';
 import { notificationService as apiNotificationService } from '../api/notification.service';
 import { notificationService } from '../services/notificationService';
 import { useAuth } from '../context/AuthContext';
+import { socketService } from '../services/socketService';
 import { InboxNotification, PendingInvitation } from '../types';
 
 interface HomeScreenProps {
@@ -55,12 +56,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   const { trips, addExpense, refreshTrips } = useTrips();
   const primaryTrip = trips[0];
 
+  const mapCategory = (type?: string): InboxNotification['category'] => {
+    if (!type) return 'system';
+    const lower = type.toLowerCase();
+    if (lower.includes('invite') || lower.includes('member') || lower.includes('group')) return 'trip';
+    if (lower.includes('expense') || lower.includes('settlement') || lower.includes('payment')) return 'expense';
+    if (lower.includes('security') || lower.includes('auth')) return 'security';
+    return 'system';
+  };
+
   // Load Pending Invitations from authoritative API & strictly deduplicate
   const loadPendingInvitations = useCallback(async () => {
     try {
       const res = await groupService.getMyPendingInvitations();
       if (res && Array.isArray(res.data)) {
-        // Enforce strictly unique invitation per trip (single invitation per user)
         const seen = new Set<string>();
         const uniqueInvites: PendingInvitation[] = [];
         for (const inv of res.data) {
@@ -90,7 +99,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
           description: item.body,
           timestamp: item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
           isRead: item.isRead,
-          category: (item.type?.toLowerCase().includes('invite') ? 'trip' : item.type?.toLowerCase().includes('expense') ? 'expense' : 'system') as any,
+          category: mapCategory(item.type),
           actionTab: item.type?.toLowerCase().includes('invite') ? 'trips' : 'expenses'
         }));
         setNotifications(mapped);
@@ -103,12 +112,50 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   useEffect(() => {
     loadPendingInvitations();
     loadNotifications();
+
+    // 1. Connect Socket.io for Real-Time Instant Notifications
+    socketService.connect().catch(() => {});
+
+    // 2. Listen for Real-Time Notification Events via WebSockets
+    const unsubscribeNotif = socketService.onNotification((rawNotif) => {
+      if (!rawNotif) return;
+
+      const newNotifItem: InboxNotification = {
+        id: rawNotif.id || `notif-${Date.now()}`,
+        title: rawNotif.title || 'New Activity',
+        description: rawNotif.body || rawNotif.description || '',
+        timestamp: 'Just now',
+        isRead: false,
+        category: mapCategory(rawNotif.type),
+        actionTab: rawNotif.type?.toLowerCase().includes('invite') ? 'trips' : 'expenses'
+      };
+
+      setNotifications((prev) => [newNotifItem, ...prev.filter((n) => n.id !== newNotifItem.id)]);
+
+      // Display Native Foreground Notification Banner
+      notificationService.sendLocalNotification(
+        newNotifItem.title,
+        newNotifItem.description,
+        'invites',
+        rawNotif.data
+      ).catch(() => {});
+
+      // Instant refresh of invitations & trip state
+      loadPendingInvitations();
+      refreshTrips().catch(() => {});
+    });
+
+    // 3. Low-frequency safety background sync
     const intervalId = setInterval(() => {
       loadPendingInvitations();
       loadNotifications();
-    }, 3000);
-    return () => clearInterval(intervalId);
-  }, [loadPendingInvitations, loadNotifications]);
+    }, 15000);
+
+    return () => {
+      unsubscribeNotif();
+      clearInterval(intervalId);
+    };
+  }, [loadPendingInvitations, loadNotifications, refreshTrips]);
 
   const unreadInboxCount = notifications.filter((n) => !n.isRead).length + pendingInvitations.length;
 
