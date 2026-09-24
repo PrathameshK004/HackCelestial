@@ -240,6 +240,33 @@ function broadcastNotification(notificationData) {
   return true;
 }
 
+
+/**
+ * Real-time Ticket Message Dispatcher
+ */
+function emitTicketMessage(ticketNumber, messageData) {
+  if (!io || !ticketNumber) return false;
+  const cleanTicket = String(ticketNumber).trim();
+  const payload = Object.assign({ ticketNumber: cleanTicket }, messageData);
+  io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:message', payload);
+  io.emit('ticket:new_message', payload);
+  console.log('[Socket.io] Emitted "ticket:message" to ticket room: ' + cleanTicket);
+  return true;
+}
+
+/**
+ * Real-time Ticket Status Dispatcher
+ */
+function emitTicketStatus(ticketNumber, status) {
+  if (!io || !ticketNumber) return false;
+  const cleanTicket = String(ticketNumber).trim();
+  const payload = { ticketNumber: cleanTicket, status: status };
+  io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:status_change', payload);
+  io.emit('ticket:status_change', payload);
+  console.log('[Socket.io] Emitted "ticket:status_change" for ' + cleanTicket + ' to ' + status);
+  return true;
+}
+
 module.exports = {
   initSocketServer,
   getIO,
