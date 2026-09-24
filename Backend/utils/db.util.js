@@ -54,6 +54,21 @@ const initializeDatabase = async () => {
         )
     `);
 
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_saved_trips (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            stay_id VARCHAR(255) NOT NULL,
+            stay_data JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT unique_user_saved_trip UNIQUE (user_id, stay_id)
+        )
+    `);
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_user_saved_trips_user ON user_saved_trips(user_id, created_at DESC)
+    `);
+
     // 3. Groups / Trips Table
     await pool.query(`
         CREATE TABLE IF NOT EXISTS groups (

@@ -8,14 +8,16 @@ import {
   Share2,
   Check
 } from 'lucide-react';
+import type { SavedTrip } from '../services/savedTrip.service';
 
 interface SavedTripsPageProps {
   onBack: () => void;
   savedStayIds: string[];
+  savedStays?: SavedTrip[];
   onToggleSave: (id: string) => void;
 }
 
-interface SavedStayItem {
+export interface SavedStayItem extends SavedTrip {
   id: string;
   name: string;
   type: string;
@@ -82,14 +84,14 @@ const ALL_SAVED_STAYS: SavedStayItem[] = [
 export const SavedTripsPage: React.FC<SavedTripsPageProps> = ({
   onBack,
   savedStayIds,
+  savedStays,
   onToggleSave
 }) => {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [isCopied, setIsCopied] = useState(false);
 
-  const activeStays = ALL_SAVED_STAYS.filter(
-    (s) => savedStayIds.includes(s.id) || savedStayIds.length === 0
-  ).filter((s) => (activeCategory === 'all' ? true : s.category === activeCategory));
+  const stays = savedStays && savedStays.length > 0 ? savedStays : ALL_SAVED_STAYS.filter((s) => savedStayIds.includes(s.id));
+  const activeStays = stays.filter((s) => (activeCategory === 'all' ? true : s.category === activeCategory));
 
   const handleShareWishlist = () => {
     const text = `*🌟 Triptual Shared Wishlist (${activeStays.length} stays)*\n\n` +

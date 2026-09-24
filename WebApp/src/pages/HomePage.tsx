@@ -42,6 +42,7 @@ import { GroupMenuPage } from './GroupMenuPage';
 import { ProfilePage } from './ProfilePage';
 import { PaymentsPage } from './PaymentsPage';
 import { SavedTripsPage } from './SavedTripsPage';
+import { savedTripService, SavedTrip } from '../services/savedTrip.service';
 import { SecuritySettingsPage } from './SecuritySettingsPage';
 import { HelpSupportPage } from './HelpSupportPage';
 import { apiRequest } from '../services/apiClient';
@@ -297,7 +298,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const [viewMode, setViewMode] = useState<ViewMode>('gallery');
   const [activeCategory, setActiveCategory] = useState<StayCategory>('all');
   const [selectedStay, setSelectedStay] = useState<CuratedStay | null>(null);
-  const [savedStayIds, setSavedStayIds] = useState<string[]>(['stay-cozy-den', 'stay-oasis']);
+  const [savedStays, setSavedStays] = useState<SavedTrip[]>([]);
+  const savedStayIds = savedStays.map((stay) => stay.id);
   const [exploreStays, setExploreStays] = useState<CuratedStay[]>(CURATED_STAYS);
 
   useEffect(() => {
@@ -314,6 +316,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
       }
     };
     fetchExploreStays();
+    return () => { isMounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    savedTripService.list()
+      .then((stays) => {
+        if (isMounted) setSavedStays(stays);
+      })
+      .catch((err) => console.warn('Could not load saved trips:', err));
     return () => { isMounted = false; };
   }, []);
 
@@ -623,11 +635,25 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   }, [selectedGroup]);
 
   // Toggle Saved Stays
-  const toggleSaveStay = (e: React.MouseEvent, id: string) => {
+  const toggleSaveStay = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    setSavedStayIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
+    const stay = exploreStays.find((item) => item.id === id);
+    const wasSaved = savedStayIds.includes(id);
+    const savedStay = savedStays.find((item) => item.id === id);
+    if (!stay && !wasSaved) return;
+
+    setSavedStays((prev) => wasSaved ? prev.filter((item) => item.id !== id) : [...prev, stay as SavedTrip]);
+
+    try {
+      if (wasSaved) {
+        await savedTripService.remove(id);
+      } else {
+        await savedTripService.save(stay as SavedTrip);
+      }
+    } catch (err) {
+      setSavedStays((prev) => wasSaved ? [...prev, savedStay as SavedTrip] : prev.filter((item) => item.id !== id));
+      console.warn('Could not update saved trip:', err);
+    }
   };
 
   // Filtered Stays
@@ -816,7 +842,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     return (
       <SavedTripsPage
         savedStayIds={savedStayIds}
-        onToggleSave={(id) => toggleSaveStay({ stopPropagation: () => {} } as any, id)}
+        savedStays={savedStays}
+        onToggleSave={(id) => toggleSaveStay({ stopPropagation: () => {} } as React.MouseEvent, id)}
         onBack={() => {
           setIsSavedTripsOpen(false);
           setDockTab('explore');
