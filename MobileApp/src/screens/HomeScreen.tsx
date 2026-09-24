@@ -28,6 +28,7 @@ import { notificationService as apiNotificationService } from '../api/notificati
 import { notificationService } from '../services/notificationService';
 import { useAuth } from '../context/AuthContext';
 import { socketService } from '../services/socketService';
+import { storage } from '../database/storage';
 import { InboxNotification, PendingInvitation } from '../types';
 
 interface HomeScreenProps {
@@ -91,17 +92,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
     }
   }, []);
 
-  // Load Live In-App Notifications from API
+  // Load Live In-App Notifications from API and merge persistent local read state
   const loadNotifications = useCallback(async () => {
     try {
-      const res = await notificationService.getUserNotifications();
+      const [res, storedReadIds] = await Promise.all([
+        notificationService.getUserNotifications(),
+        storage.getReadNotificationIds(),
+      ]);
+      const readSet = new Set(storedReadIds || []);
+
       if (res && Array.isArray(res.data)) {
         const mapped: InboxNotification[] = res.data.map(item => ({
           id: item.id,
           title: item.title,
           description: item.body,
           timestamp: item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-          isRead: item.isRead,
+          isRead: Boolean(item.isRead || (item.id && readSet.has(item.id))),
           category: mapCategory(item.type),
           actionTab: item.type?.toLowerCase().includes('invite') ? 'trips' : 'expenses'
         }));
@@ -120,15 +126,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
     socketService.connect().catch(() => {});
 
     // 2. Listen for Real-Time Notification Events via WebSockets
-    const unsubscribeNotif = socketService.onNotification((rawNotif) => {
+    const unsubscribeNotif = socketService.onNotification(async (rawNotif) => {
       if (!rawNotif) return;
 
+      const storedReadIds = await storage.getReadNotificationIds();
+      const readSet = new Set(storedReadIds || []);
+      const notifId = rawNotif.id || `notif-${Date.now()}`;
+
       const newNotifItem: InboxNotification = {
-        id: rawNotif.id || `notif-${Date.now()}`,
+        id: notifId,
         title: rawNotif.title || 'New Activity',
-        description: rawNotif.body || rawNotif.description || '',
+        description: rawNotif.body || rawNotif.description || rawNotif.message || '',
         timestamp: 'Just now',
-        isRead: false,
+        isRead: Boolean(rawNotif.isRead || readSet.has(notifId)),
         category: mapCategory(rawNotif.type),
         actionTab: rawNotif.type?.toLowerCase().includes('invite') ? 'trips' : 'expenses'
       };
@@ -143,8 +153,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
         rawNotif.data
       ).catch(() => {});
 
-      // Instant refresh of invitations & trip state
+      // Instant refresh of invitations & trip state & notification inbox
       loadPendingInvitations();
+      loadNotifications();
       refreshTrips().catch(() => {});
     });
 
@@ -170,23 +181,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
 
   // Notification Inbox Actions
   const handleMarkAllNotificationsRead = async () => {
+    const allIds = notifications.map((n) => n.id).filter(Boolean);
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    await storage.markAllNotificationsRead(allIds);
     notificationService.markAsRead(undefined, true).catch(() => {});
   };
 
-  const handleSelectNotification = (item: InboxNotification) => {
+  const handleSelectNotification = async (item: InboxNotification) => {
+    // 1. Immediately update in-memory state
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
     );
-    notificationService.markAsRead(item.id).catch(() => {});
-    if (item.actionTab) {
-      setActiveTab(item.actionTab as DockTab);
-      setScreenMode('main');
+    // 2. Persist locally to device storage so it never reverts on re-fetch
+    if (item.id) {
+      await storage.markNotificationRead(item.id);
     }
+    // 3. Notify backend API
+    notificationService.markAsRead(item.id).catch(() => {});
   };
 
   const handleClearAllNotifications = async () => {
     setNotifications([]);
+    await storage.clearReadNotificationIds();
     notificationService.clearAllNotifications().catch(() => {});
   };
 
@@ -411,6 +427,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
         }}
         onRefresh={handleFullRefresh}
         isProcessingInviteCode={isProcessingInviteCode}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab as DockTab);
+          setScreenMode('main');
+        }}
       />
     );
   }

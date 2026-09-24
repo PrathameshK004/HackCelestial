@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
   User as UserIcon,
   CreditCard,
   Check,
   Camera,
+  Upload,
+  Trash2,
   Lock,
   Eye,
   EyeOff,
@@ -20,9 +22,11 @@ import {
   Building,
   Mountain,
   Calendar,
-  Wifi
+  Wifi,
+  X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { authService } from '../services/auth.service';
 import { IllustrationAvatar } from '../components/IllustrationAvatar';
 import { IllustrationPickerModal } from '../components/IllustrationPickerModal';
 
@@ -47,6 +51,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
 
   // Google-Style Illustration Picker Modal state
   const [showIllustrationModal, setShowIllustrationModal] = useState(false);
+  const [showAvatarChoiceModal, setShowAvatarChoiceModal] = useState(false);
 
   const handleSelectIllustration = async (newAvatar: string | null) => {
     setAvatar(newAvatar || '');
@@ -67,6 +72,54 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
       );
     } catch (err: any) {
       setProfileErrorMsg(err.message || 'Failed to update profile picture.');
+    }
+  };
+
+  // S3 Photo upload state & actions
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileErrorMsg('Image size exceeds 5MB limit. Please choose a smaller photo.');
+      return;
+    }
+
+    try {
+      setIsUploadingPhoto(true);
+      setProfileErrorMsg(null);
+      setProfileSuccessMsg(null);
+
+      const res = await authService.uploadProfilePicture(file);
+      const newAvatarUrl = res.data?.avatar || (res as any).avatar;
+      if (newAvatarUrl) {
+        setAvatar(newAvatarUrl);
+      }
+      await refreshProfile?.();
+      setProfileSuccessMsg('Profile picture uploaded to S3 successfully!');
+    } catch (err: any) {
+      setProfileErrorMsg(err.message || 'Failed to upload photo to S3.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    try {
+      setIsUploadingPhoto(true);
+      setProfileErrorMsg(null);
+      await authService.removeProfilePicture();
+      setAvatar('');
+      await refreshProfile?.();
+      setProfileSuccessMsg('Profile picture removed.');
+    } catch (err: any) {
+      setProfileErrorMsg(err.message || 'Failed to remove picture.');
+    } finally {
+      setIsUploadingPhoto(false);
     }
   };
 
@@ -312,13 +365,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                 avatar={avatar}
                 name={displayName}
                 size={64}
-                onClick={() => setShowIllustrationModal(true)}
+                onClick={() => setShowAvatarChoiceModal(true)}
               />
               <button
                 type="button"
                 className="avatar-edit-fab"
-                title="Change Illustration Picture"
-                onClick={() => setShowIllustrationModal(true)}
+                title="Change Profile Picture"
+                onClick={() => setShowAvatarChoiceModal(true)}
                 style={{
                   position: 'absolute',
                   bottom: '-2px',
@@ -380,12 +433,306 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             </div>
           </div>
 
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: '0.74rem', color: '#059669', fontWeight: 600 }}>
-              Live Synced
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handlePhotoUpload}
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingPhoto}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                borderRadius: '10px',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                background: '#ffffff',
+                color: '#047857',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                cursor: isUploadingPhoto ? 'not-allowed' : 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                transition: 'all 0.2s',
+              }}
+              title="Upload photo directly to Amazon S3"
+            >
+              {isUploadingPhoto ? (
+                <>
+                  <Loader2 size={13} className="spin-animate" />
+                  <span>Uploading...</span>
+                </>
+              ) : (
+                <>
+                  <Upload size={13} />
+                  <span>Upload Photo</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowIllustrationModal(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                borderRadius: '10px',
+                border: '1px solid rgba(0,0,0,0.1)',
+                background: 'rgba(255,255,255,0.7)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.8rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+              title="Choose from curated illustration avatars"
+            >
+              <Sparkles size={13} color="#059669" />
+              <span>Avatars</span>
+            </button>
+
+            {avatar && (
+              <button
+                type="button"
+                onClick={handleRemovePhoto}
+                disabled={isUploadingPhoto}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '7px 9px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  background: 'rgba(254, 242, 242, 0.85)',
+                  color: '#dc2626',
+                  cursor: isUploadingPhoto ? 'not-allowed' : 'pointer',
+                }}
+                title="Remove profile picture"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         </section>
+
+        {/* Choice Modal: Illustration vs Gallery */}
+        {showAvatarChoiceModal && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.55)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              padding: '16px',
+            }}
+            onClick={() => setShowAvatarChoiceModal(false)}
+          >
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '24px',
+                width: '100%',
+                maxWidth: '420px',
+                padding: '24px',
+                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',
+                border: '1px solid rgba(0, 0, 0, 0.08)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Change Profile Picture
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowAvatarChoiceModal(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-muted)',
+                    padding: '4px',
+                  }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Select how you would like to update your profile picture
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                {/* Option 1: Choose Illustration (Current approach) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAvatarChoiceModal(false);
+                    setShowIllustrationModal(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    padding: '14px',
+                    borderRadius: '16px',
+                    background: '#f8fafc',
+                    border: '1px solid rgba(0, 0, 0, 0.08)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#ecfdf5')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                >
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '50%',
+                      background: '#ecfdf5',
+                      border: '1px solid #a7f3d0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Sparkles size={22} color="#059669" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                      Choose an Illustration
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Pick from 10 curated Google-style traveler characters
+                    </div>
+                  </div>
+                </button>
+
+                {/* Option 2: Upload from Gallery (S3) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAvatarChoiceModal(false);
+                    fileInputRef.current?.click();
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    padding: '14px',
+                    borderRadius: '16px',
+                    background: '#f8fafc',
+                    border: '1px solid rgba(0, 0, 0, 0.08)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#eff6ff')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                >
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '50%',
+                      background: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Upload size={22} color="#2563eb" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                      Upload from Gallery
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Select a photo from your device & save to AWS S3
+                    </div>
+                  </div>
+                </button>
+
+                {/* Option 3: Remove Picture */}
+                {avatar && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAvatarChoiceModal(false);
+                      handleRemovePhoto();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                      padding: '14px',
+                      borderRadius: '16px',
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '50%',
+                        background: '#fee2e2',
+                        border: '1px solid #fca5a5',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Trash2 size={20} color="#dc2626" />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#dc2626' }}>
+                        Remove Current Picture
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Reset your profile picture to default initials
+                      </div>
+                    </div>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAvatarChoiceModal(false)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '12px',
+                  background: 'var(--bg-muted, #f1f5f9)',
+                  border: 'none',
+                  color: 'var(--text-primary)',
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Google-Style Profile Illustration Picker Modal */}
         <IllustrationPickerModal

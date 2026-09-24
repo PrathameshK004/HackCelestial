@@ -17,8 +17,11 @@ import {
   Platform,
   RefreshControl,
   StatusBar,
+  Modal,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
   User,
@@ -32,11 +35,15 @@ import {
   Mountain,
   Calendar as CalendarIcon,
   Wifi,
+  Image as ImageIcon,
+  Trash2,
+  X,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useTrips } from '../context/TripContext';
 import { Trip } from '../types';
+import { authService } from '../api/auth.service';
 import { DatePickerModal } from '../components/common/DatePickerModal';
 import { IllustrationAvatar } from '../components/common/IllustrationAvatar';
 import { IllustrationPickerModal } from '../components/common/IllustrationPickerModal';
@@ -90,6 +97,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
   const [avatar, setAvatar] = useState(user?.avatar || null);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+  const [isAvatarChoiceModalOpen, setIsAvatarChoiceModalOpen] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [travelStyle, setTravelStyle] = useState<TravelStyle>(
     (user?.travelStyle as TravelStyle) || 'Boutique'
   );
@@ -156,6 +165,73 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
       }
     } catch (err: any) {
       Alert.alert('Save Error', err.message || 'Failed to update profile picture.');
+    }
+  };
+
+  const handlePickFromGallery = async () => {
+    setIsAvatarChoiceModalOpen(false);
+
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert(
+          'Permission Needed',
+          'Please allow access to your photo library to select a profile picture.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      setIsUploadingAvatar(true);
+
+      const fileName = asset.fileName || `avatar_${Date.now()}.jpg`;
+      const mimeType = asset.mimeType || 'image/jpeg';
+
+      const uploadRes = await authService.uploadProfilePicture({
+        uri: asset.uri,
+        name: fileName,
+        type: mimeType,
+      });
+
+      const newAvatarUrl = (uploadRes.data as any)?.avatar || (uploadRes as any).avatar;
+      if (newAvatarUrl) {
+        setAvatar(newAvatarUrl);
+        await refreshProfile?.();
+        Alert.alert('Profile Picture Saved', 'Your photo has been uploaded to AWS S3 and saved to your profile.');
+      } else {
+        await refreshProfile?.();
+      }
+    } catch (err: any) {
+      console.error('Gallery pick error:', err);
+      Alert.alert('Upload Failed', err.message || 'Failed to upload photo to S3.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setIsAvatarChoiceModalOpen(false);
+    setIsUploadingAvatar(true);
+    try {
+      await authService.removeProfilePicture();
+      setAvatar(null);
+      await refreshProfile?.();
+      Alert.alert('Profile Picture Removed', 'Switched to your initials avatar.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to remove profile picture.');
+    } finally {
+      setIsUploadingAvatar(false);
     }
   };
 
@@ -255,14 +331,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
       >
         {/* Profile User Info Header with Google-Style Illustration Avatar */}
         <View style={styles.profileSection}>
-          <IllustrationAvatar
-            avatar={avatar}
-            name={displayName || 'Traveler'}
-            size={84}
-            showEditBadge={true}
-            onPress={() => setIsAvatarPickerOpen(true)}
-            backgroundColor={user?.avatarBg}
-          />
+          <View style={{ position: 'relative' }}>
+            <IllustrationAvatar
+              avatar={avatar}
+              name={displayName || 'Traveler'}
+              size={84}
+              showEditBadge={true}
+              onPress={() => setIsAvatarChoiceModalOpen(true)}
+              backgroundColor={user?.avatarBg}
+            />
+            {isUploadingAvatar && (
+              <View style={styles.avatarLoadingOverlay}>
+                <ActivityIndicator size="small" color="#ffffff" />
+              </View>
+            )}
+          </View>
           <Text style={styles.userName}>{displayName || 'Traveler'}</Text>
           <Text style={styles.userEmail}>{displayEmail}</Text>
         </View>
@@ -391,7 +474,94 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
         title="Select Date of Birth"
       />
 
-      {/* Google-Style Illustration Picker Modal */}
+      {/* Choice Modal: Illustration vs Gallery */}
+      <Modal
+        visible={isAvatarChoiceModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsAvatarChoiceModalOpen(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setIsAvatarChoiceModalOpen(false)}>
+          <View style={styles.choiceBackdrop}>
+            <TouchableWithoutFeedback>
+              <View style={styles.choiceSheet}>
+                <View style={styles.choiceHandle} />
+                <View style={styles.choiceHeaderRow}>
+                  <Text style={styles.choiceTitle}>Change Profile Picture</Text>
+                  <TouchableOpacity
+                    onPress={() => setIsAvatarChoiceModalOpen(false)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <X size={20} color={colors.slate400} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.choiceSubtitle}>Select an avatar option for your profile</Text>
+
+                <View style={styles.choiceOptionsList}>
+                  {/* Option 1: Choose Illustration (Current approach) */}
+                  <TouchableOpacity
+                    style={styles.choiceOptionCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setIsAvatarChoiceModalOpen(false);
+                      setIsAvatarPickerOpen(true);
+                    }}
+                  >
+                    <View style={[styles.choiceIconBadge, { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }]}>
+                      <Sparkles size={22} color="#059669" />
+                    </View>
+                    <View style={styles.choiceOptionContent}>
+                      <Text style={styles.choiceOptionTitle}>Choose an Illustration</Text>
+                      <Text style={styles.choiceOptionDesc}>Pick from 10 curated Google-style traveler characters</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Option 2: Upload from Gallery (S3) */}
+                  <TouchableOpacity
+                    style={styles.choiceOptionCard}
+                    activeOpacity={0.7}
+                    onPress={handlePickFromGallery}
+                  >
+                    <View style={[styles.choiceIconBadge, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}>
+                      <ImageIcon size={22} color="#2563eb" />
+                    </View>
+                    <View style={styles.choiceOptionContent}>
+                      <Text style={styles.choiceOptionTitle}>Upload from Gallery</Text>
+                      <Text style={styles.choiceOptionDesc}>Select a photo from your device & save to AWS S3</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Option 3: Remove Current Picture (if set) */}
+                  {avatar ? (
+                    <TouchableOpacity
+                      style={[styles.choiceOptionCard, { borderColor: '#fee2e2' }]}
+                      activeOpacity={0.7}
+                      onPress={handleRemoveAvatar}
+                    >
+                      <View style={[styles.choiceIconBadge, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+                        <Trash2 size={20} color="#dc2626" />
+                      </View>
+                      <View style={styles.choiceOptionContent}>
+                        <Text style={[styles.choiceOptionTitle, { color: '#dc2626' }]}>Remove Current Picture</Text>
+                        <Text style={styles.choiceOptionDesc}>Reset your profile picture to default initials</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.choiceCancelBtn}
+                  onPress={() => setIsAvatarChoiceModalOpen(false)}
+                >
+                  <Text style={styles.choiceCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Google-Style Illustration Picker Modal (Original / Current Approach) */}
       <IllustrationPickerModal
         visible={isAvatarPickerOpen}
         onClose={() => setIsAvatarPickerOpen(false)}
@@ -588,5 +758,101 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  avatarLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  choiceBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  choiceSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    ...shadows.lg,
+  },
+  choiceHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.slate300,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  choiceHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  choiceTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.slate900,
+  },
+  choiceSubtitle: {
+    fontSize: 13,
+    color: colors.slate500,
+    marginBottom: 16,
+  },
+  choiceOptionsList: {
+    gap: 12,
+    marginBottom: 16,
+  },
+  choiceOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    gap: 14,
+  },
+  choiceIconBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  choiceOptionContent: {
+    flex: 1,
+  },
+  choiceOptionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.slate900,
+    marginBottom: 2,
+  },
+  choiceOptionDesc: {
+    fontSize: 12.5,
+    color: colors.slate500,
+  },
+  choiceCancelBtn: {
+    paddingVertical: 13,
+    borderRadius: radii.md,
+    backgroundColor: colors.slate100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  choiceCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.slate700,
   },
 });

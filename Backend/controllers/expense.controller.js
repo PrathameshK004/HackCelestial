@@ -22,7 +22,8 @@ module.exports = {
     getGroupSettlement,
     recordSettlement,
     settleGroup,
-    getAuditLog
+    getAuditLog,
+    reviewExpenseApproval
 };
 
 /**
@@ -42,7 +43,9 @@ async function addExpense(req, res) {
             paidByMemberId,
             participants = [],
             paymentMethod = 'CASH',
-            paymentReference = null
+            paymentReference = null,
+            verificationStatus = 'VERIFIED',
+            rawSmsProof = null
         } = req.body;
 
         if (!userId) {
@@ -166,17 +169,27 @@ async function addExpense(req, res) {
 
         const expenseId = crypto.randomUUID();
 
+        // Calculate 60% approval threshold for group companions if PENDING_APPROVAL
+        const otherMembers = allMembers.filter(m => String(m.id) !== String(payer.id));
+        const requiredApprovals = verificationStatus === 'PENDING_APPROVAL'
+            ? Math.max(1, Math.ceil(otherMembers.length * 0.60))
+            : 0;
+
         // 1. Insert Expense Record
         const expenseInsert = await client.query(`
             INSERT INTO expenses (
                 id, group_id, paid_by, paid_by_member_id, created_by, description,
                 amount, category, currency, split_model, payment_method, payment_reference,
+                verification_status, approvals, required_approvals, raw_sms_proof,
                 created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
-            RETURNING id, description, amount, category, currency, split_model as "splitModel", payment_method as "paymentMethod", created_at as "createdAt"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, '[]'::jsonb, $14, $15, NOW(), NOW())
+            RETURNING id, description, amount, category, currency, split_model as "splitModel",
+                      payment_method as "paymentMethod", verification_status as "verificationStatus",
+                      approvals, required_approvals as "requiredApprovals", created_at as "createdAt"
         `, [
             expenseId, groupId, payer.id, payer.id, userId || null, description.trim(),
-            numAmount, category, currency || group.currency, effectiveSplitModel, paymentMethod, paymentReference
+            numAmount, category, currency || group.currency, effectiveSplitModel, paymentMethod, paymentReference,
+            verificationStatus, requiredApprovals, rawSmsProof
         ]);
 
         // 2. Insert Expense Splits
@@ -229,7 +242,7 @@ async function addExpense(req, res) {
 
         await client.query('COMMIT');
 
-        // Dispatch Push Notifications to all split participants in the trip asynchronously
+        // Dispatch Push & In-App Notifications to trip members
         sendExpenseNotification({
             groupId,
             groupName: group.name,
@@ -238,10 +251,34 @@ async function addExpense(req, res) {
             description: description.trim(),
             totalAmount: numAmount,
             currency: currency || group.currency,
-            splits: insertedSplits
+            splits: insertedSplits,
+            verificationStatus,
+            requiredApprovals
         }).catch(pushErr => {
             console.warn("Could not dispatch expense push notifications:", pushErr.message);
         });
+
+        // Real-time broadcast via Socket.IO
+        try {
+            const { getIO } = require('../utils/socket.util');
+            const io = getIO();
+            if (io) {
+                io.to(groupId).emit('EXPENSE_CREATED', {
+                    groupId,
+                    expense: {
+                        ...expenseInsert.rows[0],
+                        paidBy: {
+                            id: payer.id,
+                            name: payer.name,
+                            role: payer.role
+                        },
+                        splits: insertedSplits
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('[Socket] Expense created broadcast warning:', e.message);
+        }
 
         return sendSuccess(res, "Expense recorded successfully", {
             ...expenseInsert.rows[0],
@@ -286,6 +323,10 @@ async function getGroupExpenses(req, res) {
             SELECT e.id, e.description, e.amount, e.category, e.currency,
                    e.split_model as "splitModel", e.payment_method as "paymentMethod",
                    e.payment_reference as "paymentReference", e.created_at as "createdAt",
+                   e.verification_status as "verificationStatus",
+                   COALESCE(e.approvals, '[]'::jsonb) as "approvals",
+                   COALESCE(e.required_approvals, 1) as "requiredApprovals",
+                   e.raw_sms_proof as "rawSmsProof",
                    gm.id as "paidById", gm.name as "paidByName", gm.role as "paidByRole", gm.avatar_bg as "paidByAvatar"
             FROM expenses e
             LEFT JOIN group_members gm ON COALESCE(e.paid_by_member_id, e.paid_by) = gm.id
@@ -323,6 +364,10 @@ async function getGroupExpenses(req, res) {
             splitModel: e.splitModel,
             paymentMethod: e.paymentMethod,
             paymentReference: e.paymentReference,
+            verificationStatus: e.verificationStatus || 'VERIFIED',
+            approvals: Array.isArray(e.approvals) ? e.approvals : [],
+            requiredApprovals: Number(e.requiredApprovals) || 0,
+            rawSmsProof: e.rawSmsProof,
             createdAt: e.createdAt,
             paidBy: {
                 id: e.paidById,
@@ -815,5 +860,164 @@ async function getAuditLog(req, res) {
     } catch (error) {
         console.error("Get Audit Log Error:", error);
         return sendError(res, "Failed to fetch audit log", error, 500);
+    }
+}
+
+/**
+ * 8. Companion 60% Consensus Approval for Pending Expenses
+ */
+async function reviewExpenseApproval(req, res) {
+    const client = await pool.connect();
+    try {
+        const { groupId, expenseId } = req.params;
+        const userId = req.userKey;
+        const { action = 'APPROVE' } = req.body; // 'APPROVE' | 'DISPUTE'
+
+        if (!userId) {
+            client.release();
+            return sendError(res, "Authentication required", null, 401);
+        }
+
+        const access = await verifyGroupAccess(groupId, userId, client);
+        if (access.notFound) {
+            client.release();
+            return sendError(res, "Group not found", null, 404);
+        }
+        if (!access.isAuthorized) {
+            client.release();
+            return sendError(res, "Access denied", null, 403);
+        }
+
+        // Fetch current user's group member identity
+        const memberRes = await client.query(
+            'SELECT id, name FROM group_members WHERE group_id = $1 AND user_id = $2',
+            [groupId, userId]
+        );
+        if (memberRes.rows.length === 0) {
+            client.release();
+            return sendError(res, "Group member profile not found", null, 404);
+        }
+        const reviewer = memberRes.rows[0];
+
+        // Fetch expense
+        const expenseRes = await client.query(
+            'SELECT * FROM expenses WHERE id = $1 AND group_id = $2',
+            [expenseId, groupId]
+        );
+        if (expenseRes.rows.length === 0) {
+            client.release();
+            return sendError(res, "Expense not found", null, 404);
+        }
+        const expense = expenseRes.rows[0];
+
+        // Security Check: Payer cannot vote on their own expense!
+        if (String(expense.paid_by_member_id) === String(reviewer.id) || String(expense.created_by) === String(userId)) {
+            client.release();
+            return sendError(res, "You cannot approve your own expense. Only other trip companions can approve.", null, 400);
+        }
+
+        if (expense.verification_status === 'VERIFIED' || expense.verification_status === 'AUTO_VERIFIED') {
+            client.release();
+            return sendSuccess(res, "Expense is already verified", {
+                expenseId,
+                status: expense.verification_status,
+                alreadyVerified: true
+            });
+        }
+
+        await client.query('BEGIN');
+
+        // Parse existing approvals
+        let approvals = Array.isArray(expense.approvals) ? expense.approvals : [];
+        approvals = approvals.filter(a => String(a.memberId) !== String(reviewer.id));
+        approvals.push({
+            memberId: reviewer.id,
+            memberName: reviewer.name,
+            userId,
+            action: action.toUpperCase(),
+            timestamp: new Date().toISOString()
+        });
+
+        // 60% requirement from all companions (excluding payer)
+        const allMembersRes = await client.query(
+            'SELECT id FROM group_members WHERE group_id = $1',
+            [groupId]
+        );
+        const otherMembersCount = Math.max(1, allMembersRes.rows.filter(m => String(m.id) !== String(expense.paid_by_member_id)).length);
+        const requiredApprovals = Math.ceil(otherMembersCount * 0.60);
+        const approveCount = approvals.filter(a => a.action === 'APPROVE').length;
+        const disputeCount = approvals.filter(a => a.action === 'DISPUTE').length;
+
+        let newStatus = 'PENDING_APPROVAL';
+        let isFinalized = false;
+
+        if (approveCount >= requiredApprovals) {
+            newStatus = 'VERIFIED';
+            isFinalized = true;
+        } else if (disputeCount > (otherMembersCount - requiredApprovals)) {
+            newStatus = 'DISPUTED';
+            isFinalized = true;
+        }
+
+        await client.query(`
+            UPDATE expenses
+            SET approvals = $1,
+                required_approvals = $2,
+                verification_status = $3,
+                updated_at = NOW()
+            WHERE id = $4
+        `, [JSON.stringify(approvals), requiredApprovals, newStatus, expenseId]);
+
+        // Audit log
+        await client.query(`
+            INSERT INTO ledger_audit_log (
+                id, group_id, event_type, actor_id, actor_name, description, change_diff, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        `, [
+            crypto.randomUUID(),
+            groupId,
+            isFinalized ? (newStatus === 'VERIFIED' ? 'EXPENSE_APPROVED_FINAL' : 'EXPENSE_DISPUTED_FINAL') : 'EXPENSE_VOTE_CAST',
+            userId,
+            reviewer.name,
+            `${reviewer.name} voted ${action} on "${expense.description}" (${approveCount}/${requiredApprovals} approvals)`,
+            JSON.stringify({ expenseId, action, approveCount, requiredApprovals, newStatus })
+        ]);
+
+        await client.query('COMMIT');
+        client.release();
+
+        // Real-time broadcast
+        try {
+            const { getIO } = require('../utils/socket.util');
+            const io = getIO();
+            if (io) {
+                io.to(groupId).emit('EXPENSE_APPROVAL_UPDATED', {
+                    groupId,
+                    expenseId,
+                    verificationStatus: newStatus,
+                    approvals,
+                    approveCount,
+                    requiredApprovals,
+                    isFinalized
+                });
+            }
+        } catch (e) {
+            console.warn('[Socket] Approval update emit warning:', e.message);
+        }
+
+        return sendSuccess(res, `Vote recorded (${approveCount}/${requiredApprovals} approvals)`, {
+            expenseId,
+            verificationStatus: newStatus,
+            approvals,
+            approveCount,
+            requiredApprovals,
+            isFinalized
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        client.release();
+        console.error("Review Expense Error:", error);
+        return sendError(res, "Failed to record approval vote", error, 500);
     }
 }

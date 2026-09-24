@@ -23,6 +23,7 @@ router.post('/:groupId/invites/resend', verifyToken, groupController.resendInvit
 // Split Expenses Ledger & Settlements
 router.post('/:groupId/expenses', verifyToken, expenseController.addExpense);
 router.get('/:groupId/expenses', verifyToken, expenseController.getGroupExpenses);
+router.post('/:groupId/expenses/:expenseId/review', verifyToken, expenseController.reviewExpenseApproval);
 router.delete('/:groupId/expenses/:expenseId', verifyToken, expenseController.deleteExpense);
 router.get('/:groupId/settlement', verifyToken, expenseController.getGroupSettlement);
 router.post('/:groupId/settlements', verifyToken, expenseController.recordSettlement);

@@ -169,6 +169,10 @@ const initializeDatabase = async () => {
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS currency VARCHAR(10) NOT NULL DEFAULT 'INR';
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS split_model VARCHAR(50) NOT NULL DEFAULT 'EQUAL';
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS verification_status VARCHAR(50) NOT NULL DEFAULT 'VERIFIED';
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS approvals JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS required_approvals INT DEFAULT 1;
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS raw_sms_proof TEXT;
         ALTER TABLE expenses ALTER COLUMN paid_by DROP NOT NULL;
         ALTER TABLE expenses ALTER COLUMN shares DROP NOT NULL;
         ALTER TABLE expenses ALTER COLUMN shares SET DEFAULT '[]'::jsonb;

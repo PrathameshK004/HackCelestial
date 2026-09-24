@@ -276,6 +276,44 @@ async function createInAppNotification(userId, { type, title, body, data = {} })
 }
 
 /**
+ * Helper to save a global broadcast in-app notification in DB & emit via Socket.io
+ */
+async function createBroadcastNotification({ type = 'ANNOUNCEMENT', title, body, data = {} }) {
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+
+    const notifPayload = {
+        id,
+        type,
+        title,
+        body,
+        data,
+        isRead: false,
+        createdAt
+    };
+
+    // 1. Always Broadcast immediately via WebSockets to all connected clients
+    try {
+        const { broadcastNotification } = require('./socket.util');
+        broadcastNotification(notifPayload);
+    } catch (sockErr) {
+        console.warn('Socket broadcast warning:', sockErr.message);
+    }
+
+    // 2. Persist in database with user_id = null (global broadcast)
+    try {
+        await pool.query(`
+            INSERT INTO in_app_notifications (id, user_id, type, title, body, data, is_read, created_at)
+            VALUES ($1, NULL, $2, $3, $4, $5, FALSE, NOW())
+        `, [id, type, title, body, JSON.stringify(data)]);
+    } catch (err) {
+        console.warn('Failed to insert broadcast notification in DB:', err.message);
+    }
+
+    return id;
+}
+
+/**
  * High-level helper: Trigger notification for a Group Invitation (Push + Persistent In-App + Socket)
  */
 async function sendGroupInviteNotification({ inviteeEmail, inviterName, groupName, groupId, inviteCode }) {
@@ -370,29 +408,60 @@ async function sendExpenseNotification({
             );
 
             let body = '';
-            if (memberSplit && Number(memberSplit.computedAmount) > 0) {
-                const shareStr = `${currSymbol}${Math.round(Number(memberSplit.computedAmount))}`;
-                body = `${payerName} added "${description}" (${currSymbol}${Math.round(totalAmount)}). Your share: ${shareStr}`;
+            let title = `New Expense in ${groupName}`;
+
+            if (verificationStatus === 'PENDING_APPROVAL') {
+                title = `⚠️ Approval Needed (60%): ${groupName}`;
+                if (memberSplit && Number(memberSplit.computedAmount) > 0) {
+                    const shareStr = `${currSymbol}${Math.round(Number(memberSplit.computedAmount))}`;
+                    body = `${payerName} recorded "${description}" (${currSymbol}${Math.round(totalAmount)}). Your share: ${shareStr}. 60% companion approval needed!`;
+                } else {
+                    body = `${payerName} recorded "${description}" (${currSymbol}${Math.round(totalAmount)}). Needs 60% companion approval!`;
+                }
+            } else if (verificationStatus === 'AUTO_VERIFIED') {
+                title = `🛡️ Bank-Verified Expense: ${groupName}`;
+                if (memberSplit && Number(memberSplit.computedAmount) > 0) {
+                    const shareStr = `${currSymbol}${Math.round(Number(memberSplit.computedAmount))}`;
+                    body = `${payerName} paid "${description}" (${currSymbol}${Math.round(totalAmount)}) verified via Bank SMS. Your share: ${shareStr}`;
+                } else {
+                    body = `${payerName} paid "${description}" (${currSymbol}${Math.round(totalAmount)}) verified via Bank SMS.`;
+                }
             } else {
-                body = `${payerName} added expense "${description}" (${currSymbol}${Math.round(totalAmount)})`;
+                if (memberSplit && Number(memberSplit.computedAmount) > 0) {
+                    const shareStr = `${currSymbol}${Math.round(Number(memberSplit.computedAmount))}`;
+                    body = `${payerName} added "${description}" (${currSymbol}${Math.round(totalAmount)}). Your share: ${shareStr}`;
+                } else {
+                    body = `${payerName} added expense "${description}" (${currSymbol}${Math.round(totalAmount)})`;
+                }
             }
 
-            const title = `New Expense in ${groupName}`;
             const data = {
-                type: 'EXPENSE_ADDED',
+                type: verificationStatus === 'PENDING_APPROVAL' ? 'EXPENSE_APPROVAL_NEEDED' : 'EXPENSE_ADDED',
                 groupId: String(groupId),
                 groupName: String(groupName),
                 screen: 'GroupDetailScreen'
             };
 
-            createInAppNotification(member.user_id, { type: 'EXPENSE_ADDED', title, body, data }).catch(e =>
+            createInAppNotification(member.user_id, {
+                type: verificationStatus === 'PENDING_APPROVAL' ? 'EXPENSE_APPROVAL_NEEDED' : 'EXPENSE_ADDED',
+                title,
+                body,
+                data
+            }).catch(e =>
                 console.warn(`Failed inserting in-app notification for user ${member.user_id}:`, e.message)
             );
             sendPushToUser(member.user_id, { title, body, data }).catch(e =>
                 console.warn(`Failed sending expense push to user ${member.user_id}:`, e.message)
             );
         }
-        emitToGroup(groupId, 'trip:expense:added', { groupId, groupName, description, totalAmount });
+        emitToGroup(groupId, 'trip:expense:added', {
+            groupId,
+            groupName,
+            description,
+            totalAmount,
+            verificationStatus,
+            requiredApprovals
+        });
     } catch (err) {
         console.warn('Failed to dispatch expense push notifications:', err.message);
     }
@@ -508,6 +577,7 @@ module.exports = {
     sendPushToUser,
     sendPushToEmail,
     createInAppNotification,
+    createBroadcastNotification,
     sendGroupInviteNotification,
     sendInviteAcceptedNotification,
     sendInviteRejectedNotification,

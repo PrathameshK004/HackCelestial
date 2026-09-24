@@ -14,6 +14,8 @@ import {
   ScrollView,
   Alert,
   Linking,
+  Platform,
+  NativeModules,
 } from 'react-native';
 import { X, Smartphone, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
@@ -79,6 +81,24 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
     const upiUrl = `upi://pay?pa=${targetUpi}&pn=${encodeURIComponent(
       toMember?.name || 'Receiver'
     )}&am=${numAmount}&cu=INR&tn=${encodeURIComponent(`Settlement for ${tripName}`)}`;
+
+    if (Platform.OS === 'android' && NativeModules.UpiPayment?.startPayment) {
+      NativeModules.UpiPayment.startPayment(upiUrl, null)
+        .then((res: any) => {
+          if (res && (res.status === 'SUCCESS' || res.status?.toLowerCase() === 'success')) {
+            const bankRef = res.approvalRefNo || 'CONFIRMED';
+            Alert.alert(
+              'Payment Verified by Bank',
+              `Transaction was confirmed by bank! Ref: ${bankRef}. Tap Record to commit to group balance.`,
+              [{ text: 'Record Settlement', onPress: () => handleRecordSettlement() }]
+            );
+          }
+        })
+        .catch((err: any) => {
+          console.warn('Native Settle UPI error:', err);
+        });
+      return;
+    }
 
     Linking.canOpenURL(upiUrl)
       .then((supported) => {

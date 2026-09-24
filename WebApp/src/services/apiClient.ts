@@ -117,10 +117,12 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
   const getHeaders = (authToken?: string | null): Record<string, string> => {
     const activeToken = authToken !== undefined ? authToken : (token || localStorage.getItem(TOKEN_STORAGE_KEY));
     const h: Record<string, string> = {
-      'Content-Type': 'application/json',
       Accept: 'application/json',
       ...(headers as Record<string, string>),
     };
+    if (!(restOptions.body instanceof FormData) && !h['Content-Type']) {
+      h['Content-Type'] = 'application/json';
+    }
     if (activeToken) {
       h['Authorization'] = `Bearer ${activeToken}`;
     }

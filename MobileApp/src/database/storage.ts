@@ -12,6 +12,7 @@ export const REFRESH_TOKEN_KEY = 'triptual_refresh_token';
 export const USER_STORAGE_KEY = 'triptual_auth_user';
 export const OFFLINE_MODE_PREF_KEY = 'triptual_offline_pref';
 export const PUSH_TOKEN_KEY = 'triptual_fcm_push_token';
+export const READ_NOTIFICATIONS_KEY = 'triptual_read_notifications';
 
 export const storage = {
   async getAuthToken(): Promise<string | null> {
@@ -92,6 +93,54 @@ export const storage = {
       await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
     } catch (e) {
       console.warn('Failed to remove push token:', e);
+    }
+  },
+
+  async getReadNotificationIds(): Promise<string[]> {
+    try {
+      const data = await AsyncStorage.getItem(READ_NOTIFICATIONS_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async setReadNotificationIds(ids: string[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(READ_NOTIFICATIONS_KEY, JSON.stringify(ids));
+    } catch (e) {
+      console.warn('Failed to save read notification IDs:', e);
+    }
+  },
+
+  async markNotificationRead(id: string): Promise<void> {
+    try {
+      if (!id) return;
+      const existing = await this.getReadNotificationIds();
+      if (!existing.includes(id)) {
+        existing.push(id);
+        await this.setReadNotificationIds(existing);
+      }
+    } catch (e) {
+      console.warn('Failed to mark notification read in storage:', e);
+    }
+  },
+
+  async markAllNotificationsRead(ids: string[]): Promise<void> {
+    try {
+      const existing = await this.getReadNotificationIds();
+      const combined = Array.from(new Set([...existing, ...ids]));
+      await this.setReadNotificationIds(combined);
+    } catch (e) {
+      console.warn('Failed to mark all notifications read in storage:', e);
+    }
+  },
+
+  async clearReadNotificationIds(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(READ_NOTIFICATIONS_KEY);
+    } catch (e) {
+      console.warn('Failed to clear read notification IDs:', e);
     }
   }
 };

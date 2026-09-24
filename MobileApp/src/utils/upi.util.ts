@@ -127,24 +127,15 @@ export function buildMobileUpiUrl(details: MobileUpiDetails): string {
   const standardUpi = `upi://pay?${queryParams}`;
 
   if (Platform.OS === 'android') {
-    // Android App specific scheme / intents
-    switch (app) {
-      case 'phonepe':
-        return `phonepe://pay?${queryParams}`;
-      case 'gpay':
-        return `upi://pay?${queryParams}`;
-      case 'paytm':
-        return `paytmmp://pay?${queryParams}`;
-      case 'bhim':
-        return `upi://pay?${queryParams}`;
-      case 'generic':
-      default:
-        return standardUpi;
-    }
+    // CRITICAL: On modern Android (API 30+), PhonePe, Google Pay, and Paytm strictly
+    // require standard "upi://pay" format. Using deprecated "phonepe://pay" or "paytmmp://pay"
+    // triggers security exceptions or fails package routing.
+    // The target app is routed directly via Android package intent.
+    return standardUpi;
   }
 
   if (Platform.OS === 'ios') {
-    // iOS App specific custom schemes
+    // iOS App specific custom schemes (registered in Info.plist)
     switch (app) {
       case 'phonepe':
         return `phonepe://pay?${queryParams}`;
@@ -161,6 +152,70 @@ export function buildMobileUpiUrl(details: MobileUpiDetails): string {
   }
 
   return standardUpi;
+}
+
+/**
+ * Maps app type to standard Android package ID for targeted startActivityForResult
+ */
+export function getUpiPackageName(app: UpiAppType): string | null {
+  if (Platform.OS !== 'android') return null;
+  switch (app) {
+    case 'phonepe':
+      return 'com.phonepe.app';
+    case 'gpay':
+      return 'com.google.android.apps.nfc.phone';
+    case 'paytm':
+      return 'net.one97.paytm';
+    case 'bhim':
+      return 'in.org.npci.upiapp';
+    case 'generic':
+    default:
+      return null;
+  }
+}
+
+/**
+ * Builds an authentic scanned QR intent URL:
+ * - CRITICAL: Always strips 'mode=02', 'mc=0000', 'purpose=00', and 'orgid'.
+ *   Personal QR codes generated on another phone (PhonePe/GPay) include 'mc=0000' and 'mode=02'.
+ *   When passed via a 3rd-party app Intent, PhonePe detects an external P2P intent and blocks
+ *   it with "Payment failed due to security reasons".
+ * - Stripping these non-essential metadata flags turns it into a clean, compliant VPA intent.
+ */
+export function buildScannedVendorUpiUrl(rawQr: string, amount?: number | string): string {
+  let url = (rawQr || '').trim();
+  if (!url.startsWith('upi://pay')) {
+    return url;
+  }
+
+  // 1. Strictly remove flags that cause PhonePe security blocks on personal QRs
+  url = url
+    .replace(/([?&])mode=[^&]*(&|$)/gi, '$1')
+    .replace(/([?&])mc=0000(&|$)/gi, '$1')
+    .replace(/([?&])purpose=[^&]*(&|$)/gi, '$1')
+    .replace(/([?&])orgid=[^&]*(&|$)/gi, '$1')
+    .replace(/\?&/, '?')
+    .replace(/&&+/, '&')
+    .replace(/[?&]$/, '');
+
+  // 2. Set or update amount if specified
+  if (amount && Number(amount) > 0) {
+    const numAmount = Number(amount).toFixed(2);
+    if (/([?&])am=[^&]*/i.test(url)) {
+      url = url.replace(/([?&])am=[^&]*/i, `$1am=${encodeURIComponent(numAmount)}`);
+    } else {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}am=${encodeURIComponent(numAmount)}`;
+    }
+  }
+
+  // 3. Ensure currency is set to INR
+  if (!/([?&])cu=[^&]*/i.test(url)) {
+    const sep = url.includes('?') ? '&' : '?';
+    url = `${url}${sep}cu=INR`;
+  }
+
+  return url.replace(/[?&]$/, '').replace(/\?&/, '?').replace(/&&+/, '&');
 }
 
 /**

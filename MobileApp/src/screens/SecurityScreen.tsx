@@ -337,7 +337,7 @@ export const SecurityScreen: React.FC<SecurityScreenProps> = ({ onBack }) => {
     const refs = isTfa ? tfaInputRefs : otpInputRefs;
 
     targetArr[index] = val;
-    setArr(targetArr);
+    (setArr as any)(targetArr);
 
     if (val && index < 5) {
       refs.current[index + 1]?.focus();

@@ -15,6 +15,7 @@ import {
   Alert,
   Clipboard,
   Image,
+  NativeModules,
 } from 'react-native';
 import {
   X,
@@ -40,6 +41,8 @@ import {
   UpiAppType,
   UPI_APP_CONFIG,
   ParsedUpiData,
+  getUpiPackageName,
+  buildScannedVendorUpiUrl,
 } from '../../utils/upi.util';
 
 interface UpiPaymentModalProps {
@@ -51,6 +54,7 @@ interface UpiPaymentModalProps {
   defaultPayeeName?: string;
   defaultAmount?: string;
   defaultNote?: string;
+  defaultRawQr?: string;
 }
 
 type ModalStep = 'vendor' | 'details' | 'select_app' | 'verifying' | 'success';
@@ -84,6 +88,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
   defaultPayeeName = '',
   defaultAmount = '',
   defaultNote = '',
+  defaultRawQr = '',
 }) => {
   const { trips, addExpense } = useTrips();
 
@@ -91,6 +96,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
   const [step, setStep] = useState<ModalStep>('vendor');
 
   // ── Form State ────────────────────────────────────────────────────────────
+  const [rawQrString, setRawQrString] = useState(defaultRawQr);
   const [vendorUpi, setVendorUpi] = useState(defaultUpiId);
   const [vendorName, setVendorName] = useState(defaultPayeeName);
   const [amount, setAmount] = useState(defaultAmount);
@@ -125,6 +131,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
   // ── Lifecycle on Open ─────────────────────────────────────────────────────
   useEffect(() => {
     if (visible) {
+      setRawQrString(defaultRawQr || '');
       setVendorUpi(defaultUpiId);
       setVendorName(defaultPayeeName || '');
       setAmount(defaultAmount);
@@ -144,7 +151,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
       setIsVerifying(false);
       isAwaitingReturn.current = false;
     }
-  }, [visible, defaultUpiId, defaultPayeeName, defaultAmount, defaultNote]);
+  }, [visible, defaultUpiId, defaultPayeeName, defaultAmount, defaultNote, defaultRawQr]);
 
   // Keep trip selected if trips array changes
   useEffect(() => {
@@ -228,7 +235,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
     setTimeout(() => setCopiedAmount(false), 2000);
   };
 
-  // ── Launch UPI App via Intent (Zero bank block flags) ─────────────────────
+  // ── Launch UPI App via Intent (Zero bank block flags & Native Result) ───────
   const handleLaunchApp = async (app: UpiAppType) => {
     setSelectedApp(app);
     setErrorMessage(null);
@@ -236,16 +243,74 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
     const tracking = `TRIP-${Date.now().toString().slice(-8)}`;
     setTxnRef(tracking);
 
-    const intentUrl = buildMobileUpiUrl({
-      upiId: vendorUpi.trim(),
-      payeeName: vendorName.trim() || 'Vendor',
-      amount: Number(amount),
-      currency: 'INR',
-      note: description.trim() || 'Trip Shared Expense',
-      txnRef: tracking,
-      app,
-    });
+    // If an authentic scanned QR code exists, preserve original merchant parameters (mc, mid, tid)
+    // to strictly prevent PhonePe / Google Pay anti-fraud rejection ("Payment failed due to security reasons").
+    let intentUrl = '';
+    if (rawQrString && rawQrString.startsWith('upi://pay')) {
+      intentUrl = buildScannedVendorUpiUrl(rawQrString, amount);
+    } else {
+      intentUrl = buildMobileUpiUrl({
+        upiId: vendorUpi.trim(),
+        payeeName: vendorName.trim() || 'Vendor',
+        amount: Number(amount),
+        currency: 'INR',
+        note: description.trim() || 'Trip Expense',
+        app,
+      });
+    }
 
+    const packageName = getUpiPackageName(app);
+
+    // ── 1. Native Android startActivityForResult (100% Provable Real State) ──
+    if (Platform.OS === 'android' && NativeModules.UpiPayment?.startPayment) {
+      try {
+        setIsVerifying(true);
+        setStep('verifying');
+
+        const result = await NativeModules.UpiPayment.startPayment(intentUrl, packageName);
+
+        // Genuine cryptographic bank verification (Status=SUCCESS with ApprovalRefNo)
+        if (result && (result.status === 'SUCCESS' || result.status?.toLowerCase() === 'success')) {
+          const bankRef = result.approvalRefNo || result.ApprovalRefNo || '';
+          setUtrNumber(bankRef);
+          await commitPaymentToLedger(bankRef);
+          return;
+        } else {
+          setIsVerifying(false);
+          setStep('select_app');
+          setErrorMessage('Payment was not completed or failed in banking app.');
+          Alert.alert(
+            'Payment Not Completed',
+            `Transaction was not completed in ${UPI_APP_CONFIG[app].name}. To protect group members, this expense was NOT recorded.`
+          );
+          return;
+        }
+      } catch (err: any) {
+        setIsVerifying(false);
+        const code = err?.code || '';
+        const msg = err?.message || '';
+
+        if (code === 'PAYMENT_CANCELLED' || msg.includes('cancelled')) {
+          setStep('select_app');
+          setErrorMessage('Payment was cancelled. Expense was not recorded.');
+          return;
+        }
+
+        if (code === 'PAYMENT_FAILED') {
+          setStep('select_app');
+          setErrorMessage('Transaction failed or was declined by bank.');
+          Alert.alert(
+            'Payment Declined',
+            'Bank declined the transaction. No expense was added to the trip.'
+          );
+          return;
+        }
+
+        console.warn('Native module error, falling back to Linking:', err);
+      }
+    }
+
+    // ── 2. Standard Deep-Linking Fallback (iOS / Expo Go environment) ─────────
     try {
       const canOpen = await Linking.canOpenURL(intentUrl);
       if (canOpen) {
@@ -253,14 +318,12 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
         setStep('verifying');
         await Linking.openURL(intentUrl);
       } else {
-        // Fallback to standard generic upi://pay
         const fallbackUrl = buildMobileUpiUrl({
           upiId: vendorUpi.trim(),
           payeeName: vendorName.trim() || 'Vendor',
           amount: Number(amount),
           currency: 'INR',
-          note: description.trim() || 'Trip Shared Expense',
-          txnRef: tracking,
+          note: description.trim() || 'Trip Expense',
           app: 'generic',
         });
 
@@ -286,7 +349,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
         }
       }
     } catch (err: any) {
-      console.warn('Error launching UPI intent:', err);
+      console.warn('Error launching UPI intent fallback:', err);
       setStep('verifying');
     }
   };

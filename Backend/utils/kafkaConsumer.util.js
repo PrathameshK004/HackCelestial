@@ -1,6 +1,6 @@
 const { getKafkaClient } = require('./kafkaClient.util');
 const { pool } = require('./db.util');
-const { createInAppNotification, sendPushToUser } = require('./notification.util');
+const { createInAppNotification, createBroadcastNotification, sendPushToUser } = require('./notification.util');
 const { emitToUser, emitToGroup } = require('./socket.util');
 const { sendEmail } = require('./mail.util');
 
@@ -184,12 +184,31 @@ async function processNotificationEvent(eventMessage) {
         break;
       }
 
-      // 6. Generic System Alert Event
+      // 6. Generic System Alert & Admin Broadcast Events
+      case 'BROADCAST':
+      case 'ADMIN_BROADCAST':
+      case 'BROADCAST_NOTIFICATION':
+      case 'GLOBAL_NOTIFICATION':
+      case 'ANNOUNCEMENT':
+      case 'ADMIN_ALERT':
+      case 'NOTIFICATION':
       case 'SYSTEM_ALERT': {
-        const { userId, title, body, data = {} } = payload;
-        if (userId) {
-          await createInAppNotification(userId, { type: 'SYSTEM_ALERT', title: title || 'System Notification', body: body || '', data });
-          await sendPushToUser(userId, { title, body, data });
+        const { userId, title, body, message, subject, data = {} } = payload;
+        const notifTitle = title || subject || 'Admin Announcement 📢';
+        const notifBody = body || message || payload.content || '';
+
+        // If target userId specified and not 'ALL' / broadcast uuid
+        if (userId && userId !== 'ALL' && userId !== 'all' && userId !== '00000000-0000-0000-0000-000000000000') {
+          await createInAppNotification(userId, { type: eventType || 'SYSTEM_ALERT', title: notifTitle, body: notifBody, data });
+          await sendPushToUser(userId, { title: notifTitle, body: notifBody, data });
+        } else {
+          // Global Admin Broadcast to all users via DB persistence + WebSockets
+          await createBroadcastNotification({
+            type: eventType || 'ANNOUNCEMENT',
+            title: notifTitle,
+            body: notifBody,
+            data
+          });
         }
         break;
       }

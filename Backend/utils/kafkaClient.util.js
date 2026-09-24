@@ -1,5 +1,6 @@
 const { Kafka, logLevel } = require('kafkajs');
 const fs = require('fs');
+require('dotenv').config();
 
 /**
  * Industrial-Grade Kafka Client Factory for Aiven & AWS/Local Kafka

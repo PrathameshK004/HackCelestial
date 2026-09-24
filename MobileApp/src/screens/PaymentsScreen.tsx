@@ -803,6 +803,7 @@ export const PaymentsScreen: React.FC<PaymentsScreenProps> = ({ onBack }) => {
         defaultPayeeName={scannedPaymentData?.payeeName || ''}
         defaultAmount={scannedPaymentData?.amount || ''}
         defaultNote={scannedPaymentData?.note || ''}
+        defaultRawQr={scannedPaymentData?.raw || ''}
         onPaymentSuccess={loadPaymentsData}
       />
 

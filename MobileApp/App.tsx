@@ -14,6 +14,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { GroupMenuScreen } from './src/screens/GroupMenuScreen';
 import { CreateGroupScreen } from './src/screens/CreateGroupScreen';
 import { notificationService } from './src/services/notificationService';
+import { socketService } from './src/services/socketService';
 
 const RootNavigator: React.FC = () => {
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
@@ -31,11 +32,27 @@ const RootNavigator: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Listen for push notifications and user tap interactions
+  // Listen for real-time Socket.io and push notifications
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const cleanup = notificationService.addNotificationListeners(
+    // 1. Connect real-time WebSocket for instant notifications
+    socketService.connect().catch(() => {});
+
+    // 2. Global notification listener for instant trip refresh & local banner
+    const unsubSocket = socketService.onNotification((rawNotif) => {
+      if (!rawNotif) return;
+      refreshTrips().catch(() => {});
+      notificationService.sendLocalNotification(
+        rawNotif.title || 'New Notification',
+        rawNotif.body || rawNotif.message || rawNotif.description || '',
+        'invites',
+        rawNotif.data
+      ).catch(() => {});
+    });
+
+    // 3. Native push notification listeners
+    const cleanupPush = notificationService.addNotificationListeners(
       () => {
         // Reload live server trips when push notification arrives
         refreshTrips().catch(() => {});
@@ -48,7 +65,10 @@ const RootNavigator: React.FC = () => {
       }
     );
 
-    return cleanup;
+    return () => {
+      unsubSocket();
+      cleanupPush();
+    };
   }, [isAuthenticated, selectTrip, refreshTrips]);
 
   if (showSplash || isAuthLoading) {

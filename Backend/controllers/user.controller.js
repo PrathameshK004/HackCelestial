@@ -10,6 +10,7 @@ const { createToken, createRefreshToken, verifyRefreshToken } = require('../util
 const { verifyPassword } = require('../utils/verify.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const { saveUserPushToken, removeUserPushToken } = require('../utils/notification.util');
+const { uploadProfilePictureToS3, deleteS3Object, isS3Configured } = require('../utils/s3.util');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -37,7 +38,9 @@ module.exports = {
     toggleTwoFactor,
     verifyTwoFactorOtp,
     verifyTwoFactorLogin,
-    revokeAllSessions
+    revokeAllSessions,
+    uploadProfilePicture,
+    removeProfilePicture
 };
 
 /**
@@ -1155,5 +1158,118 @@ async function revokeAllSessions(req, res) {
         return sendError(res, "Failed to revoke active sessions", err, 500);
     }
 }
+
+/**
+ * Upload profile picture to AWS S3 and persist URL in users database
+ */
+async function uploadProfilePicture(req, res) {
+    const userId = req.userKey;
+    if (!userId) {
+        return sendError(res, "Unauthorized", null, 401);
+    }
+
+    if (!req.file) {
+        return sendError(res, "No image file provided. Please attach an image file with key 'picture' or 'avatar'.", null, 400);
+    }
+
+    try {
+        if (!isS3Configured()) {
+            return sendError(
+                res,
+                "AWS S3 is not configured on the server. Please add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET_NAME to your Backend/.env file.",
+                null,
+                503
+            );
+        }
+
+        // Fetch current user to check for existing S3 avatar to replace
+        const userRes = await pool.query('SELECT avatar, username FROM users WHERE id = $1', [userId]);
+        if (userRes.rows.length === 0) {
+            return sendError(res, "User not found", null, 404);
+        }
+
+        const oldAvatar = userRes.rows[0].avatar;
+
+        // Upload new picture to S3
+        const { url: avatarUrl } = await uploadProfilePictureToS3({
+            buffer: req.file.buffer,
+            mimeType: req.file.mimetype,
+            originalName: req.file.originalname,
+            userId,
+        });
+
+        // Persist avatar URL into database
+        const updateRes = await pool.query(
+            `UPDATE users 
+             SET avatar = $1, updated_at = NOW() 
+             WHERE id = $2 
+             RETURNING id, username, email_id, phone, upi_id, avatar, travel_style, currency, dob, two_factor_enabled`,
+            [avatarUrl, userId]
+        );
+
+        const updatedUser = updateRes.rows[0];
+
+        // Best effort clean up old S3 image if it exists
+        if (oldAvatar && (oldAvatar.includes('amazonaws.com') || oldAvatar.includes('profile-pictures/'))) {
+            deleteS3Object(oldAvatar).catch((err) => {
+                console.warn('Warning: Could not remove old S3 profile picture:', err.message);
+            });
+        }
+
+        // Sync avatar with group member records
+        try {
+            const { syncUserWithGroups } = require('./invite.controller');
+            if (typeof syncUserWithGroups === 'function') {
+                syncUserWithGroups(userId, updatedUser.username, avatarUrl).catch(() => {});
+            }
+        } catch (_) {}
+
+        return sendSuccess(res, "Profile picture uploaded successfully to S3", {
+            avatar: avatarUrl,
+            user: {
+                id: updatedUser.id,
+                username: updatedUser.username,
+                emailId: updatedUser.email_id,
+                avatar: updatedUser.avatar,
+                phone: updatedUser.phone,
+                upiId: updatedUser.upi_id,
+                travelStyle: updatedUser.travel_style,
+                currency: updatedUser.currency,
+                dob: updatedUser.dob,
+                twoFactorEnabled: updatedUser.two_factor_enabled
+            }
+        });
+    } catch (err) {
+        console.error("Upload profile picture error:", err);
+        return sendError(res, err.message || "Failed to upload profile picture", null, 500);
+    }
+}
+
+/**
+ * Remove profile picture (resets avatar to null)
+ */
+async function removeProfilePicture(req, res) {
+    const userId = req.userKey;
+    if (!userId) {
+        return sendError(res, "Unauthorized", null, 401);
+    }
+
+    try {
+        const userRes = await pool.query('SELECT avatar FROM users WHERE id = $1', [userId]);
+        const oldAvatar = userRes.rows.length > 0 ? userRes.rows[0].avatar : null;
+
+        await pool.query('UPDATE users SET avatar = NULL, updated_at = NOW() WHERE id = $1', [userId]);
+
+        if (oldAvatar && (oldAvatar.includes('amazonaws.com') || oldAvatar.includes('profile-pictures/'))) {
+            deleteS3Object(oldAvatar).catch(() => {});
+        }
+
+        return sendSuccess(res, "Profile picture removed successfully", { avatar: null });
+    } catch (err) {
+        console.error("Remove profile picture error:", err);
+        return sendError(res, "Failed to remove profile picture", err, 500);
+    }
+}
+
 
 

@@ -13,6 +13,8 @@ import {
   Linking,
   Alert,
   RefreshControl,
+  Platform,
+  NativeModules,
 } from 'react-native';
 import {
   Zap,
@@ -104,6 +106,23 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
     const upiUrl = `upi://pay?pa=${t.toUpiId || 'yogesh@okaxis'}&pn=${encodeURIComponent(
       t.toMemberName
     )}&am=${t.amount}&cu=INR&tn=${encodeURIComponent(`Settlement for ${activeTrip?.name || 'Trip'}`)}`;
+
+    if (Platform.OS === 'android' && NativeModules.UpiPayment?.startPayment) {
+      NativeModules.UpiPayment.startPayment(upiUrl, null)
+        .then((res: any) => {
+          if (res && (res.status === 'SUCCESS' || res.status?.toLowerCase() === 'success')) {
+            Alert.alert(
+              'Payment Confirmed by Bank',
+              `Verified Ref: ${res.approvalRefNo || 'Confirmed'}. Settling debt...`,
+              [{ text: 'OK', onPress: () => handleMarkSettled(t) }]
+            );
+          }
+        })
+        .catch((err: any) => {
+          console.warn('Native settle error:', err);
+        });
+      return;
+    }
 
     Linking.canOpenURL(upiUrl)
       .then((supported) => {

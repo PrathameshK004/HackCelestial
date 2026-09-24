@@ -40,6 +40,8 @@ export interface AuthResponse {
     refreshToken?: string;
     isAuthenticated?: boolean;
     userKey?: string;
+    avatar?: string;
+    user?: User;
   };
 }
 

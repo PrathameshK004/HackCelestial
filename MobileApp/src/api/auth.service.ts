@@ -169,6 +169,31 @@ export const authService = {
     });
   },
 
+  /**
+   * Upload profile picture directly to AWS S3 via backend
+   */
+  async uploadProfilePicture(file: { uri: string; name?: string; type?: string }): Promise<AuthResponse> {
+    const formData = new FormData();
+    formData.append('picture', {
+      uri: file.uri,
+      name: file.name || `photo_${Date.now()}.jpg`,
+      type: file.type || 'image/jpeg',
+    } as any);
+    return apiRequest<AuthResponse>('/users/profile/picture', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  /**
+   * Remove current profile picture from S3 and reset avatar
+   */
+  async removeProfilePicture(): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/users/profile/picture', {
+      method: 'DELETE',
+    });
+  },
+
   async loginWithGoogle(credentialOrPayload: string | { credential?: string; accessToken?: string }): Promise<AuthResponse> {
     const body = typeof credentialOrPayload === 'string'
       ? { credential: credentialOrPayload }

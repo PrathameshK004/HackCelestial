@@ -24,6 +24,7 @@ import {
 import { authService } from '../api/auth.service';
 import { storage } from '../database/storage';
 import { notificationService } from '../services/notificationService';
+import { socketService } from '../services/socketService';
 
 interface AuthContextType {
   user: User | null;
@@ -114,6 +115,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Register device for push notifications in background
           notificationService.registerForPushNotifications().catch(() => {});
+
+          // Connect and sync real-time Socket.io
+          socketService.syncSession(savedToken, savedUser.id).catch(() => {});
         }
         // If no saved session → user sees AuthScreen (no fake seed)
       } catch (e) {
@@ -157,6 +161,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Register push notification token on login
     notificationService.registerForPushNotifications().catch(() => {});
+
+    // Sync real-time Socket.io session
+    socketService.syncSession(accessToken, resolvedUser.id).catch(() => {});
   };
 
   // ── Login ────────────────────────────────────────────────────────────────────
@@ -278,6 +285,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ── Logout ───────────────────────────────────────────────────────────────────
   const logout = async (): Promise<void> => {
     try {
+      socketService.disconnect();
       await notificationService.unregisterPushNotifications().catch(() => {});
       await authService.logout().catch(() => {});
     } finally {

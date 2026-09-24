@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/PrathameshK004/HackCelestial#readme",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1139.0",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
@@ -31,6 +32,7 @@
     "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
+    "multer": "^2.4.0",
     "nodemailer": "^10.0.0",
     "nodemon": "^3.1.10",
     "path": "^0.12.7",

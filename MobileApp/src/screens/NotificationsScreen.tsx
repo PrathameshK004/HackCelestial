@@ -5,7 +5,7 @@
  * [Notifications] and [Invitations] with active blue underline and sub-filter pills
  */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,8 @@ import {
 } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { InboxNotification, PendingInvitation } from '../types';
+import { socketService } from '../services/socketService';
+import { storage } from '../database/storage';
 
 interface NotificationsScreenProps {
   onBack: () => void;
@@ -53,6 +55,7 @@ interface NotificationsScreenProps {
   onOpenInvitationDetails: (invite: PendingInvitation) => void;
   onRefresh?: () => Promise<void>;
   isProcessingInviteCode?: string | null;
+  onNavigateTab?: (tab: 'trips' | 'expenses') => void;
 }
 
 export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
@@ -68,6 +71,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
   onOpenInvitationDetails,
   onRefresh,
   isProcessingInviteCode = null,
+  onNavigateTab,
 }) => {
   // Main Tabular Menu: 'notifications' | 'invitations'
   const [activeTab, setActiveTab] = useState<'notifications' | 'invitations'>('notifications');
@@ -78,8 +82,46 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
   // Set of invite codes accepted or declined in current session to remove immediately
   const [resolvedInviteCodes, setResolvedInviteCodes] = useState<Set<string>>(new Set());
 
+  // Local persistent tracking of read notifications so blue dot never flickers or reverts
+  const [localReadIds, setLocalReadIds] = useState<Set<string>>(new Set());
+  const [selectedNotifForDetail, setSelectedNotifForDetail] = useState<InboxNotification | null>(null);
+
   const [refreshing, setRefreshing] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+
+  // Load persistent read notification IDs on mount
+  React.useEffect(() => {
+    let isMounted = true;
+    storage.getReadNotificationIds().then((storedIds) => {
+      if (isMounted && storedIds && storedIds.length > 0) {
+        setLocalReadIds(new Set(storedIds));
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Determine whether an item is read locally or from server
+  const isItemRead = useCallback(
+    (item: InboxNotification): boolean => {
+      return Boolean(item.isRead || (item.id && localReadIds.has(item.id)));
+    },
+    [localReadIds]
+  );
+
+  // Instant refresh when a real-time event is received while on this screen
+  React.useEffect(() => {
+    const unsubNotif = socketService.onNotification(() => {
+      if (onRefresh) {
+        onRefresh().catch(() => {});
+      }
+    });
+
+    return () => {
+      unsubNotif();
+    };
+  }, [onRefresh]);
 
   // Active pending invitations excluding resolved codes & guaranteed strictly single invitation per trip
   const activePendingInvitations = React.useMemo(() => {
@@ -102,8 +144,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
     return result;
   }, [pendingInvitations, resolvedInviteCodes]);
 
-  // Counts
-  const unreadNotifsCount = notifications.filter((n) => !n.isRead).length;
+  // Counts using accurate local read state
+  const unreadNotifsCount = notifications.filter((n) => !isItemRead(n)).length;
   const totalNotifsCount = notifications.length;
   const pendingInvitesCount = activePendingInvitations.length;
 
@@ -160,9 +202,27 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
     }
   };
 
+  // Instant item select: immediately clears blue dot without lag and opens message reader
+  const handleSelectNotificationItem = (item: InboxNotification) => {
+    if (item.id) {
+      setLocalReadIds((prev) => new Set([...prev, item.id]));
+      storage.markNotificationRead(item.id).catch(() => {});
+    }
+    setSelectedNotifForDetail(item);
+    onSelectNotification(item);
+  };
+
+  // Mark all notifications as read locally and in storage
+  const handleMarkAllLocal = async () => {
+    const allIds = notifications.map((n) => n.id).filter(Boolean);
+    setLocalReadIds((prev) => new Set([...prev, ...allIds]));
+    await storage.markAllNotificationsRead(allIds);
+    onMarkAllAsRead();
+  };
+
   // Filtered notifications
   const filteredNotifications = notifications.filter((n) => {
-    if (subFilter === 'unread') return !n.isRead;
+    if (subFilter === 'unread') return !isItemRead(n);
     if (subFilter === 'trip') return n.category === 'trip';
     if (subFilter === 'expense') return n.category === 'expense';
     if (subFilter === 'security') return n.category === 'security';
@@ -429,7 +489,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                   key={item.id}
                   style={styles.notificationItem}
                   activeOpacity={0.7}
-                  onPress={() => onSelectNotification(item)}
+                  onPress={() => handleSelectNotificationItem(item)}
                 >
                   {/* Left: Soft Rounded Avatar Icon */}
                   <View
@@ -454,7 +514,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
 
                   {/* Right Column: Unread Dot + Trash Button */}
                   <View style={styles.itemRightColumn}>
-                    {!item.isRead ? (
+                    {!isItemRead(item) ? (
                       <View style={styles.unreadBlueDot} />
                     ) : (
                       <View style={styles.emptyDotPlaceholder} />
@@ -585,7 +645,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
               activeOpacity={0.7}
               onPress={() => {
                 setShowOptionsMenu(false);
-                onMarkAllAsRead();
+                handleMarkAllLocal();
               }}
             >
               <CheckCheck size={18} color="#2563EB" />
@@ -629,6 +689,126 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
               <Text style={styles.menuOptionText}>Refresh updates</Text>
             </TouchableOpacity>
           </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── Notification Detail Reader Modal ─────────────────────────────── */}
+      <Modal
+        visible={Boolean(selectedNotifForDetail)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedNotifForDetail(null)}
+      >
+        <TouchableOpacity
+          style={styles.detailModalOverlay}
+          activeOpacity={1}
+          onPress={() => setSelectedNotifForDetail(null)}
+        >
+          <TouchableOpacity
+            style={styles.detailModalCard}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <View style={styles.detailModalHeader}>
+              <View style={styles.detailModalCategoryBadge}>
+                <View
+                  style={[
+                    styles.detailCategoryDot,
+                    {
+                      backgroundColor:
+                        selectedNotifForDetail?.category === 'trip'
+                          ? '#059669'
+                          : selectedNotifForDetail?.category === 'expense'
+                          ? '#D97706'
+                          : '#2563EB',
+                    },
+                  ]}
+                />
+                <Text style={styles.detailCategoryText}>
+                  {selectedNotifForDetail?.category?.toUpperCase() || 'NOTIFICATION'}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setSelectedNotifForDetail(null)}
+                style={styles.detailCloseBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel="Close"
+              >
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Title & Icon */}
+            <View style={styles.detailTitleRow}>
+              <View
+                style={[
+                  styles.detailAvatarCircle,
+                  {
+                    backgroundColor: selectedNotifForDetail
+                      ? getCategoryBg(selectedNotifForDetail.category)
+                      : '#EFF6FF',
+                  },
+                ]}
+              >
+                {selectedNotifForDetail && getCategoryIcon(selectedNotifForDetail.category)}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailTitleText}>
+                  {selectedNotifForDetail?.title}
+                </Text>
+                <Text style={styles.detailTimeText}>
+                  {selectedNotifForDetail?.timestamp}
+                </Text>
+              </View>
+            </View>
+
+            {/* Full Message Body */}
+            <View style={styles.detailBodyBox}>
+              <ScrollView
+                style={{ maxHeight: 220 }}
+                showsVerticalScrollIndicator={false}
+              >
+                <Text style={styles.detailBodyText}>
+                  {selectedNotifForDetail?.description}
+                </Text>
+              </ScrollView>
+            </View>
+
+            {/* Modal Actions */}
+            <View style={styles.detailActionsRow}>
+              {Boolean(selectedNotifForDetail?.actionTab && onNavigateTab) && (
+                <TouchableOpacity
+                  style={styles.detailPrimaryBtn}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    const tab = selectedNotifForDetail?.actionTab as 'trips' | 'expenses';
+                    setSelectedNotifForDetail(null);
+                    if (onNavigateTab && tab) {
+                      onNavigateTab(tab);
+                    }
+                  }}
+                >
+                  <Text style={styles.detailPrimaryBtnText}>
+                    {selectedNotifForDetail?.actionTab === 'trips' ? 'View in Trips' : 'View in Expenses'}
+                  </Text>
+                  <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.2} />
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.detailCloseActionBtn,
+                  !(selectedNotifForDetail?.actionTab && onNavigateTab) && { flex: 1 },
+                ]}
+                activeOpacity={0.8}
+                onPress={() => setSelectedNotifForDetail(null)}
+              >
+                <Text style={styles.detailCloseActionBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </SafeAreaView>
@@ -1078,5 +1258,128 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '600',
     color: '#0F172A',
+  },
+
+  /* ── Notification Detail Modal ── */
+  detailModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  detailModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  detailModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  detailModalCategoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  detailCategoryDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  detailCategoryText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    letterSpacing: 0.5,
+  },
+  detailCloseBtn: {
+    padding: 4,
+  },
+  detailTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  detailAvatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailTitleText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 22,
+    marginBottom: 4,
+  },
+  detailTimeText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  detailBodyBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    padding: 14,
+    marginBottom: 18,
+  },
+  detailBodyText: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 21,
+  },
+  detailActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  detailPrimaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  detailPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  detailCloseActionBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailCloseActionBtnText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

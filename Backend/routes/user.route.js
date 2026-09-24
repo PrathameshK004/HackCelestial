@@ -44,6 +44,46 @@ router.post('/2fa/verify', verifyToken, usersController.verifyTwoFactorOtp);
 router.post('/2fa/verify-login', usersController.verifyTwoFactorLogin);
 router.post('/revoke-sessions', verifyToken, usersController.revokeAllSessions);
 
+// Profile picture / Avatar upload with multer in memory
+const multer = require('multer');
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype && (file.mimetype.startsWith('image/') || file.mimetype === 'application/octet-stream')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files (JPG, PNG, WEBP, GIF, HEIC) are allowed'), false);
+        }
+    }
+});
+
+const handleUploadMiddleware = (req, res, next) => {
+    upload.fields([
+        { name: 'picture', maxCount: 1 },
+        { name: 'avatar', maxCount: 1 },
+        { name: 'file', maxCount: 1 },
+        { name: 'image', maxCount: 1 }
+    ])(req, res, (err) => {
+        if (err) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return sendError(res, 'File size too large. Maximum allowed size is 5MB.', null, 400);
+            }
+            return sendError(res, err.message || 'File upload error', null, 400);
+        }
+        if (req.files) {
+            req.file = (req.files.picture && req.files.picture[0]) ||
+                       (req.files.avatar && req.files.avatar[0]) ||
+                       (req.files.image && req.files.image[0]) ||
+                       (req.files.file && req.files.file[0]) ||
+                       null;
+        }
+        next();
+    });
+};
+
 // Profile management with real-time sync
 router.get('/profile', verifyToken, (req, res) => {
     req.params.userId = req.userKey;
@@ -52,6 +92,11 @@ router.get('/profile', verifyToken, (req, res) => {
 router.put('/profile', verifyToken, usersController.updateProfile);
 router.patch('/profile', verifyToken, usersController.updateProfile);
 router.post('/profile', verifyToken, usersController.updateProfile);
+
+// S3 Profile picture upload & removal
+router.post('/profile/picture', verifyToken, handleUploadMiddleware, usersController.uploadProfilePicture);
+router.post('/profile/avatar-upload', verifyToken, handleUploadMiddleware, usersController.uploadProfilePicture);
+router.delete('/profile/picture', verifyToken, usersController.removeProfilePicture);
 
 router.get('/:userId', verifyToken, userMiddleware.validateUserId, usersController.getUserById);
 router.post('/login', userMiddleware.checkLogin, usersController.validateLogin);

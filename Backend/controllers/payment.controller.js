@@ -546,14 +546,23 @@ async function verifyPaymentStatus(req, res) {
             ? description.trim()
             : (vendorName ? `Paid to ${vendorName}` : 'UPI Payment');
 
+        const { verificationStatus = 'AUTO_VERIFIED', rawSmsProof = null } = req.body;
+        const otherMembers = membersRes.rows.filter(m => String(m.id) !== String(payer.id));
+        const requiredApprovals = verificationStatus === 'PENDING_APPROVAL'
+            ? Math.max(1, Math.ceil(otherMembers.length * 0.60))
+            : 0;
+
         await client.query(`
             INSERT INTO expenses (
                 id, group_id, paid_by, paid_by_member_id, created_by, description,
-                amount, category, currency, split_model, payment_method, payment_reference, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+                amount, category, currency, split_model, payment_method, payment_reference,
+                verification_status, approvals, required_approvals, raw_sms_proof,
+                created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, '[]'::jsonb, $14, $15, NOW(), NOW())
         `, [
             expenseId, groupId, payer.id, payer.id, userId || null, desc,
-            numAmount, category, group.currency, effectiveSplitModel, paymentMethod, finalRef
+            numAmount, category, group.currency, effectiveSplitModel, paymentMethod, finalRef,
+            verificationStatus, requiredApprovals, rawSmsProof
         ]);
 
         for (const split of computedSplits) {
@@ -592,9 +601,58 @@ async function verifyPaymentStatus(req, res) {
         await client.query('COMMIT');
         client.release();
 
+        // Dispatch notification and Socket.IO broadcast
+        try {
+            const { sendExpenseNotification } = require('../utils/notification.util');
+            sendExpenseNotification({
+                groupId,
+                groupName: group.name,
+                payerName: payer.name,
+                payerUserId: payer.user_id || userId,
+                description: desc,
+                totalAmount: numAmount,
+                currency: group.currency,
+                splits: computedSplits,
+                verificationStatus,
+                requiredApprovals
+            }).catch(e => console.warn('[Payment] Notification error:', e.message));
+
+            const { getIO } = require('../utils/socket.util');
+            const io = getIO();
+            if (io) {
+                io.to(groupId).emit('EXPENSE_CREATED', {
+                    groupId,
+                    expense: {
+                        id: expenseId,
+                        description: desc,
+                        amount: numAmount,
+                        category,
+                        currency: group.currency,
+                        splitModel: effectiveSplitModel,
+                        paymentMethod,
+                        paymentReference: finalRef,
+                        verificationStatus,
+                        approvals: [],
+                        requiredApprovals,
+                        paidBy: {
+                            id: payer.id,
+                            name: payer.name,
+                            role: payer.role
+                        },
+                        splits: computedSplits,
+                        createdAt: new Date().toISOString()
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('[Payment] Socket/Notification broadcast error:', e.message);
+        }
+
         return sendSuccess(res, "Payment successfully verified and recorded to trip", {
             verified: true,
             status: 'SUCCESS',
+            verificationStatus,
+            requiredApprovals,
             expenseId,
             groupId,
             groupName: group.name,
