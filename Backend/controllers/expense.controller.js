@@ -44,7 +44,7 @@ async function addExpense(req, res) {
             participants = [],
             paymentMethod = 'CASH',
             paymentReference = null,
-            verificationStatus = 'VERIFIED',
+            verificationStatus: rawVerificationStatus = null,
             rawSmsProof = null
         } = req.body;
 
@@ -222,8 +222,20 @@ async function addExpense(req, res) {
 
         const expenseId = crypto.randomUUID();
 
-        // Calculate 60% approval threshold for group companions if PENDING_APPROVAL
+        // Calculate 60% approval threshold for group companions
         const otherMembers = allMembers.filter(m => String(m.id) !== String(payer.id));
+        
+        let verificationStatus = rawVerificationStatus;
+        if (!verificationStatus) {
+            // Normal expense added to group:
+            // If group has other companions, 60% validation is strictly required before it becomes official.
+            // If solo trip without companions, auto-verify immediately.
+            verificationStatus = otherMembers.length > 0 ? 'PENDING_APPROVAL' : 'VERIFIED';
+        } else if (verificationStatus === 'VERIFIED' && otherMembers.length > 0 && !rawSmsProof) {
+            // Normal manual expense cannot bypass companion validation without bank SMS proof
+            verificationStatus = 'PENDING_APPROVAL';
+        }
+
         const requiredApprovals = verificationStatus === 'PENDING_APPROVAL'
             ? Math.max(1, Math.ceil(otherMembers.length * 0.60))
             : 0;
