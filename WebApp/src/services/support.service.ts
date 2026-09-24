@@ -12,6 +12,16 @@ export interface SupportTicketResponse {
   createdAt: string;
 }
 
+export interface SupportTicketSummary {
+  ticketNumber: string;
+  category: string;
+  subject: string;
+  message: string;
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | string;
+  attachmentName?: string | null;
+  createdAt: string;
+}
+
 export async function createSupportTicket(payload: SupportTicketPayload): Promise<SupportTicketResponse> {
   const formData = new FormData();
   formData.append('category', payload.category);
@@ -24,4 +34,9 @@ export async function createSupportTicket(payload: SupportTicketPayload): Promis
     body: formData
   });
   return response.data;
+}
+
+export async function listSupportTickets(): Promise<SupportTicketSummary[]> {
+  const response = await apiRequest<{ data: SupportTicketSummary[] }>('/support/tickets', { method: 'GET' });
+  return response.data || [];
 }

@@ -28,4 +28,19 @@ async function createTicket(req, res) {
     }
 }
 
-module.exports = { createTicket };
+async function getMyTickets(req, res) {
+    try {
+        const result = await pool.query(
+            `SELECT ticket_number AS "ticketNumber", category, subject, message, status,
+                    attachment_name AS "attachmentName", created_at AS "createdAt"
+             FROM support_tickets WHERE user_id = $1 ORDER BY created_at DESC`,
+            [req.userKey]
+        );
+        return sendSuccess(res, 'Support tickets fetched successfully', result.rows);
+    } catch (error) {
+        console.error('Get support tickets error:', error.message);
+        return sendError(res, 'Failed to fetch support tickets', error, 500);
+    }
+}
+
+module.exports = { createTicket, getMyTickets };

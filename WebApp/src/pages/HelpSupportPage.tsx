@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   Search,
@@ -12,7 +12,7 @@ import {
   CheckCircle2,
   Send
 } from 'lucide-react';
-import { createSupportTicket } from '../services/support.service';
+import { createSupportTicket, listSupportTickets, SupportTicketSummary } from '../services/support.service';
 
 interface HelpSupportPageProps {
   onBack: () => void;
@@ -72,6 +72,15 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
   const [ticketNumber, setTicketNumber] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [ticketSubmitted, setTicketSubmitted] = useState(false);
+  const [myTickets, setMyTickets] = useState<SupportTicketSummary[]>([]);
+  const [isLoadingTickets, setIsLoadingTickets] = useState(true);
+
+  useEffect(() => {
+    listSupportTickets()
+      .then(setMyTickets)
+      .catch((err) => console.warn('Could not load support tickets:', err))
+      .finally(() => setIsLoadingTickets(false));
+  }, []);
 
   const filteredFaqs = FAQS.filter((f) => {
     if (activeCategory !== 'all' && f.category !== activeCategory) return false;
@@ -90,6 +99,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     try {
       const response = await createSupportTicket({ category: ticketCategory, subject: ticketSubject, message: ticketMessage, attachment: ticketAttachment });
       setTicketNumber(response.ticketNumber);
+      setMyTickets((previous) => [{ ticketNumber: response.ticketNumber, category: ticketCategory, subject: ticketSubject.trim(), message: ticketMessage.trim(), status: 'OPEN', attachmentName: ticketAttachment?.name, createdAt: response.createdAt }, ...previous]);
       setIsSubmitting(false);
       setTicketSubmitted(true);
       setTicketSubject('');
@@ -291,6 +301,39 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="clean-section-card" style={{ padding: '16px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', color: 'var(--text-primary)', margin: 0 }}>My Support Tickets</h2>
+                <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>Track every request raised from this account.</p>
+              </div>
+              <FileText size={16} color="var(--accent-olive)" />
+            </div>
+            {isLoadingTickets ? (
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.78rem' }}>Loading your tickets...</p>
+            ) : myTickets.length === 0 ? (
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.78rem' }}>No support tickets raised yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {myTickets.map((ticket) => (
+                  <div key={ticket.ticketNumber} style={{ padding: '11px 12px', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', background: 'var(--bg-surface-warm)' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                          <strong style={{ color: 'var(--accent-olive)', fontSize: '0.72rem' }}>{ticket.ticketNumber}</strong>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>{new Date(ticket.createdAt).toLocaleDateString('en-IN')}</span>
+                        </div>
+                        <h3 style={{ margin: '4px 0 2px', color: 'var(--text-primary)', fontSize: '0.84rem' }}>{ticket.subject}</h3>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>{ticket.category}{ticket.attachmentName ? ` · ${ticket.attachmentName}` : ''}</span>
+                      </div>
+                      <span style={{ flexShrink: 0, padding: '4px 8px', borderRadius: '999px', background: ticket.status === 'RESOLVED' || ticket.status === 'CLOSED' ? '#dcfce7' : ticket.status === 'IN_PROGRESS' ? '#fef3c7' : '#e8ec91', color: 'var(--accent-olive)', fontSize: '0.64rem', fontWeight: 800, textTransform: 'uppercase' }}>{ticket.status.replace('_', ' ')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Card 2: Submit Support Ticket Form */}

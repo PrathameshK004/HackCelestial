@@ -14,5 +14,6 @@ const upload = multer({
 });
 
 router.post('/tickets', verifyToken, upload.single('attachment'), supportController.createTicket);
+router.get('/tickets', verifyToken, supportController.getMyTickets);
 
 module.exports = router;

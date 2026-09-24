@@ -301,12 +301,16 @@ const initializeDatabase = async () => {
             category VARCHAR(80) NOT NULL DEFAULT 'other',
             subject VARCHAR(255) NOT NULL,
             message TEXT NOT NULL,
+            status VARCHAR(32) NOT NULL DEFAULT 'OPEN',
             attachment_name VARCHAR(255),
             attachment_type VARCHAR(100),
             attachment_size INTEGER,
             attachment_data BYTEA,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+    `);
+    await pool.query(`
+        ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'OPEN';
     `);
 
     // Data Migration: Clean up legacy member status inconsistencies where invited members were erroneously set to ACCEPTED
