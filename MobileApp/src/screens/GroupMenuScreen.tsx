@@ -223,65 +223,53 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   return (
     <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
-      {/* Top Navigation Bar */}
-      <View style={styles.navBar}>
-        <TouchableOpacity
-          onPress={handleBack}
-          style={styles.backBtn}
-          activeOpacity={0.7}
-          accessibilityLabel="Back"
-        >
-          <ArrowLeft size={20} color={colors.slate800} />
-        </TouchableOpacity>
-
-        <View style={styles.titleWrap}>
-          <Text style={styles.tripTitle} numberOfLines={1}>
-            {trip?.name || 'Trip Ledger'}
-          </Text>
-          <Text style={styles.tripSubtitle}>
-            {trip?.destination} • {confirmedMembers.length}/{members.length} Confirmed
-          </Text>
-        </View>
-
-        <View style={styles.navActions}>
+      {/* Top Header Section (Full Width, Merged with Balance & Tabular Menu) */}
+      <View style={styles.headerSection}>
+        {/* Row 1: Nav Bar */}
+        <View style={styles.navBar}>
           <TouchableOpacity
-            style={styles.actionIconBtn}
-            onPress={() => handleRefresh()}
+            onPress={handleBack}
+            style={styles.backBtn}
             activeOpacity={0.7}
+            accessibilityLabel="Back"
           >
-            {isSyncing || refreshing ? (
-              <ActivityIndicator size="small" color={colors.primary600} />
-            ) : (
-              <RefreshCw size={16} color={colors.slate600} />
-            )}
+            <ArrowLeft size={20} color={colors.slate800} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionIconBtn}
-            onPress={() => setIsMembersModalOpen(true)}
-            activeOpacity={0.7}
-          >
-            <Users size={16} color={colors.slate700} />
-          </TouchableOpacity>
+          <View style={styles.titleWrap}>
+            <Text style={styles.tripTitle} numberOfLines={1}>
+              {trip?.name || 'Trip Ledger'}
+            </Text>
+            <Text style={styles.tripSubtitle}>
+              {trip?.destination} • {confirmedMembers.length}/{members.length} Confirmed
+            </Text>
+          </View>
+
+          <View style={styles.navActions}>
+            <TouchableOpacity
+              style={styles.actionIconBtn}
+              onPress={() => handleRefresh()}
+              activeOpacity={0.7}
+            >
+              {isSyncing || refreshing ? (
+                <ActivityIndicator size="small" color={colors.primary600} />
+              ) : (
+                <RefreshCw size={16} color={colors.slate600} />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionIconBtn}
+              onPress={() => setIsMembersModalOpen(true)}
+              activeOpacity={0.7}
+            >
+              <Users size={16} color={colors.slate700} />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      {/* Main Content Area */}
-      <ScrollView
-        style={styles.scrollBody}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={[colors.primary600]}
-            tintColor={colors.primary600}
-          />
-        }
-      >
-
-        {/* Personal Balance Callout Card */}
-        <View style={styles.balanceCalloutCard}>
+        {/* Row 2: Net Balance Section (Full Width, Seamless Header Part) */}
+        <View style={styles.balanceSection}>
           <View style={styles.balanceTextCol}>
             <Text style={styles.balanceLabel}>Your Net Balance</Text>
             <Text
@@ -320,52 +308,67 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
           </TouchableOpacity>
         </View>
 
-        {/* 4-Tab Segmented Control */}
-        <View style={styles.tabBar}>
+        {/* Row 3: Standard Underlined Tabular Menu (Full Width, Seamless Header Part) */}
+        <View style={styles.underlinedTabBar}>
           <TouchableOpacity
-            style={[styles.tabItem, activeTab === 'expenses' && styles.tabItemActive]}
+            style={[styles.underlinedTabItem, activeTab === 'expenses' && styles.underlinedTabItemActive]}
             onPress={() => setActiveTab('expenses')}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <Receipt size={14} color={activeTab === 'expenses' ? colors.primary600 : colors.slate500} />
-            <Text style={[styles.tabItemText, activeTab === 'expenses' && styles.tabItemTextActive]}>
+            <Text style={[styles.underlinedTabText, activeTab === 'expenses' && styles.underlinedTabTextActive]}>
               Expenses ({expenses.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabItem, activeTab === 'debts' && styles.tabItemActive]}
+            style={[styles.underlinedTabItem, activeTab === 'debts' && styles.underlinedTabItemActive]}
             onPress={() => setActiveTab('debts')}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <IndianRupee size={14} color={activeTab === 'debts' ? colors.primary600 : colors.slate500} />
-            <Text style={[styles.tabItemText, activeTab === 'debts' && styles.tabItemTextActive]}>
+            <Text style={[styles.underlinedTabText, activeTab === 'debts' && styles.underlinedTabTextActive]}>
               Debts ({optimalResult?.transfers.length || 0})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabItem, activeTab === 'balances' && styles.tabItemActive]}
+            style={[styles.underlinedTabItem, activeTab === 'balances' && styles.underlinedTabItemActive]}
             onPress={() => setActiveTab('balances')}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <Scale size={14} color={activeTab === 'balances' ? colors.primary600 : colors.slate500} />
-            <Text style={[styles.tabItemText, activeTab === 'balances' && styles.tabItemTextActive]}>
+            <Text style={[styles.underlinedTabText, activeTab === 'balances' && styles.underlinedTabTextActive]}>
               Balances
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabItem, activeTab === 'transactions' && styles.tabItemActive]}
+            style={[styles.underlinedTabItem, activeTab === 'transactions' && styles.underlinedTabItemActive]}
             onPress={() => setActiveTab('transactions')}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <History size={14} color={activeTab === 'transactions' ? colors.primary600 : colors.slate500} />
-            <Text style={[styles.tabItemText, activeTab === 'transactions' && styles.tabItemTextActive]}>
+            <Text style={[styles.underlinedTabText, activeTab === 'transactions' && styles.underlinedTabTextActive]}>
               Audit
             </Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Main Content Area */}
+      <ScrollView
+        style={styles.scrollBody}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary600]}
+            tintColor={colors.primary600}
+          />
+        }
+      >
 
         {/* TAB 1: EXPENSES */}
         {activeTab === 'expenses' && (
@@ -377,7 +380,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                 <Receipt size={40} color={colors.slate300} />
                 <Text style={styles.emptyTitle}>No expenses recorded yet</Text>
                 <Text style={styles.emptySubtitle}>
-                  Add the first expense below. Balances update instantly in local SQLite.
+                  Add the first expense below to start tracking your group budget.
                 </Text>
               </View>
             ) : (
@@ -429,17 +432,6 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                         <View style={styles.drawerMetaRow}>
                           <Text style={styles.drawerLabel}>Payment Method:</Text>
                           <Text style={styles.drawerValue}>{exp.paymentMethod || 'CASH'}</Text>
-                        </View>
-                        <View style={styles.drawerMetaRow}>
-                          <Text style={styles.drawerLabel}>Sync Status:</Text>
-                          <Text
-                            style={[
-                              styles.drawerValue,
-                              exp.syncStatus === 'PENDING' && { color: colors.accentAmber },
-                            ]}
-                          >
-                            {exp.syncStatus}
-                          </Text>
                         </View>
 
                         <TouchableOpacity
@@ -665,16 +657,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bgApp,
   },
-  navBar: {
-    height: 56,
+  headerSection: {
     backgroundColor: colors.bgCard,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSubtle,
+    ...shadows.sm,
+  },
+  navBar: {
+    height: 54,
+    backgroundColor: colors.bgCard,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     gap: 10,
-    ...shadows.sm,
   },
   backBtn: {
     width: 36,
@@ -714,17 +709,13 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
   },
-  balanceCalloutCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radii.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+
+  balanceSection: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    ...shadows.md,
+    padding: 16,
+    paddingBottom: 14,
   },
   balanceTextCol: {
     flex: 1,
@@ -763,33 +754,32 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '800',
   },
-  tabBar: {
+  underlinedTabBar: {
     flexDirection: 'row',
-    backgroundColor: colors.slate100,
-    borderRadius: radii.md,
-    padding: 3,
-    marginBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    backgroundColor: colors.bgCard,
   },
-  tabItem: {
+  underlinedTabItem: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: radii.sm,
+    paddingVertical: 12,
+    borderBottomWidth: 2.5,
+    borderBottomColor: 'transparent',
     gap: 5,
   },
-  tabItemActive: {
-    backgroundColor: '#ffffff',
-    ...shadows.sm,
+  underlinedTabItemActive: {
+    borderBottomColor: colors.primary600,
   },
-  tabItemText: {
-    fontSize: 11,
+  underlinedTabText: {
+    fontSize: 11.5,
     fontWeight: '600',
     color: colors.slate500,
   },
-  tabItemTextActive: {
-    color: colors.slate900,
+  underlinedTabTextActive: {
+    color: colors.primary600,
     fontWeight: '700',
   },
   expenseCard: {
