@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Compass,
@@ -66,6 +66,7 @@ import { IllustrationAvatar } from '../components/IllustrationAvatar';
 interface HomePageProps {
   onCreateGroup: () => void;
   initialSelectedGroupId?: string;
+  onClearInitialSelectedGroup?: () => void;
 }
 
 type DockTab = 'explore' | 'trips' | 'expenses' | 'profile' | 'saved';
@@ -288,7 +289,7 @@ const CURATED_STAYS: CuratedStay[] = [
   }
 ];
 
-export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelectedGroupId }) => {
+export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelectedGroupId, onClearInitialSelectedGroup }) => {
   const { user, logout } = useAuth();
 
   // Navigation States
@@ -344,6 +345,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   // Git-style Inbox Notifications State
   const [isInboxOpen, setIsInboxOpen] = useState(false);
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
+  const notificationRequestVersion = useRef(0);
+  const isClearingNotifications = useRef(false);
 
   const [pendingInvitations, setPendingInvitations] = useState<PendingInvitation[]>([]);
   const [isProcessingInviteCode, setIsProcessingInviteCode] = useState<string | null>(null);
@@ -429,9 +432,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   };
 
   const loadNotifications = async () => {
+    const requestVersion = notificationRequestVersion.current;
     try {
       const items = await fetchUserNotifications();
-      if (items && Array.isArray(items)) {
+      if (
+        items &&
+        Array.isArray(items) &&
+        requestVersion === notificationRequestVersion.current &&
+        !isClearingNotifications.current
+      ) {
         const mapped: InboxNotification[] = items.map(i => ({
           id: i.id,
           title: i.title,
@@ -453,9 +462,14 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     requestWebPushPermission().catch(() => {});
   }, []);
 
-  const handleMarkAllNotificationsRead = () => {
+  const handleMarkAllNotificationsRead = async () => {
+    const previousNotifications = notifications;
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    apiMarkRead(undefined, true).catch(() => {});
+    const success = await apiMarkRead(undefined, true);
+    if (!success) {
+      setNotifications(previousNotifications);
+      alert('Could not mark notifications as read. Please try again.');
+    }
   };
 
   const handleSelectNotification = (item: InboxNotification) => {
@@ -469,9 +483,19 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     }
   };
 
-  const handleClearAllNotifications = () => {
+  const handleClearAllNotifications = async () => {
+    if (notifications.length === 0) return;
+
+    const previousNotifications = notifications;
+    notificationRequestVersion.current += 1;
+    isClearingNotifications.current = true;
     setNotifications([]);
-    apiClearAll().catch(() => {});
+    const success = await apiClearAll();
+    isClearingNotifications.current = false;
+    if (!success) {
+      setNotifications(previousNotifications);
+      alert('Could not clear notifications. Please try again.');
+    }
   };
 
   const profileMenuRef = React.useRef<HTMLDivElement>(null);
@@ -852,6 +876,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
         group={selectedGroup}
         settlement={settlement}
         onBack={() => {
+          onClearInitialSelectedGroup?.();
           setSelectedGroup(null);
           setSettlement(null);
         }}

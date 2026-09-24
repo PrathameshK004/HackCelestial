@@ -120,7 +120,7 @@ export const GitInboxDrawer: React.FC<GitInboxDrawerProps> = ({
                   aria-label="Mark notifications as read"
                 >
                   <CheckCheck size={12} />
-                  <span>Mark read</span>
+                  <span>Mark all read</span>
                 </button>
               )}
 
@@ -506,7 +506,7 @@ export const GitInboxDrawer: React.FC<GitInboxDrawerProps> = ({
               onClick={onClearAll}
             >
               <Trash2 size={12} />
-              <span>Clear activity history</span>
+              <span>Clear All</span>
             </button>
           </div>
         )}

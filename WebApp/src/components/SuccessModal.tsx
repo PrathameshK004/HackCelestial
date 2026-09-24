@@ -37,13 +37,14 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({
 
   if (!isOpen) return null;
 
-  const LIVE_APP_DOMAIN = 'https://triptual-x.vercel.app';
+  const LIVE_APP_DOMAIN = 'https://triptual-web.vercel.app';
   const liveOrigin = typeof window !== 'undefined' && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')
     ? window.location.origin
     : LIVE_APP_DOMAIN;
 
   const rawInviteUrl = createdGroup?.inviteUrl || `${liveOrigin}/join/${createdGroup?.inviteCode || 'TRIP-DEMO'}`;
   const inviteUrl = rawInviteUrl
+    .replace(/^https?:\/\/triptual-x\.vercel\.app/i, LIVE_APP_DOMAIN)
     .replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, LIVE_APP_DOMAIN)
     .replace(/^capacitor:\/\/localhost/i, LIVE_APP_DOMAIN);
 

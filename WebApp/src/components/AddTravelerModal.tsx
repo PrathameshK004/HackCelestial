@@ -202,7 +202,7 @@ export const AddTravelerModal: React.FC<AddTravelerModalProps> = ({
                         <span><strong>Not registered on platform yet.</strong></span>
                         <div style={{ fontSize: '0.8rem', color: '#92400e', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontSize: '0.95rem' }} role="img" aria-label="email">📧</span>
-                          <span>Official invitation link will be sent to join & approve.</span>
+                          <span>No email invitation will be sent. Ask this traveler to create and verify an account first.</span>
                         </div>
                       </div>
                     </div>

@@ -95,6 +95,7 @@ const AppContent: React.FC = () => {
       <HomePage 
         onCreateGroup={() => setActiveView('create-group')} 
         initialSelectedGroupId={selectedGroupId}
+        onClearInitialSelectedGroup={() => setSelectedGroupId(undefined)}
       />
     );
   }

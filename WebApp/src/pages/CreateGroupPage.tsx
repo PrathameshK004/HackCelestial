@@ -229,6 +229,8 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
   // Step navigation actions
   const handleNextStep = () => {
     const newErrors: Record<string, string> = {};
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     if (currentStep === 1) {
       if (!formData.groupName.trim()) {
@@ -239,10 +241,14 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
       }
       if (!formData.startDate) {
         newErrors.startDate = 'Start date is required';
+      } else if (new Date(`${formData.startDate}T00:00:00`) < today) {
+        newErrors.startDate = 'Start date cannot be in the past';
       }
       if (!formData.endDate) {
         newErrors.endDate = 'End date is required';
-      } else if (formData.startDate && new Date(formData.endDate) < new Date(formData.startDate)) {
+      } else if (new Date(`${formData.endDate}T00:00:00`) < today) {
+        newErrors.endDate = 'End date cannot be in the past';
+      } else if (formData.startDate && new Date(`${formData.endDate}T00:00:00`) < new Date(`${formData.startDate}T00:00:00`)) {
         newErrors.endDate = 'End date cannot be earlier than start date';
       }
 
@@ -291,6 +297,20 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
 
   const submitWithData = async (dataToSubmit: TripFormData) => {
     if (isSubmitting) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = new Date(`${dataToSubmit.startDate}T00:00:00`);
+    const endDate = new Date(`${dataToSubmit.endDate}T00:00:00`);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || startDate < today || endDate < today || endDate < startDate) {
+      setCurrentStep(1);
+      setErrors({
+        ...(isNaN(startDate.getTime()) || startDate < today ? { startDate: 'Start date must be today or later' } : {}),
+        ...(isNaN(endDate.getTime()) || endDate < today ? { endDate: 'End date must be today or later' } : {}),
+        ...(endDate >= today && endDate >= startDate ? {} : { endDate: 'End date cannot be earlier than start date' })
+      });
+      addToast('Please choose valid current or future trip dates', 'error');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const response = await groupService.createGroup(dataToSubmit);

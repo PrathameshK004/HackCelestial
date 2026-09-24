@@ -44,12 +44,14 @@ export const groupService = {
         currency: formData.currency,
         expenseSplit: formData.expenseSplit,
         description: formData.description?.trim() || '',
-        travelers: formData.travelers.map(t => ({
-          name: t.name.trim(),
-          email: t.email.trim().toLowerCase(),
-          role: t.role,
-          avatarBg: t.avatarBg,
-        })),
+        travelers: formData.travelers
+          .filter(t => t.role === 'Organizer' || t.isRegistered !== false)
+          .map(t => ({
+            name: t.name.trim(),
+            email: t.email.trim().toLowerCase(),
+            role: t.role,
+            avatarBg: t.avatarBg,
+          })),
         payment: formData.payment || null,
       }),
     });
