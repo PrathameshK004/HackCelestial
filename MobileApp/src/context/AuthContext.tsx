@@ -31,8 +31,11 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
 
-  /** Standard login with email + password */
-  login: (payload: LoginPayload) => Promise<{ success: boolean; error?: string }>;
+  /** Standard login with email + password (supports 2FA challenge) */
+  login: (payload: LoginPayload) => Promise<{ success: boolean; twoFactorRequired?: boolean; emailId?: string; error?: string }>;
+
+  /** Verify 6-digit 2FA OTP code on login challenge */
+  verifyTwoFactorLogin: (payload: { emailId: string; code: string }) => Promise<{ success: boolean; error?: string }>;
 
   /**
    * Step 1 of signup: Create pending user + send OTP email.
@@ -99,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   travelStyle: freshUser.travelStyle || savedUser.travelStyle,
                   currency: freshUser.currency || savedUser.currency,
                   dob: freshUser.dob !== undefined ? freshUser.dob : (savedUser.dob || null),
+                  twoFactorEnabled: freshUser.twoFactorEnabled !== undefined ? Boolean(freshUser.twoFactorEnabled) : Boolean(savedUser.twoFactorEnabled),
                 };
                 setUser(merged);
                 storage.setAuthUser(merged);
@@ -141,6 +145,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       phone: data.phone || null,
       upiId: data.upiId || null,
       avatar: data.avatar || data.user?.avatar || null,
+      travelStyle: data.travelStyle || 'Boutique',
+      currency: data.currency || 'INR',
+      dob: data.dob || null,
+      twoFactorEnabled: data.twoFactorEnabled !== undefined ? Boolean(data.twoFactorEnabled) : Boolean(data.user?.twoFactorEnabled),
       avatarBg: '#059669',
     };
 
@@ -152,9 +160,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ── Login ────────────────────────────────────────────────────────────────────
-  const login = async (payload: LoginPayload): Promise<{ success: boolean; error?: string }> => {
+  const login = async (
+    payload: LoginPayload
+  ): Promise<{ success: boolean; twoFactorRequired?: boolean; emailId?: string; error?: string }> => {
     try {
       const res = await authService.login(payload);
+      if (res.data?.twoFactorRequired) {
+        return {
+          success: false,
+          twoFactorRequired: true,
+          emailId: res.data.emailId || payload.emailId,
+        };
+      }
       if (res.data?.accessToken) {
         await persistSession(res.data, payload.emailId.split('@')[0], payload.emailId);
         return { success: true };
@@ -162,6 +179,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: res.message || 'Login failed. Please check your credentials.' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Unable to connect to server.' };
+    }
+  };
+
+  // ── Verify 2FA OTP Code on Login ─────────────────────────────────────────────
+  const verifyTwoFactorLogin = async (payload: {
+    emailId: string;
+    code: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await authService.verifyTwoFactorLogin(payload);
+      if (res.data?.accessToken) {
+        await persistSession(res.data, payload.emailId.split('@')[0], payload.emailId);
+        return { success: true };
+      }
+      return { success: false, error: res.message || 'Invalid 2FA verification code.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Verification error. Please try again.' };
     }
   };
 
@@ -273,6 +307,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           travelStyle: freshUser.travelStyle || user?.travelStyle,
           currency: freshUser.currency || user?.currency,
           dob: freshUser.dob !== undefined ? freshUser.dob : (user?.dob || null),
+          twoFactorEnabled: freshUser.twoFactorEnabled !== undefined ? Boolean(freshUser.twoFactorEnabled) : Boolean(user?.twoFactorEnabled),
         };
         setUser(merged);
         await storage.setAuthUser(merged);
@@ -308,6 +343,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           travelStyle: serverUser.travelStyle || data.travelStyle || user.travelStyle,
           currency: serverUser.currency || data.currency || user.currency,
           dob: serverUser.dob !== undefined ? serverUser.dob : (data.dob !== undefined ? data.dob : user.dob),
+          twoFactorEnabled: data.twoFactorEnabled !== undefined ? Boolean(data.twoFactorEnabled) : (serverUser.twoFactorEnabled !== undefined ? Boolean(serverUser.twoFactorEnabled) : user.twoFactorEnabled),
         };
         setUser(merged);
         await storage.setAuthUser(merged);
@@ -328,6 +364,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: Boolean(token),
         isLoading,
         login,
+        verifyTwoFactorLogin,
         registerTemp,
         verifyAndRegister,
         resendOtp,

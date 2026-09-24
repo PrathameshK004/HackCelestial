@@ -18,6 +18,7 @@ const toUser = (row) => row && new User({
     travelStyle: row.travel_style || 'Boutique',
     currency: row.currency || 'INR',
     dob: row.dob || null,
+    twoFactorEnabled: Boolean(row.two_factor_enabled),
     createdAt: row.created_at,
     updatedAt: row.updated_at
 });

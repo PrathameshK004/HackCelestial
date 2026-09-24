@@ -142,6 +142,33 @@ export const authService = {
     });
   },
 
+  async toggleTwoFactor(enable?: boolean): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/users/2fa/toggle', {
+      method: 'POST',
+      body: JSON.stringify({ enable }),
+    });
+  },
+
+  async verifyTwoFactorOtp(code: string): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/users/2fa/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
+  async verifyTwoFactorLogin(payload: { emailId: string; code: string }): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/users/2fa/verify-login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async revokeAllSessions(): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/users/revoke-sessions', {
+      method: 'POST',
+    });
+  },
+
   async loginWithGoogle(credentialOrPayload: string | { credential?: string; accessToken?: string }): Promise<AuthResponse> {
     const body = typeof credentialOrPayload === 'string'
       ? { credential: credentialOrPayload }

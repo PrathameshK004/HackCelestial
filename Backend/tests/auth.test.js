@@ -1,12 +1,22 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { generateOTP, isOTPExpired, verifyOTP, hashOTP, getOTPExpiry } = require('../utils/otp.util');
+const { generateOTP, generate2FAOTP, isOTPExpired, verifyOTP, hashOTP, getOTPExpiry } = require('../utils/otp.util');
 const { isValidEmail, isValidPassword, isValidUsername, isValidUserId } = require('../utils/verify.util');
 
 test('OTP Generation should produce valid 4-digit code', () => {
     const otp = generateOTP();
     assert.strictEqual(typeof otp, 'number', 'OTP must be a number');
     assert.ok(otp >= 1000 && otp <= 9999, 'OTP must be a 4-digit number between 1000 and 9999');
+});
+
+test('2FA OTP Generation should produce valid 6-digit code', () => {
+    const otp = generate2FAOTP();
+    assert.strictEqual(typeof otp, 'number', '2FA OTP must be a number');
+    assert.ok(otp >= 100000 && otp <= 999999, '2FA OTP must be a 6-digit number between 100000 and 999999');
+
+    const otpFromParam = generateOTP(6);
+    assert.strictEqual(typeof otpFromParam, 'number', '6-digit OTP must be a number');
+    assert.ok(otpFromParam >= 100000 && otpFromParam <= 999999, 'generateOTP(6) must be a 6-digit number');
 });
 
 test('OTP Expiry helper should correctly check timestamps', () => {

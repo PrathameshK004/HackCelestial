@@ -76,6 +76,8 @@ app.use((error, req, res, next) => {
 
 const http = require('http');
 const { initSocketServer } = require('./utils/socket.util');
+const { initKafkaProducer, disconnectKafkaProducer } = require('./utils/kafkaProducer.util');
+const { startKafkaConsumer, stopKafkaConsumer } = require('./utils/kafkaConsumer.util');
 
 // Start Server
 const PORT = process.env.PORT || 4000;
@@ -87,7 +89,13 @@ initSocketServer(server);
 initializeDatabase()
   .then(() => {
     console.log('PostgreSQL connected and users table is ready');
-    server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+    server.listen(PORT, async () => {
+      console.log(`Server is running on port ${PORT}`);
+
+      // Asynchronously initialize Kafka Event-Driven Notification Services
+      initKafkaProducer().catch((e) => console.warn('[Kafka] Producer startup note:', e.message));
+      startKafkaConsumer().catch((e) => console.warn('[Kafka] Consumer startup note:', e.message));
+    });
   })
   .catch((error) => {
     console.error('PostgreSQL initialization error:', error.message);
@@ -106,6 +114,8 @@ const shutdown = async (signal) => {
     server.close();
   }
 
+  await disconnectKafkaProducer();
+  await stopKafkaConsumer();
   await pool.end();
   process.exit(0);
 };

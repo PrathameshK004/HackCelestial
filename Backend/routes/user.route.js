@@ -36,9 +36,13 @@ router.post('/forgot-password', usersController.forgotPassword);
 router.post('/verify-reset-otp', usersController.verifyResetOtp);
 router.post('/reset-password', usersController.resetPassword);
 
-// Security: Change password (supports both POST and PUT)
+// Security: Change password & 2FA
 router.post('/change-password', verifyToken, usersController.changePassword);
 router.put('/change-password', verifyToken, usersController.changePassword);
+router.post('/2fa/toggle', verifyToken, usersController.toggleTwoFactor);
+router.post('/2fa/verify', verifyToken, usersController.verifyTwoFactorOtp);
+router.post('/2fa/verify-login', usersController.verifyTwoFactorLogin);
+router.post('/revoke-sessions', verifyToken, usersController.revokeAllSessions);
 
 // Profile management with real-time sync
 router.get('/profile', verifyToken, (req, res) => {

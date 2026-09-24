@@ -40,6 +40,7 @@ const initializeDatabase = async () => {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS travel_style VARCHAR(50) DEFAULT 'Boutique';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'INR';
         ALTER TABLE users ADD COLUMN IF NOT EXISTS dob VARCHAR(20);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT FALSE;
     `);
 
     await pool.query(`

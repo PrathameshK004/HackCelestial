@@ -16,11 +16,16 @@ export interface User {
   travelStyle?: 'Boutique' | 'Coastal' | 'Nature' | 'Urban' | 'Mountain' | string;
   currency?: string;
   dob?: string | null;
+  twoFactorEnabled?: boolean;
 }
 
 export interface AuthResponse {
+  success?: boolean;
+  error?: string;
   err?: any;
-  message: string;
+  message?: string;
+  verified?: boolean;
+  twoFactorEnabled?: boolean;
   data?: {
     accessToken?: string;
     refreshToken?: string;
@@ -32,6 +37,9 @@ export interface AuthResponse {
     expiresIn?: number;
     emailId?: string;
     otp?: string | number;
+    twoFactorEnabled?: boolean;
+    twoFactorRequired?: boolean;
+    verified?: boolean;
   };
   statusCode?: number;
 }

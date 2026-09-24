@@ -704,6 +704,17 @@ async function verifyRazorpayPayment(req, res) {
                 .digest('hex');
 
             if (expectedSignature === razorpay_signature) {
+                // Publish Event-Driven Kafka Notification for Payment Confirmation
+                const { publishNotificationEvent } = require('../utils/kafkaProducer.util');
+                publishNotificationEvent('PAYMENT_CONFIRMED', {
+                    userId: req.userKey,
+                    userEmail: req.userEmail || req.body.email,
+                    paymentId: razorpay_payment_id,
+                    orderId: razorpay_order_id,
+                    amount: req.body.amount || 0,
+                    groupName: req.body.groupName || 'Triptual Booking'
+                }).catch(e => console.warn('[Payment] Kafka event publish warning:', e.message));
+
                 return sendSuccess(res, "Razorpay payment verified successfully", {
                     verified: true,
                     paymentId: razorpay_payment_id,
@@ -715,6 +726,16 @@ async function verifyRazorpayPayment(req, res) {
 
         // 2. In Test Mode / Sandbox, permit simulation if signature is test token or order matches
         if (isTestMode) {
+            const { publishNotificationEvent } = require('../utils/kafkaProducer.util');
+            publishNotificationEvent('PAYMENT_CONFIRMED', {
+                userId: req.userKey,
+                userEmail: req.userEmail || req.body.email,
+                paymentId: razorpay_payment_id,
+                orderId: razorpay_order_id,
+                amount: req.body.amount || 0,
+                groupName: req.body.groupName || 'Triptual Booking'
+            }).catch(e => console.warn('[Payment] Kafka event publish warning:', e.message));
+
             return sendSuccess(res, "Razorpay test payment verified successfully (sandbox mode)", {
                 verified: true,
                 paymentId: razorpay_payment_id,

@@ -126,7 +126,7 @@ type SignupStep = 1 | 2;
 type ForgotStep = 1 | 2;
 
 export const AuthScreen: React.FC = () => {
-  const { login, registerTemp, verifyAndRegister, resendOtp, loginWithGoogle } = useAuth();
+  const { login, verifyTwoFactorLogin, registerTemp, verifyAndRegister, resendOtp, loginWithGoogle } = useAuth();
 
   // ── Mode ──────────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<AuthMode>('login');
@@ -203,6 +203,7 @@ export const AuthScreen: React.FC = () => {
   const switchMode = (next: AuthMode) => {
     clearMessages();
     setMode(next);
+    setIs2faLoginChallenge(false);
     // Reset sub-steps
     setSignupStep(1);
     setForgotStep(1);
@@ -213,12 +214,18 @@ export const AuthScreen: React.FC = () => {
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  LOGIN
+  //  LOGIN (with 2FA Challenge Support)
   // ══════════════════════════════════════════════════════════════════════════
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+
+  // 2FA Login Challenge State
+  const [is2faLoginChallenge, setIs2faLoginChallenge] = useState(false);
+  const [login2faEmail, setLogin2faEmail] = useState('');
+  const [login2faOtpDigits, setLogin2faOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const login2faOtpRefs = useRef<(TextInput | null)[]>([null, null, null, null, null, null]);
 
   const handleLogin = async () => {
     clearMessages();
@@ -229,6 +236,14 @@ export const AuthScreen: React.FC = () => {
     setIsLoading(true);
     try {
       const res = await login({ emailId: cleanEmail, password: loginPassword });
+      if (res.twoFactorRequired) {
+        setIs2faLoginChallenge(true);
+        setLogin2faEmail(res.emailId || cleanEmail);
+        setLogin2faOtpDigits(['', '', '', '', '', '']);
+        setSuccessMessage(`2FA Required: Enter the 6-digit verification code sent to ${res.emailId || cleanEmail}`);
+        setTimeout(() => login2faOtpRefs.current[0]?.focus(), 150);
+        return;
+      }
       if (res.success) {
         setSuccessMessage('Welcome back! Loading your workspace…');
       } else {
@@ -236,6 +251,61 @@ export const AuthScreen: React.FC = () => {
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Authentication error. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handle2faLoginOtpChange = (index: number, value: string) => {
+    const clean = value.replace(/\D/g, '');
+    if (!clean && value !== '') return;
+
+    if (clean.length > 1) {
+      const chars = clean.slice(0, 6).split('');
+      const next = ['', '', '', '', '', ''];
+      chars.forEach((c, i) => { if (i < 6) next[i] = c; });
+      setLogin2faOtpDigits(next);
+      const lastIdx = Math.min(chars.length, 5);
+      login2faOtpRefs.current[lastIdx]?.focus();
+      if (next.every((d) => d.length === 1)) {
+        setTimeout(() => submit2faLoginOtp(next.join('')), 100);
+      }
+      return;
+    }
+
+    const next = [...login2faOtpDigits];
+    next[index] = clean;
+    setLogin2faOtpDigits(next);
+    if (clean && index < 5) {
+      login2faOtpRefs.current[index + 1]?.focus();
+    }
+    if (next.every((d) => d.length === 1)) {
+      setTimeout(() => submit2faLoginOtp(next.join('')), 150);
+    }
+  };
+
+  const handle2faLoginOtpKeyDown = (index: number, key: string) => {
+    if (key === 'Backspace' && !login2faOtpDigits[index] && index > 0) {
+      login2faOtpRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const submit2faLoginOtp = async (code: string) => {
+    if (isLoading || code.length < 6) return;
+    clearMessages();
+    setIsLoading(true);
+    try {
+      const res = await verifyTwoFactorLogin({ emailId: login2faEmail, code });
+      if (res.success) {
+        setSuccessMessage('✓ 2FA Verified! Logging you in…');
+      } else {
+        setErrorMessage(res.error || 'Incorrect verification code. Please try again.');
+        setLogin2faOtpDigits(['', '', '', '', '', '']);
+        setTimeout(() => login2faOtpRefs.current[0]?.focus(), 100);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || '2FA verification error. Please try again.');
+      setLogin2faOtpDigits(['', '', '', '', '', '']);
     } finally {
       setIsLoading(false);
     }
@@ -498,12 +568,14 @@ export const AuthScreen: React.FC = () => {
   // ══════════════════════════════════════════════════════════════════════════
 
   const getHeaderTitle = () => {
+    if (is2faLoginChallenge) return '2FA Verification';
     if (mode === 'forgot') return forgotStep === 1 ? 'Reset Password' : 'Verify & Reset';
     if (mode === 'signup') return signupStep === 1 ? 'Sign Up' : 'Verify Email';
     return 'Log In';
   };
 
   const getHeaderSubtitle = () => {
+    if (is2faLoginChallenge) return `Enter the 6-digit code sent to ${login2faEmail}`;
     if (mode === 'forgot') {
       return forgotStep === 1
         ? 'Enter your registered email to receive a reset code.'
@@ -520,6 +592,11 @@ export const AuthScreen: React.FC = () => {
   const lastAuthBackPressRef = useRef<number>(0);
 
   const handleBackPress = () => {
+    if (is2faLoginChallenge) {
+      setIs2faLoginChallenge(false);
+      clearMessages();
+      return true;
+    }
     if (mode === 'signup' && signupStep === 2) {
       setSignupStep(1);
       clearMessages();
@@ -555,10 +632,10 @@ export const AuthScreen: React.FC = () => {
 
     const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
     return () => sub.remove();
-  }, [mode, signupStep, forgotStep]);
+  }, [mode, signupStep, forgotStep, is2faLoginChallenge]);
 
   const getRolePillLabel = () => {
-    if (mode === 'forgot') return null;
+    if (mode === 'forgot' || is2faLoginChallenge) return null;
     return mode === 'login' ? 'Sign Up' : 'Log In';
   };
 
@@ -632,8 +709,70 @@ export const AuthScreen: React.FC = () => {
             </View>
           )}
 
-          {/* ── LOGIN ── */}
-          {mode === 'login' && (
+          {/* ── LOGIN: 2FA Challenge View ── */}
+          {mode === 'login' && is2faLoginChallenge && (
+            <>
+              <View style={styles.otpBadge}>
+                <Mail size={14} color="#2563EB" />
+                <Text style={styles.otpBadgeEmail} numberOfLines={1}>{login2faEmail}</Text>
+                <TouchableOpacity onPress={() => { setIs2faLoginChallenge(false); clearMessages(); }}>
+                  <Text style={styles.otpBadgeEdit}>Back</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* 6-digit OTP Grid */}
+              <View style={[styles.otpGrid, { gap: 8 }]}>
+                {login2faOtpDigits.map((digit, idx) => (
+                  <TextInput
+                    key={idx}
+                    ref={(el) => { login2faOtpRefs.current[idx] = el; }}
+                    style={[
+                      styles.otpBox,
+                      { width: (W - 44 - 40) / 6, height: 50, fontSize: 18 },
+                      digit ? styles.otpBoxFilled : null,
+                    ]}
+                    value={digit}
+                    onChangeText={(v) => handle2faLoginOtpChange(idx, v)}
+                    onKeyPress={({ nativeEvent }) => handle2faLoginOtpKeyDown(idx, nativeEvent.key)}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    selectTextOnFocus
+                    editable={!isLoading}
+                    textAlign="center"
+                    autoFocus={idx === 0}
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.darkPillBtn,
+                  (isLoading || login2faOtpDigits.join('').length < 6) && styles.btnDisabled,
+                ]}
+                onPress={() => submit2faLoginOtp(login2faOtpDigits.join(''))}
+                disabled={isLoading || login2faOtpDigits.join('').length < 6}
+                activeOpacity={0.85}
+              >
+                {isLoading ? (
+                  <View style={styles.btnInner}>
+                    <SpinningLoader />
+                    <Text style={styles.darkPillBtnText}>Verifying…</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.darkPillBtnText}>Verify & Log In</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={[styles.bottomSwitchRow, { marginTop: 16 }]}>
+                <TouchableOpacity onPress={() => { setIs2faLoginChallenge(false); clearMessages(); }} activeOpacity={0.7}>
+                  <Text style={styles.bottomSwitchLink}>Cancel & Return to Login</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+
+          {/* ── LOGIN: Normal Credentials View ── */}
+          {mode === 'login' && !is2faLoginChallenge && (
             <>
               <TextInput
                 style={styles.pillInput}

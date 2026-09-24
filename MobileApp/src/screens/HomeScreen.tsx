@@ -19,6 +19,9 @@ import { JoinGroupModal } from '../components/home/JoinGroupModal';
 import { AddExpenseModal } from '../components/group/AddExpenseModal';
 import { NotificationsScreen } from './NotificationsScreen';
 import { InvitationScreen } from './InvitationScreen';
+import { AboutScreen } from './AboutScreen';
+import { HelpSupportScreen } from './HelpSupportScreen';
+import { SecurityScreen } from './SecurityScreen';
 import { useTrips } from '../context/TripContext';
 import { groupService } from '../api/group.service';
 import { notificationService as apiNotificationService } from '../api/notification.service';
@@ -40,7 +43,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
   
   // Full-page screen navigation state (entire new page, no popups)
-  const [screenMode, setScreenMode] = useState<'main' | 'notifications' | 'invitation'>('main');
+  const [screenMode, setScreenMode] = useState<'main' | 'notifications' | 'invitation' | 'about' | 'help' | 'security'>('main');
   const [activeInviteCode, setActiveInviteCode] = useState<string | null>(null);
   const [inviteOrigin, setInviteOrigin] = useState<'notifications' | 'main'>('main');
 
@@ -335,8 +338,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
         return true;
       }
 
-      // 2. Return from full-page Notifications Screen to Main Hub
-      if (screenMode === 'notifications') {
+      // 2. Return from full-page Notifications / About / Help / Security Screen to Main Hub
+      if (screenMode === 'notifications' || screenMode === 'about' || screenMode === 'help' || screenMode === 'security') {
         setScreenMode('main');
         return true;
       }
@@ -459,6 +462,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
     );
   }
 
+  // ── Full-Page View 3: About Triptual Screen ──
+  if (screenMode === 'about') {
+    return (
+      <AboutScreen
+        onBack={() => setScreenMode('main')}
+      />
+    );
+  }
+
+  // ── Full-Page View 4: Help & Support Screen ──
+  if (screenMode === 'help') {
+    return (
+      <HelpSupportScreen
+        onBack={() => setScreenMode('main')}
+      />
+    );
+  }
+
+  // ── Full-Page View 5: Security & Password Settings Screen ──
+  if (screenMode === 'security') {
+    return (
+      <SecurityScreen
+        onBack={() => setScreenMode('main')}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
@@ -555,6 +585,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
               setActiveTab('payments');
             } else if (key === 'saved') {
               setActiveTab('trips');
+            } else if (key === 'about') {
+              setScreenMode('about');
+            } else if (key === 'help') {
+              setScreenMode('help');
+            } else if (key === 'security') {
+              setScreenMode('security');
             }
           }}
         />

@@ -5,7 +5,23 @@
  */
 
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { storage } from '../database/storage';
+
+declare const process: any;
+
+export const getLocalDevUrl = (): string => {
+  try {
+    const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest2?.extra?.expoGo?.developer?.projectRoot;
+    if (hostUri && typeof hostUri === 'string') {
+      const ip = hostUri.split(':')[0];
+      if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
+        return `http://${ip}:4000/api`;
+      }
+    }
+  } catch {}
+  return Platform.OS === 'android' ? 'http://10.0.2.2:4000/api' : 'http://localhost:4000/api';
+};
 
 export const getApiBase = (): string => {
   const envUrl =
@@ -14,15 +30,27 @@ export const getApiBase = (): string => {
     process.env.VITE_API_URL;
 
   if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
-    return envUrl.trim().replace(/\/+$/, '');
+    const trimmed = envUrl.trim().replace(/\/+$/, '');
+    if (__DEV__ && (trimmed === 'https://triptual-api.onrender.com/api' || trimmed.includes('localhost') || trimmed.includes('127.0.0.1'))) {
+      return getLocalDevUrl();
+    }
+    return trimmed;
+  }
+
+  if (__DEV__) {
+    return getLocalDevUrl();
   }
 
   return 'https://triptual-api.onrender.com/api';
 };
 
 export const API_BASE = getApiBase();
-export const FALLBACK_API_BASE = API_BASE;
+export const FALLBACK_API_BASE = API_BASE.includes('onrender.com')
+  ? getLocalDevUrl()
+  : 'https://triptual-api.onrender.com/api';
+
 export const SERVER_BASE = API_BASE.replace(/\/api\/?$/, '');
+export const FALLBACK_SERVER_BASE = FALLBACK_API_BASE.replace(/\/api\/?$/, '');
 
 export interface RequestOptions extends RequestInit {
   token?: string | null;
@@ -103,6 +131,25 @@ async function fetchWithTimeout(url: string, options: RequestOptions = {}): Prom
       ...fetchOptions,
       signal: controller.signal,
     });
+
+    if (!res.ok && res.status >= 400 && res.status !== 401 && res.status !== 403 && url.startsWith(API_BASE) && API_BASE !== FALLBACK_API_BASE) {
+      const fallbackUrl = url.replace(API_BASE, FALLBACK_API_BASE);
+      try {
+        const fallbackController = new AbortController();
+        const fallbackTimeout = setTimeout(() => fallbackController.abort(), timeoutMs);
+        const fallbackRes = await fetch(fallbackUrl, {
+          ...fetchOptions,
+          signal: fallbackController.signal,
+        });
+        clearTimeout(fallbackTimeout);
+        if (fallbackRes.ok) {
+          return fallbackRes;
+        }
+      } catch (fallbackErr) {
+        // Fall back to original response if fallback request fails
+      }
+    }
+
     return res;
   } catch (err: any) {
     clearTimeout(timeoutId);

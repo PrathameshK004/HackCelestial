@@ -280,25 +280,14 @@ async function createInAppNotification(userId, { type, title, body, data = {} })
  */
 async function sendGroupInviteNotification({ inviteeEmail, inviterName, groupName, groupId, inviteCode }) {
     try {
-        const title = `Trip Invitation: ${groupName}`;
-        const body = `${inviterName || 'A group member'} invited you to join "${groupName}"!`;
-        const data = {
-            type: 'GROUP_INVITE',
-            groupId: String(groupId),
-            inviteCode: String(inviteCode || ''),
-            groupName: String(groupName),
-            screen: 'InvitationScreen'
-        };
-
-        if (inviteeEmail) {
-            const trimmed = inviteeEmail.trim().toLowerCase();
-            const userRes = await pool.query('SELECT id FROM users WHERE LOWER(email_id) = $1 LIMIT 1', [trimmed]);
-            if (userRes.rows.length > 0) {
-                const inviteeUserId = userRes.rows[0].id;
-                await createInAppNotification(inviteeUserId, { type: 'GROUP_INVITE', title, body, data });
-                await sendPushToUser(inviteeUserId, { title, body, data });
-            }
-        }
+        const { publishNotificationEvent } = require('./kafkaProducer.util');
+        await publishNotificationEvent('GROUP_INVITE', {
+            inviteeEmail,
+            inviterName,
+            groupName,
+            groupId,
+            inviteCode
+        });
     } catch (err) {
         console.warn('Failed to dispatch invite notification:', err.message);
     }

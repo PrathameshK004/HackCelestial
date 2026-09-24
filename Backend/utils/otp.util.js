@@ -7,11 +7,23 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
 /**
- * Generate a random 4-digit OTP using cryptographically secure random numbers
+ * Generate a random OTP using cryptographically secure random numbers
+ * @param {number} digits - Number of digits (default: 4, for 2FA: 6)
  * @returns {number} Generated OTP
  */
-const generateOTP = () => {
+const generateOTP = (digits = 4) => {
+    if (digits === 6) {
+        return crypto.randomInt(100000, 1000000);
+    }
     return crypto.randomInt(1000, 10000);
+};
+
+/**
+ * Generate a random 6-digit OTP specifically for Two-Factor Authentication (2FA)
+ * @returns {number} Generated 6-digit OTP
+ */
+const generate2FAOTP = () => {
+    return crypto.randomInt(100000, 1000000);
 };
 
 /**
@@ -70,6 +82,7 @@ const getOTPExpiry = () => {
 
 module.exports = {
     generateOTP,
+    generate2FAOTP,
     hashOTP,
     verifyOTP,
     isOTPExpired,

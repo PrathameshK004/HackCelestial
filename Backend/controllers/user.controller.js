@@ -5,7 +5,7 @@ const { OAuth2Client } = require('google-auth-library');
 const User = require('../modules/user.module.js');
 const { pool } = require('../utils/db.util');
 const { sendOTPEmail, sendWelcomeEmail } = require('../utils/mail.util');
-const { generateOTP, hashOTP, verifyOTP, isOTPExpired, getOTPExpiry } = require('../utils/otp.util');
+const { generateOTP, generate2FAOTP, hashOTP, verifyOTP, isOTPExpired, getOTPExpiry } = require('../utils/otp.util');
 const { createToken, createRefreshToken, verifyRefreshToken } = require('../utils/jwt.util');
 const { verifyPassword } = require('../utils/verify.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
@@ -33,7 +33,11 @@ module.exports = {
     checkRegisteredUser,
     googleLogin,
     registerPushToken,
-    unregisterPushToken
+    unregisterPushToken,
+    toggleTwoFactor,
+    verifyTwoFactorOtp,
+    verifyTwoFactorLogin,
+    revokeAllSessions
 };
 
 /**
@@ -101,7 +105,11 @@ async function sendOTP(req, res) {
         }
 
         const user = userResult.rows[0];
-        const otp = generateOTP();
+        const is2FA = purpose && (
+            purpose.toLowerCase().includes('2fa') ||
+            purpose.toLowerCase().includes('two-factor')
+        );
+        const otp = is2FA ? generate2FAOTP() : generateOTP();
         const expiry = getOTPExpiry();
         const hashedCode = await hashOTP(otp);
 
@@ -159,6 +167,7 @@ async function getUserById(req, res) {
             travelStyle: user.travelStyle || 'Boutique',
             currency: user.currency || 'INR',
             dob: user.dob || null,
+            twoFactorEnabled: Boolean(user.twoFactorEnabled),
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
         };
@@ -486,6 +495,7 @@ async function updateProfile(req, res) {
             travelStyle: user.travelStyle || 'Boutique',
             currency: user.currency || 'INR',
             dob: user.dob || null,
+            twoFactorEnabled: Boolean(updatedRow ? updatedRow.two_factor_enabled : user.twoFactorEnabled),
             createdAt: user.createdAt,
             updatedAt: user.updatedAt
         };
@@ -718,6 +728,27 @@ async function validateLogin(req, res) {
             return sendError(res, "Invalid Password. Please try again.", null, 400);
         }
 
+        // Check if Two-Factor Authentication is enabled for user
+        if (user.twoFactorEnabled) {
+            const otp = generate2FAOTP();
+            const expiry = getOTPExpiry();
+            const hashedCode = await hashOTP(otp);
+
+            await pool.query('UPDATE users SET code_hash = $1, code_expiry = $2, updated_at = NOW() WHERE id = $3', [hashedCode, expiry, user._id]);
+
+            sendOTPEmail(user.emailId, otp, user.username, "2FA Security Login").catch((e) =>
+                console.error('[2FA Login Email Error]', e.message)
+            );
+
+            console.log(`[2FA Login OTP Dispatched] To: ${user.emailId} | Code: ${otp}`);
+
+            return sendSuccess(res, "Two-Factor Authentication required. 6-digit verification code sent to your email.", {
+                twoFactorRequired: true,
+                emailId: user.emailId,
+                expiresIn: 300,
+            });
+        }
+
         const token = createToken(user._id);
         const refreshToken = createRefreshToken(user._id);
         await storeRefreshToken(user._id, refreshToken);
@@ -735,6 +766,7 @@ async function validateLogin(req, res) {
             travelStyle: user.travelStyle || 'Boutique',
             currency: user.currency || 'INR',
             dob: user.dob || null,
+            twoFactorEnabled: Boolean(user.twoFactorEnabled),
             accessToken: token,
             refreshToken: refreshToken
         };
@@ -990,6 +1022,137 @@ async function unregisterPushToken(req, res) {
     } catch (err) {
         console.error("Unregister push token error:", err.message);
         return sendError(res, "Failed to unregister push token", err, 500);
+    }
+}
+
+/**
+ * Toggle 2FA state directly (On/Off) for authenticated user
+ */
+async function toggleTwoFactor(req, res) {
+    try {
+        const userId = req.userKey;
+        if (!userId) return sendError(res, "Unauthorized", null, 401);
+
+        const { enable } = req.body;
+        const newStatus = enable !== undefined ? Boolean(enable) : true;
+
+        await pool.query('UPDATE users SET two_factor_enabled = $1, updated_at = NOW() WHERE id = $2', [newStatus, userId]);
+
+        const message = newStatus
+            ? "Two-Factor Authentication enabled. Next login will require 6-digit email OTP verification."
+            : "Two-Factor Authentication disabled.";
+
+        return sendSuccess(res, message, { twoFactorEnabled: newStatus });
+    } catch (err) {
+        console.error("Toggle 2FA error:", err.message);
+        return sendError(res, "Failed to update Two-Factor Authentication setting", err, 500);
+    }
+}
+
+/**
+ * Complete 2FA login verification with 6-digit OTP code
+ */
+async function verifyTwoFactorLogin(req, res) {
+    try {
+        const emailId = (req.body.emailId || req.body.email || '').trim().toLowerCase();
+        const code = (req.body.code || '').toString().trim();
+
+        if (!emailId || !code) {
+            return sendError(res, "Email and 2FA verification code are required", null, 400);
+        }
+
+        const user = await User.findOne({ emailId });
+        if (!user || user.isTemp) {
+            return sendError(res, "User not found", null, 404);
+        }
+
+        if (isOTPExpired(user.codeExpiry)) {
+            return sendError(res, "2FA verification code has expired. Please log in again to receive a new code.", null, 400);
+        }
+
+        const isValid = await verifyOTP(code, user.code);
+        if (!isValid) {
+            return sendError(res, "Invalid 2FA verification code. Please check your email.", null, 400);
+        }
+
+        // 2FA OTP is valid: clear code and issue login tokens!
+        await pool.query('UPDATE users SET code_hash = NULL, code_expiry = NULL, updated_at = NOW() WHERE id = $1', [user._id]);
+
+        const token = createToken(user._id);
+        const refreshToken = createRefreshToken(user._id);
+        await storeRefreshToken(user._id, refreshToken);
+        setAuthCookies(res, token, refreshToken);
+
+        const responseData = {
+            userId: user._id,
+            id: user._id,
+            username: user.username,
+            emailId: user.emailId,
+            phone: user.phone || null,
+            upiId: user.upiId || null,
+            avatar: user.avatar || null,
+            travelStyle: user.travelStyle || 'Boutique',
+            currency: user.currency || 'INR',
+            dob: user.dob || null,
+            twoFactorEnabled: true,
+            accessToken: token,
+            refreshToken: refreshToken
+        };
+
+        return sendSuccess(res, "2FA login verification successful! Welcome back.", responseData);
+    } catch (error) {
+        console.error("Verify 2FA Login Error:", error.message);
+        return sendError(res, "Failed to verify 2FA code", error, 500);
+    }
+}
+
+/**
+ * Verify 2FA OTP code to activate 2FA
+ */
+async function verifyTwoFactorOtp(req, res) {
+    try {
+        const userId = req.userKey;
+        const { code } = req.body;
+
+        if (!userId || !code) return sendError(res, "Verification code is required", null, 400);
+
+        const userRes = await pool.query('SELECT id, code_hash, code_expiry FROM users WHERE id = $1', [userId]);
+        if (userRes.rows.length === 0) return sendError(res, "User not found", null, 404);
+
+        const user = userRes.rows[0];
+
+        if (isOTPExpired(user.code_expiry)) {
+            return sendError(res, "Verification code expired. Please request a new code.", null, 400);
+        }
+
+        const isValid = await verifyOTP(String(code).trim(), user.code_hash);
+        if (!isValid) {
+            return sendError(res, "Invalid 2FA verification code.", null, 400);
+        }
+
+        // Enable 2FA & clear OTP code
+        await pool.query('UPDATE users SET two_factor_enabled = TRUE, code_hash = NULL, code_expiry = NULL, updated_at = NOW() WHERE id = $1', [userId]);
+
+        return sendSuccess(res, "Two-Factor Authentication enabled successfully!", { twoFactorEnabled: true });
+    } catch (err) {
+        console.error("Verify 2FA OTP error:", err.message);
+        return sendError(res, "Failed to verify 2FA code", err, 500);
+    }
+}
+
+/**
+ * Revoke all active refresh sessions for security / logout all devices
+ */
+async function revokeAllSessions(req, res) {
+    try {
+        const userId = req.userKey;
+        if (!userId) return sendError(res, "Unauthorized", null, 401);
+
+        await pool.query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+        return sendSuccess(res, "All active sessions revoked successfully. Please log in again.");
+    } catch (err) {
+        console.error("Revoke sessions error:", err.message);
+        return sendError(res, "Failed to revoke active sessions", err, 500);
     }
 }
 
