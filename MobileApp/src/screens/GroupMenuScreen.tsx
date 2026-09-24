@@ -15,8 +15,10 @@ import {
   BackHandler,
   ActivityIndicator,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Circle, Line, Path, Defs, Marker, Text as SvgText, G } from 'react-native-svg';
 import {
   ArrowLeft,
   Users,
@@ -38,6 +40,8 @@ import {
   ThumbsDown,
   ShieldCheck,
   AlertTriangle,
+  TrendingUp,
+  ArrowRight,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
 import { useTrips } from '../context/TripContext';
@@ -48,7 +52,154 @@ import { AddExpenseModal } from '../components/group/AddExpenseModal';
 import { SettleUpModal } from '../components/group/SettleUpModal';
 import { GroupMembersModal } from '../components/group/GroupMembersModal';
 
-import { SettlementTransfer, Expense, CostSharingModel } from '../types';
+import { SettlementTransfer, Expense, CostSharingModel, Participant } from '../types';
+
+const { width: SCREEN_W } = Dimensions.get('window');
+
+// ─── Debt Graph Visualization Component ─────────────────────────────────────
+interface DebtGraphViewProps {
+  transfers: SettlementTransfer[];
+  members: Participant[];
+}
+
+const DebtGraphView: React.FC<DebtGraphViewProps> = ({ transfers, members }) => {
+  const svgSize = SCREEN_W - 60;
+  const cx = svgSize / 2;
+  const cy = svgSize / 2;
+  const radius = svgSize * 0.33;
+  const nodeR = 22;
+
+  // Collect unique participant nodes from transfers
+  const nodeMap = new Map<string, { id: string; name: string; avatarBg: string }>();
+  for (const t of transfers) {
+    if (!nodeMap.has(t.fromMemberId)) {
+      nodeMap.set(t.fromMemberId, { id: t.fromMemberId, name: t.fromMemberName, avatarBg: t.fromAvatarBg || '#dc2626' });
+    }
+    if (!nodeMap.has(t.toMemberId)) {
+      nodeMap.set(t.toMemberId, { id: t.toMemberId, name: t.toMemberName, avatarBg: t.toAvatarBg || '#059669' });
+    }
+  }
+
+  const nodes = Array.from(nodeMap.values());
+  const n = nodes.length;
+
+  if (n === 0) {
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+        <Text style={{ color: colors.slate400, fontSize: 12 }}>No debt graph to display</Text>
+      </View>
+    );
+  }
+
+  // Position nodes in a circle
+  const positions: Record<string, { x: number; y: number }> = {};
+  nodes.forEach((node, i) => {
+    const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+    positions[node.id] = {
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    };
+  });
+
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Svg width={svgSize} height={n <= 2 ? svgSize * 0.6 : svgSize}>
+        <Defs>
+          <Marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <Path d="M0,0 L0,6 L8,3 z" fill={colors.primary600} />
+          </Marker>
+        </Defs>
+
+        {/* Transfer arrows */}
+        {transfers.map((t) => {
+          const from = positions[t.fromMemberId];
+          const to = positions[t.toMemberId];
+          if (!from || !to) return null;
+          const dx = to.x - from.x;
+          const dy = to.y - from.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const x1 = from.x + ux * (nodeR + 2);
+          const y1 = from.y + uy * (nodeR + 2);
+          const x2 = to.x - ux * (nodeR + 10);
+          const y2 = to.y - uy * (nodeR + 10);
+          const mx = (x1 + x2) / 2;
+          const my = (y1 + y2) / 2;
+          const amtStr = t.amount >= 1000 ? `₹${(t.amount / 1000).toFixed(1)}k` : `₹${t.amount}`;
+
+          return (
+            <G key={t.id}>
+              <Line
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={colors.primary600}
+                strokeWidth="2"
+                markerEnd="url(#arrow)"
+                strokeDasharray="6,3"
+                opacity={0.8}
+              />
+              <Circle cx={mx} cy={my} r={19} fill="#ffffff" stroke={colors.primary200} strokeWidth={1.5} />
+              <SvgText x={mx} y={my - 3} fontSize="7.5" fontWeight="800" fill={colors.primary700} textAnchor="middle">
+                {amtStr}
+              </SvgText>
+              <SvgText x={mx} y={my + 7} fontSize="6.5" fill={colors.slate500} textAnchor="middle">
+                owes
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {/* Member nodes */}
+        {nodes.map((node) => {
+          const pos = positions[node.id];
+          if (!pos) return null;
+          const member = members.find((m) => m.id === node.id);
+          const balance = member?.balance ?? 0;
+          const isDebtor = balance < -0.01;
+          const isCreditor = balance > 0.01;
+          const ringColor = isDebtor ? '#dc2626' : isCreditor ? '#059669' : colors.slate400;
+          const bgColor = node.avatarBg;
+          const initial = node.name.charAt(0).toUpperCase();
+          const shortName = node.name.length > 8 ? node.name.slice(0, 7) + '…' : node.name;
+          const balStr = balance > 0 ? `+₹${Math.abs(balance)}` : balance < 0 ? `-₹${Math.abs(balance)}` : '₹0';
+
+          return (
+            <G key={node.id}>
+              <Circle cx={pos.x} cy={pos.y} r={nodeR + 3} fill="none" stroke={ringColor} strokeWidth={2} opacity={0.5} />
+              <Circle cx={pos.x} cy={pos.y} r={nodeR} fill={bgColor} />
+              <SvgText x={pos.x} y={pos.y + 5} fontSize="14" fontWeight="900" fill="#ffffff" textAnchor="middle">
+                {initial}
+              </SvgText>
+              <SvgText x={pos.x} y={pos.y + nodeR + 14} fontSize="9" fontWeight="700" fill={colors.slate800} textAnchor="middle">
+                {shortName}
+              </SvgText>
+              <SvgText x={pos.x} y={pos.y + nodeR + 25} fontSize="8.5" fontWeight="800" fill={ringColor} textAnchor="middle">
+                {balStr}
+              </SvgText>
+            </G>
+          );
+        })}
+      </Svg>
+
+      {/* Legend */}
+      <View style={{ flexDirection: 'row', gap: 14, marginTop: 4, justifyContent: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: '#dc2626' }} />
+          <Text style={{ fontSize: 10, color: colors.slate500, fontWeight: '600' }}>Owes money</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: '#059669' }} />
+          <Text style={{ fontSize: 10, color: colors.slate500, fontWeight: '600' }}>Gets paid</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ width: 18, height: 2, backgroundColor: colors.primary600, borderRadius: 1 }} />
+          <Text style={{ fontSize: 10, color: colors.slate500, fontWeight: '600' }}>Pays →</Text>
+        </View>
+      </View>
+    </View>
+  );
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 type LedgerTab = 'expenses' | 'debts' | 'balances' | 'transactions';
 
@@ -585,14 +736,48 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
           </View>
         )}
 
-        {/* TAB 2: DEBTS (Smart Settlement Optimizer) */}
+        {/* TAB 2: DEBTS (Smart Settlement Optimizer + Graph) */}
         {activeTab === 'debts' && optimalResult && (
           <View>
+            {/* Optimizer Stats Header */}
             <View style={styles.optimizerHeaderBox}>
-              <Text style={styles.optTitle}>Graph Debt Minimization</Text>
-              <Text style={styles.optSubtitle}>
-                Reduces {optimalResult.originalTxCount} pairwise debts to {optimalResult.optimizedTxCount} direct transfers ({optimalResult.reductionPercentage}% reduction)
-              </Text>
+              <View style={styles.optHeaderRow}>
+                <TrendingUp size={16} color="#ffffff" />
+                <Text style={styles.optTitle}>Smart Debt Minimization</Text>
+              </View>
+              {optimalResult.transfers.length > 0 ? (
+                <Text style={styles.optSubtitle}>
+                  Optimized to {optimalResult.optimizedTxCount} transfer{optimalResult.optimizedTxCount !== 1 ? 's' : ''} • Total: ₹{optimalResult.totalVolume.toLocaleString()}
+                </Text>
+              ) : (
+                <Text style={styles.optSubtitle}>All balances are fully settled ✓</Text>
+              )}
+
+              {/* Stats Row */}
+              {optimalResult.transfers.length > 0 && (
+                <View style={styles.optStatsRow}>
+                  <View style={styles.optStatChip}>
+                    <Text style={styles.optStatValue}>{optimalResult.optimizedTxCount}</Text>
+                    <Text style={styles.optStatLabel}>Transfers</Text>
+                  </View>
+                  <View style={styles.optStatChip}>
+                    <Text style={styles.optStatValue}>₹{optimalResult.totalVolume.toLocaleString()}</Text>
+                    <Text style={styles.optStatLabel}>Total Owed</Text>
+                  </View>
+                  <View style={styles.optStatChip}>
+                    <Text style={styles.optStatValue}>
+                      {members.filter((m) => m.balance < -0.01).length}
+                    </Text>
+                    <Text style={styles.optStatLabel}>Debtors</Text>
+                  </View>
+                  <View style={styles.optStatChip}>
+                    <Text style={styles.optStatValue}>
+                      {members.filter((m) => m.balance > 0.01).length}
+                    </Text>
+                    <Text style={styles.optStatLabel}>Creditors</Text>
+                  </View>
+                </View>
+              )}
             </View>
 
             {optimalResult.transfers.length === 0 ? (
@@ -602,28 +787,108 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                 <Text style={styles.emptySubtitle}>No outstanding balances among travelers.</Text>
               </View>
             ) : (
-              optimalResult.transfers.map((t) => (
-                <View key={t.id} style={styles.debtCard}>
-                  <View style={styles.debtRow}>
-                    <Text style={styles.debtFrom}>{t.fromMemberName}</Text>
-                    <Text style={styles.debtPays}>pays</Text>
-                    <Text style={styles.debtAmount}>₹{t.amount.toLocaleString()}</Text>
-                    <Text style={styles.debtPays}>to</Text>
-                    <Text style={styles.debtTo}>{t.toMemberName}</Text>
-                  </View>
-
-                  <View style={styles.debtActions}>
-                    <TouchableOpacity
-                      style={styles.debtUpiBtn}
-                      onPress={() => handleOpenSettleTransfer(t)}
-                      activeOpacity={0.8}
-                    >
-                      <Smartphone size={13} color="#ffffff" />
-                      <Text style={styles.debtUpiBtnText}>Pay / Settle</Text>
-                    </TouchableOpacity>
-                  </View>
+              <>
+                {/* ── Debt Graph Visualization ── */}
+                <View style={styles.graphSection}>
+                  <Text style={styles.graphSectionTitle}>WHO OWES WHOM</Text>
+                  <DebtGraphView
+                    transfers={optimalResult.transfers}
+                    members={members}
+                  />
                 </View>
-              ))
+
+                {/* ── Debt List View ── */}
+                <Text style={styles.debtListHeading}>Settlement Instructions</Text>
+                {optimalResult.transfers.map((t, idx) => {
+                  const fromMember = members.find((m) => m.id === t.fromMemberId);
+                  const toMember = members.find((m) => m.id === t.toMemberId);
+                  const isUserDebtor = fromMember?.isUser;
+                  const isUserCreditor = toMember?.isUser;
+                  return (
+                    <View
+                      key={t.id}
+                      style={[
+                        styles.debtCard,
+                        isUserDebtor && styles.debtCardUserOwes,
+                        isUserCreditor && styles.debtCardUserOwed,
+                      ]}
+                    >
+                      {/* Index Badge */}
+                      <View style={styles.debtIndexBadge}>
+                        <Text style={styles.debtIndexText}>#{idx + 1}</Text>
+                      </View>
+
+                      {/* Payer Avatar + Name */}
+                      <View style={styles.debtPartyRow}>
+                        <View style={styles.debtParty}>
+                          <View style={[styles.debtAvatar, { backgroundColor: fromMember?.avatarBg || '#dc2626' }]}>
+                            <Text style={styles.debtAvatarText}>
+                              {t.fromMemberName.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={styles.debtPartyInfo}>
+                            <Text style={styles.debtPartyName}>
+                              {t.fromMemberName}{isUserDebtor ? ' (You)' : ''}
+                            </Text>
+                            <View style={styles.debtOwesTag}>
+                              <Text style={styles.debtOwesTagText}>OWES</Text>
+                            </View>
+                          </View>
+                        </View>
+
+                        {/* Arrow + Amount */}
+                        <View style={styles.debtArrowCol}>
+                          <Text style={styles.debtAmountCenter}>₹{t.amount.toLocaleString()}</Text>
+                          <ArrowRight size={18} color={colors.primary600} />
+                        </View>
+
+                        {/* Receiver Avatar + Name */}
+                        <View style={styles.debtParty}>
+                          <View style={[styles.debtAvatar, { backgroundColor: toMember?.avatarBg || '#059669' }]}>
+                            <Text style={styles.debtAvatarText}>
+                              {t.toMemberName.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={styles.debtPartyInfo}>
+                            <Text style={styles.debtPartyName}>
+                              {t.toMemberName}{isUserCreditor ? ' (You)' : ''}
+                            </Text>
+                            <View style={styles.debtOwedTag}>
+                              <Text style={styles.debtOwedTagText}>GETS PAID</Text>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Context label */}
+                      {(isUserDebtor || isUserCreditor) && (
+                        <View style={[
+                          styles.debtUserHighlight,
+                          isUserDebtor ? styles.debtUserHighlightOwes : styles.debtUserHighlightOwed,
+                        ]}>
+                          <Text style={styles.debtUserHighlightText}>
+                            {isUserDebtor
+                              ? `You need to pay ₹${t.amount.toLocaleString()} to ${t.toMemberName}`
+                              : `${t.fromMemberName} needs to pay you ₹${t.amount.toLocaleString()}`}
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Action Button */}
+                      <View style={styles.debtActions}>
+                        <TouchableOpacity
+                          style={styles.debtUpiBtn}
+                          onPress={() => handleOpenSettleTransfer(t)}
+                          activeOpacity={0.8}
+                        >
+                          <Smartphone size={13} color="#ffffff" />
+                          <Text style={styles.debtUpiBtnText}>Pay / Settle via UPI</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
             )}
           </View>
         )}
@@ -1123,8 +1388,14 @@ const styles = StyleSheet.create({
   optimizerHeaderBox: {
     backgroundColor: colors.slate900,
     borderRadius: radii.md,
-    padding: 14,
-    marginBottom: 12,
+    padding: 16,
+    marginBottom: 14,
+  },
+  optHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 4,
   },
   optTitle: {
     fontSize: 15,
@@ -1135,7 +1406,60 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: colors.slate300,
     marginTop: 3,
+    marginBottom: 10,
   },
+  optStatsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  optStatChip: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+  },
+  optStatValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  optStatLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: colors.slate400,
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  // Graph section
+  graphSection: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    padding: 14,
+    marginBottom: 14,
+    ...shadows.sm,
+  },
+  graphSectionTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: colors.slate500,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  debtListHeading: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: colors.slate700,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  // New Debt Cards
   debtCard: {
     backgroundColor: colors.bgCard,
     borderRadius: radii.md,
@@ -1144,32 +1468,118 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
     marginBottom: 10,
     ...shadows.sm,
+    position: 'relative',
   },
-  debtRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 10,
+  debtCardUserOwes: {
+    borderColor: '#fca5a5',
+    backgroundColor: '#fff9f9',
   },
-  debtFrom: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.slate900,
+  debtCardUserOwed: {
+    borderColor: '#6ee7b7',
+    backgroundColor: '#f0fdf9',
   },
-  debtPays: {
-    fontSize: 12,
+  debtIndexBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 12,
+    backgroundColor: colors.slate100,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  debtIndexText: {
+    fontSize: 9.5,
+    fontWeight: '800',
     color: colors.slate500,
   },
-  debtAmount: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: colors.primary700,
+  debtPartyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  debtTo: {
-    fontSize: 13,
+  debtParty: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  debtAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  debtAvatarText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  debtPartyInfo: {
+    flex: 1,
+  },
+  debtPartyName: {
+    fontSize: 12.5,
     fontWeight: '700',
     color: colors.slate900,
+  },
+  debtOwesTag: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  debtOwesTagText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#dc2626',
+  },
+  debtOwedTag: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#6ee7b7',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  debtOwedTagText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  debtArrowCol: {
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    gap: 2,
+  },
+  debtAmountCenter: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.primary700,
+  },
+  debtUserHighlight: {
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  debtUserHighlightOwes: {
+    backgroundColor: '#fef2f2',
+  },
+  debtUserHighlightOwed: {
+    backgroundColor: '#ecfdf5',
+  },
+  debtUserHighlightText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: colors.slate700,
   },
   debtActions: {
     flexDirection: 'row',
@@ -1184,7 +1594,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary600,
-    paddingVertical: 7,
+    paddingVertical: 9,
     borderRadius: radii.sm,
     gap: 6,
   },

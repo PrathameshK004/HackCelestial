@@ -242,25 +242,33 @@ export const useTrips = (): TripContextType => {
 function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: any): Trip {
   const tripId = String(g.id || g.group_id);
 
+  // Build a netBalance lookup from server settlement data (members array)
   const settleMemberMap = new Map<string, any>();
   if (Array.isArray(settleData?.members)) {
     for (const sm of settleData.members) {
-      settleMemberMap.set(String(sm.id), sm);
+      // Server memberSummaries use 'id' field
+      const key = String(sm.id || sm.memberId || '');
+      if (key) settleMemberMap.set(key, sm);
     }
   }
 
   const members: Participant[] = (detail?.members || g.travelers || g.members || []).map((m: any) => {
-    const sm = settleMemberMap.get(String(m.id || m.memberId || m.email));
+    const mKey = String(m.id || m.memberId || m.email);
+    const sm = settleMemberMap.get(mKey);
+    // Prefer server-computed netBalance; fall back to group-level balance
+    const balance = sm?.netBalance !== undefined
+      ? Number(sm.netBalance)
+      : Number(m.balance || m.netBalance || 0);
     return {
-      id: String(m.id || m.memberId || m.email),
+      id: mKey,
       tripId,
-      userId: m.userId || m.id,
+      userId: m.userId || m.user_id || m.id,
       name: m.name || 'Traveler',
       email: m.email || '',
       role: m.role === 'Organizer' ? 'Organizer' : 'Traveler',
-      avatarBg: m.avatarBg || '#059669',
+      avatarBg: m.avatarBg || m.avatar_bg || '#059669',
       isUser: Boolean(m.isUser),
-      balance: Number(sm?.netBalance !== undefined ? sm.netBalance : (m.balance || 0)),
+      balance,
       status: (m.status || (m.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')) as any,
       inviteCode: m.inviteCode || null,
       syncStatus: 'SYNCED',
@@ -308,19 +316,24 @@ function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: a
     rawSmsProof: e.rawSmsProof || null,
   }));
 
-  const settlements: SettlementTransfer[] = (settleData?.settlementPlan?.transfers || []).map((t: any) => ({
+  // Map settlements audit log from server response (recorded peer-to-peer payments)
+  const settlements: SettlementTransfer[] = (settleData?.settlements || []).map((t: any) => ({
     id: String(t.id || `settle-${tripId}-${Math.random()}`),
     tripId,
-    fromMemberId: String(t.fromMemberId || t.from?.id),
-    fromMemberName: t.fromMemberName || t.from?.name || 'Debtor',
-    toMemberId: String(t.toMemberId || t.to?.id),
-    toMemberName: t.toMemberName || t.to?.name || 'Creditor',
+    fromMemberId: String(t.fromMemberId || t.from_member_id || t.from?.id || ''),
+    fromMemberName: t.fromName || t.fromMemberName || t.from?.name || 'Debtor',
+    toMemberId: String(t.toMemberId || t.to_member_id || t.to?.id || ''),
+    toMemberName: t.toName || t.toMemberName || t.to?.name || 'Creditor',
     amount: Number(t.amount || 0),
     currency: t.currency || 'INR',
     currencySymbol: '₹',
-    status: t.status === 'SETTLED' ? 'completed' : 'pending',
-    dueDate: 'Instant UPI',
-    syncStatus: 'SYNCED',
+    status: 'completed' as const,
+    paymentMethod: t.paymentMethod || t.payment_method || 'UPI',
+    paymentReference: t.paymentReference || t.payment_reference,
+    remarks: t.remarks || 'Settled',
+    dueDate: t.settledAt || t.settled_at || 'Settled',
+    syncStatus: 'SYNCED' as const,
+    createdAt: t.settledAt || t.settled_at,
   }));
 
   return {

@@ -694,7 +694,16 @@ async function getGroupSettlement(req, res) {
 
         // 5. Run Recalculation Engine
         const netResult = calculateNetBalances(members, formattedExpenses, settlementsRes.rows);
-        const simplifiedTransfers = calculateOptimalSettlements(netResult.balances, netResult.memberLookup, group.currency);
+        const rawTransfers = calculateOptimalSettlements(netResult.balances, netResult.memberLookup, group.currency);
+
+        // Enrich transfers with resolved member names & avatar colors
+        const simplifiedTransfers = rawTransfers.map(t => ({
+            ...t,
+            fromMemberName: t.from?.name || netResult.memberLookup[t.fromMemberId]?.name || 'Member',
+            toMemberName: t.to?.name || netResult.memberLookup[t.toMemberId]?.name || 'Member',
+            fromAvatarBg: t.from?.avatarBg || netResult.memberLookup[t.fromMemberId]?.avatarBg || '#dc2626',
+            toAvatarBg: t.to?.avatarBg || netResult.memberLookup[t.toMemberId]?.avatarBg || '#059669',
+        }));
 
         return sendSuccess(res, "Settlement calculated successfully", {
             groupId: group.id,
@@ -702,8 +711,16 @@ async function getGroupSettlement(req, res) {
             groupStatus: group.status,
             currency: group.currency,
             totalSpend: netResult.totalSpend,
+            totalDebtors: netResult.memberSummaries.filter(m => m.netBalance < -0.01).length,
+            totalCreditors: netResult.memberSummaries.filter(m => m.netBalance > 0.01).length,
+            optimizedTxCount: simplifiedTransfers.length,
             members: netResult.memberSummaries,
             transfers: simplifiedTransfers,
+            // settlementPlan wrapper for backward compatibility
+            settlementPlan: {
+                transfers: simplifiedTransfers,
+                count: simplifiedTransfers.length
+            },
             expenses: formattedExpenses,
             rawSettlementsCount: settlementsRes.rows.length,
             settlements: settlementsRes.rows.map(s => ({

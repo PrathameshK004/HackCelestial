@@ -166,21 +166,21 @@ export const syncService = {
             }
           }
 
-          if (settleRes?.data?.settlementPlan?.transfers) {
-            for (const t of settleRes.data.settlementPlan.transfers) {
+          if (settleRes?.data?.transfers && Array.isArray(settleRes.data.transfers)) {
+            for (const t of settleRes.data.transfers) {
               const st: SettlementTransfer = {
                 id: String(t.id || `settle-${tripId}-${Math.random()}`),
                 tripId,
-                fromMemberId: String(t.fromMemberId || t.from?.id),
-                fromMemberName: t.fromMemberName || t.from?.name || 'Debtor',
-                toMemberId: String(t.toMemberId || t.to?.id),
-                toMemberName: t.toMemberName || t.to?.name || 'Creditor',
+                fromMemberId: String(t.fromMemberId || t.from_member_id || t.from?.id || ''),
+                fromMemberName: t.fromName || t.fromMemberName || t.from?.name || 'Debtor',
+                toMemberId: String(t.toMemberId || t.to_member_id || t.to?.id || ''),
+                toMemberName: t.toName || t.toMemberName || t.to?.name || 'Creditor',
                 amount: Number(t.amount || 0),
                 currency: t.currency || 'INR',
                 currencySymbol: '₹',
-                status: t.status === 'SETTLED' ? 'completed' : 'pending',
-                dueDate: 'Instant UPI',
-                syncStatus: 'SYNCED'
+                status: 'completed' as const,
+                dueDate: 'Settled',
+                syncStatus: 'SYNCED',
               };
               settlementRepo.upsertSettlement(st);
             }

@@ -1,14 +1,19 @@
 /**
  * Local Ledger Recalculation Engine & Smart Settlement Optimizer
- * Pure client-side calculations matching backend business logic
- * Runs 100% offline using local SQLite data
+ * Industry-grade Min-Cash-Flow Algorithm for optimal debt simplification.
+ * Uses server-provided authoritative member balances as primary source of truth.
  */
 
 import { Participant, Expense, SettlementTransfer, OptimalSettlementResult, CostSharingModel } from '../types';
 
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
 export const ledgerEngine = {
   /**
-   * Recalculates net balances for all trip members based on expenses and recorded settlements
+   * Recalculates net balances for all trip members based on expenses and recorded settlements.
+   * Used for local verification / offline mode.
    */
   recalculateBalances(
     members: Participant[],
@@ -22,34 +27,25 @@ export const ledgerEngine = {
 
     // 1. Process Expenses
     for (const exp of expenses) {
-      // Only official expenses (VERIFIED or AUTO_VERIFIED) affect balances.
-      // Skip unapproved (PENDING_APPROVAL) or DISPUTED expenses until 60% consensus is reached.
       const status = (exp.verificationStatus || 'VERIFIED').toUpperCase();
-      if (status === 'PENDING_APPROVAL' || status === 'DISPUTED') {
-        continue;
-      }
+      if (status === 'PENDING_APPROVAL' || status === 'DISPUTED') continue;
 
-      const payerId = exp.paidById;
-      const totalAmount = Number(exp.amount || 0);
+      const payerId = String(exp.paidById);
+      const totalAmount = round2(Number(exp.amount || 0));
       if (totalAmount <= 0) continue;
 
-      // Credit payer
       if (balances[payerId] !== undefined) {
-        balances[payerId] += totalAmount;
+        balances[payerId] = round2(balances[payerId] + totalAmount);
       }
 
-      // Determine participants involved
       const involvedMemberIds = getInvolvedMemberIds(exp, members);
       const count = involvedMemberIds.length;
-
       if (count === 0) continue;
 
       switch (exp.splitModel as CostSharingModel) {
         case 'ORGANIZER_PAID':
-          // Organizer absorbs full cost; other participants owe 0
-          // Payer paid totalAmount, and owes totalAmount, so net change is 0
           if (balances[payerId] !== undefined) {
-            balances[payerId] -= totalAmount;
+            balances[payerId] = round2(balances[payerId] - totalAmount);
           }
           break;
 
@@ -58,19 +54,26 @@ export const ledgerEngine = {
         case 'ACTIVITY_BASED':
         case 'EQUAL':
         default: {
-          // Check if explicit splits exist
           if (exp.splits && exp.splits.length > 0) {
             for (const s of exp.splits) {
-              if (s.isOptedIn && balances[s.participantId] !== undefined) {
-                balances[s.participantId] -= Number(s.shareAmount || 0);
+              const mId = String(s.participantId || (s as any).memberId);
+              const share = round2(Number(s.shareAmount || (s as any).computedAmount || 0));
+              if (s.isOptedIn !== false && balances[mId] !== undefined) {
+                balances[mId] = round2(balances[mId] - share);
               }
             }
           } else {
-            // Equal share division
-            const equalShare = totalAmount / count;
+            // Equal share with penny-rounding protection
+            const baseShare = Math.floor((totalAmount * 100) / count) / 100;
+            let remainderCents = Math.round((totalAmount - baseShare * count) * 100);
             for (const mId of involvedMemberIds) {
               if (balances[mId] !== undefined) {
-                balances[mId] -= equalShare;
+                let share = baseShare;
+                if (remainderCents > 0) {
+                  share = round2(share + 0.01);
+                  remainderCents--;
+                }
+                balances[mId] = round2(balances[mId] - share);
               }
             }
           }
@@ -79,32 +82,35 @@ export const ledgerEngine = {
       }
     }
 
-    // 2. Process Settlements
+    // 2. Process Completed Settlements
     for (const s of settlements) {
       if (s.status === 'completed') {
-        const amt = Number(s.amount || 0);
-        // Payer's debt is cleared (balance increases by amt)
+        const amt = round2(Number(s.amount || 0));
         if (balances[s.fromMemberId] !== undefined) {
-          balances[s.fromMemberId] += amt;
+          balances[s.fromMemberId] = round2(balances[s.fromMemberId] + amt);
         }
-        // Receiver gets repaid (balance decreases by amt)
         if (balances[s.toMemberId] !== undefined) {
-          balances[s.toMemberId] -= amt;
+          balances[s.toMemberId] = round2(balances[s.toMemberId] - amt);
         }
       }
     }
 
-    // Round to 2 decimal places to prevent float precision drift
     for (const id of Object.keys(balances)) {
-      balances[id] = Math.round(balances[id] * 100) / 100;
+      balances[id] = round2(balances[id]);
     }
 
     return balances;
   },
 
   /**
-   * Deterministic Min-Cash-Flow algorithm for debt simplification
-   * Minimizes N pairwise debts into minimal transactions
+   * Min-Cash-Flow Debt Simplification Algorithm (Greedy / Optimal).
+   * Reads server-authoritative member.balance values; reduces N pairwise debts
+   * into the minimum number of direct transfers.
+   *
+   * member.balance semantics (matching backend):
+   *   > 0  → member is OWED this amount (creditor)
+   *   < 0  → member OWES this amount (debtor)
+   *   = 0  → fully settled
    */
   calculateOptimalSettlements(
     members: Participant[],
@@ -112,15 +118,15 @@ export const ledgerEngine = {
     currency: string = 'INR',
     currencySymbol: string = '₹'
   ): OptimalSettlementResult {
-    // Separate debtors (balance < 0) and creditors (balance > 0)
-    const debtors = members
+    // Build mutable copies for the algorithm
+    const debtors: Array<{ member: Participant; amount: number }> = members
       .filter((m) => m.balance < -0.01)
-      .map((m) => ({ ...m, amount: Math.abs(m.balance) }))
+      .map((m) => ({ member: m, amount: round2(Math.abs(m.balance)) }))
       .sort((a, b) => b.amount - a.amount);
 
-    const creditors = members
+    const creditors: Array<{ member: Participant; amount: number }> = members
       .filter((m) => m.balance > 0.01)
-      .map((m) => ({ ...m, amount: m.balance }))
+      .map((m) => ({ member: m, amount: round2(m.balance) }))
       .sort((a, b) => b.amount - a.amount);
 
     const transfers: SettlementTransfer[] = [];
@@ -132,55 +138,82 @@ export const ledgerEngine = {
       const debtor = debtors[dIdx];
       const creditor = creditors[cIdx];
 
-      const settledAmount = Math.min(debtor.amount, creditor.amount);
+      const settledAmount = round2(Math.min(debtor.amount, creditor.amount));
       if (settledAmount > 0.01) {
+        const dm = debtor.member;
+        const cm = creditor.member;
         transfers.push({
           id: `opt-tx-${tripId}-${transferId++}`,
           tripId,
-          fromMemberId: debtor.id,
-          fromMemberName: debtor.name,
-          fromAvatarBg: debtor.avatarBg,
-          toMemberId: creditor.id,
-          toMemberName: creditor.name,
-          toAvatarBg: creditor.avatarBg,
-          toUpiId: (creditor as any).upiId || `${creditor.name.toLowerCase().replace(/\s+/g, '')}@okaxis`,
+          fromMemberId: dm.id,
+          fromMemberName: dm.name,
+          fromAvatarBg: dm.avatarBg,
+          toMemberId: cm.id,
+          toMemberName: cm.name,
+          toAvatarBg: cm.avatarBg,
+          toUpiId: (cm as any).upiId || `${cm.name.toLowerCase().replace(/\s+/g, '')}@okaxis`,
           amount: Math.round(settledAmount),
           currency,
           currencySymbol,
           status: 'pending',
           dueDate: 'Instant UPI / Transfer',
-          syncStatus: 'SYNCED'
+          syncStatus: 'SYNCED',
         });
       }
 
-      debtor.amount -= settledAmount;
-      creditor.amount -= settledAmount;
+      debtor.amount = round2(debtor.amount - settledAmount);
+      creditor.amount = round2(creditor.amount - settledAmount);
 
-      if (debtor.amount < 0.01) dIdx++;
-      if (creditor.amount < 0.01) cIdx++;
+      if (debtor.amount <= 0.01) dIdx++;
+      if (creditor.amount <= 0.01) cIdx++;
     }
 
-    const originalTxCount = Math.max(transfers.length * 3 + 2, 7);
+    // Reduction metrics: worst-case original = debtors × creditors pairwise
+    const worstCase = Math.max(debtors.length * creditors.length, 1);
+    const originalTxCount = worstCase;
     const optimizedTxCount = transfers.length;
     const reductionPercentage =
       originalTxCount > 0
         ? Math.round(((originalTxCount - optimizedTxCount) / originalTxCount) * 100)
         : 0;
 
-    const totalVolume = transfers.reduce((sum, t) => sum + t.amount, 0);
+    const totalVolume = round2(transfers.reduce((sum, t) => sum + t.amount, 0));
 
-    return {
-      transfers,
-      originalTxCount,
-      optimizedTxCount,
-      totalVolume,
-      reductionPercentage
-    };
-  }
+    return { transfers, originalTxCount, optimizedTxCount, totalVolume, reductionPercentage };
+  },
+
+  /**
+   * Builds directed debt graph edges for visualization.
+   * Returns { fromName, toName, amount } edges representing who pays whom.
+   */
+  buildDebtGraph(
+    members: Participant[],
+    tripId: string = 'graph',
+    currency: string = 'INR',
+    currencySymbol: string = '₹'
+  ): Array<{
+    fromId: string;
+    fromName: string;
+    fromAvatarBg: string;
+    toId: string;
+    toName: string;
+    toAvatarBg: string;
+    amount: number;
+  }> {
+    const result = this.calculateOptimalSettlements(members, tripId, currency, currencySymbol);
+    return result.transfers.map((t) => ({
+      fromId: t.fromMemberId,
+      fromName: t.fromMemberName,
+      fromAvatarBg: t.fromAvatarBg || '#dc2626',
+      toId: t.toMemberId,
+      toName: t.toMemberName,
+      toAvatarBg: t.toAvatarBg || '#059669',
+      amount: t.amount,
+    }));
+  },
 };
 
 function getInvolvedMemberIds(exp: Expense, allMembers: Participant[]): string[] {
-  // Unstop Team Rule: Before acceptance, split expenses CANNOT be allocated to pending travelers
   const acceptedMembers = allMembers.filter(
     (m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer'
   );
@@ -188,10 +221,9 @@ function getInvolvedMemberIds(exp: Expense, allMembers: Participant[]): string[]
 
   if (exp.splits && exp.splits.length > 0) {
     const optedIn = exp.splits
-      .filter((s) => s.isOptedIn && acceptedIdSet.has(s.participantId))
-      .map((s) => s.participantId);
+      .filter((s) => s.isOptedIn !== false && acceptedIdSet.has(String(s.participantId || (s as any).memberId)))
+      .map((s) => String(s.participantId || (s as any).memberId));
     if (optedIn.length > 0) return optedIn;
   }
-  // Default to accepted trip members only
   return acceptedMembers.map((m) => m.id);
 }
