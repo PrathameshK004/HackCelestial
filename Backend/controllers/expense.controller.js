@@ -44,7 +44,7 @@ async function addExpense(req, res) {
             participants = [],
             paymentMethod = 'CASH',
             paymentReference = null,
-            verificationStatus = 'VERIFIED',
+            verificationStatus: rawVerificationStatus = null,
             rawSmsProof = null
         } = req.body;
 
@@ -222,8 +222,20 @@ async function addExpense(req, res) {
 
         const expenseId = crypto.randomUUID();
 
-        // Calculate 60% approval threshold for group companions if PENDING_APPROVAL
+        // Calculate 60% approval threshold for group companions
         const otherMembers = allMembers.filter(m => String(m.id) !== String(payer.id));
+        
+        let verificationStatus = rawVerificationStatus;
+        if (!verificationStatus) {
+            // Normal expense added to group:
+            // If group has other companions, 60% validation is strictly required before it becomes official.
+            // If solo trip without companions, auto-verify immediately.
+            verificationStatus = otherMembers.length > 0 ? 'PENDING_APPROVAL' : 'VERIFIED';
+        } else if (verificationStatus === 'VERIFIED' && otherMembers.length > 0 && !rawSmsProof) {
+            // Normal manual expense cannot bypass companion validation without bank SMS proof
+            verificationStatus = 'PENDING_APPROVAL';
+        }
+
         const requiredApprovals = verificationStatus === 'PENDING_APPROVAL'
             ? Math.max(1, Math.ceil(otherMembers.length * 0.60))
             : 0;
@@ -598,7 +610,7 @@ async function getGroupSettlement(req, res) {
 
         // 3. Fetch expenses with full detail and splits
         const expensesRes = await pool.query(`
-            SELECT id, COALESCE(paid_by_member_id, paid_by) as paid_by_member_id, amount, description, category, currency, split_model, payment_method, payment_reference, created_at
+            SELECT id, COALESCE(paid_by_member_id, paid_by) as paid_by_member_id, amount, description, category, currency, split_model, payment_method, payment_reference, verification_status, created_at
             FROM expenses
             WHERE group_id = $1
             ORDER BY created_at DESC
@@ -654,6 +666,8 @@ async function getGroupSettlement(req, res) {
                 splitModel: e.split_model || 'EQUAL',
                 paymentMethod: e.payment_method || 'CASH',
                 paymentReference: e.payment_reference,
+                verificationStatus: e.verification_status || 'VERIFIED',
+                verification_status: e.verification_status || 'VERIFIED',
                 createdAt: e.created_at,
                 paidBy: {
                     id: payer.id,
@@ -680,7 +694,16 @@ async function getGroupSettlement(req, res) {
 
         // 5. Run Recalculation Engine
         const netResult = calculateNetBalances(members, formattedExpenses, settlementsRes.rows);
-        const simplifiedTransfers = calculateOptimalSettlements(netResult.balances, netResult.memberLookup, group.currency);
+        const rawTransfers = calculateOptimalSettlements(netResult.balances, netResult.memberLookup, group.currency);
+
+        // Enrich transfers with resolved member names & avatar colors
+        const simplifiedTransfers = rawTransfers.map(t => ({
+            ...t,
+            fromMemberName: t.from?.name || netResult.memberLookup[t.fromMemberId]?.name || 'Member',
+            toMemberName: t.to?.name || netResult.memberLookup[t.toMemberId]?.name || 'Member',
+            fromAvatarBg: t.from?.avatarBg || netResult.memberLookup[t.fromMemberId]?.avatarBg || '#dc2626',
+            toAvatarBg: t.to?.avatarBg || netResult.memberLookup[t.toMemberId]?.avatarBg || '#059669',
+        }));
 
         return sendSuccess(res, "Settlement calculated successfully", {
             groupId: group.id,
@@ -688,8 +711,16 @@ async function getGroupSettlement(req, res) {
             groupStatus: group.status,
             currency: group.currency,
             totalSpend: netResult.totalSpend,
+            totalDebtors: netResult.memberSummaries.filter(m => m.netBalance < -0.01).length,
+            totalCreditors: netResult.memberSummaries.filter(m => m.netBalance > 0.01).length,
+            optimizedTxCount: simplifiedTransfers.length,
             members: netResult.memberSummaries,
             transfers: simplifiedTransfers,
+            // settlementPlan wrapper for backward compatibility
+            settlementPlan: {
+                transfers: simplifiedTransfers,
+                count: simplifiedTransfers.length
+            },
             expenses: formattedExpenses,
             rawSettlementsCount: settlementsRes.rows.length,
             settlements: settlementsRes.rows.map(s => ({

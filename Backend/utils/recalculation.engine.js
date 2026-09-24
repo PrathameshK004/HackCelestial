@@ -210,6 +210,13 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
 
     // 1. Process Expenses
     for (const exp of expenses) {
+        // Only official expenses (VERIFIED or AUTO_VERIFIED) affect balances.
+        // Skip unapproved (PENDING_APPROVAL) or DISPUTED expenses until 60% companion consensus is reached.
+        const status = (exp.verification_status || exp.verificationStatus || 'VERIFIED').toUpperCase();
+        if (status === 'PENDING_APPROVAL' || status === 'DISPUTED') {
+            continue;
+        }
+
         const expAmount = Number(exp.amount) || 0;
         totalSpend = round2(totalSpend + expAmount);
         const payerId = String(exp.paid_by_member_id || exp.paidByMemberId);
