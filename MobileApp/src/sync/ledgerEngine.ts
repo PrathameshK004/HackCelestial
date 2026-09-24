@@ -22,6 +22,13 @@ export const ledgerEngine = {
 
     // 1. Process Expenses
     for (const exp of expenses) {
+      // Only official expenses (VERIFIED or AUTO_VERIFIED) affect balances.
+      // Skip unapproved (PENDING_APPROVAL) or DISPUTED expenses until 60% consensus is reached.
+      const status = (exp.verificationStatus || 'VERIFIED').toUpperCase();
+      if (status === 'PENDING_APPROVAL' || status === 'DISPUTED') {
+        continue;
+      }
+
       const payerId = exp.paidById;
       const totalAmount = Number(exp.amount || 0);
       if (totalAmount <= 0) continue;

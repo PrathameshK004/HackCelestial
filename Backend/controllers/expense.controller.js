@@ -598,7 +598,7 @@ async function getGroupSettlement(req, res) {
 
         // 3. Fetch expenses with full detail and splits
         const expensesRes = await pool.query(`
-            SELECT id, COALESCE(paid_by_member_id, paid_by) as paid_by_member_id, amount, description, category, currency, split_model, payment_method, payment_reference, created_at
+            SELECT id, COALESCE(paid_by_member_id, paid_by) as paid_by_member_id, amount, description, category, currency, split_model, payment_method, payment_reference, verification_status, created_at
             FROM expenses
             WHERE group_id = $1
             ORDER BY created_at DESC
@@ -654,6 +654,8 @@ async function getGroupSettlement(req, res) {
                 splitModel: e.split_model || 'EQUAL',
                 paymentMethod: e.payment_method || 'CASH',
                 paymentReference: e.payment_reference,
+                verificationStatus: e.verification_status || 'VERIFIED',
+                verification_status: e.verification_status || 'VERIFIED',
                 createdAt: e.created_at,
                 paidBy: {
                     id: payer.id,

@@ -28,6 +28,8 @@ interface TripContextType {
       splits?: ExpenseParticipantSplit[];
       paymentMethod: 'CASH' | 'UPI';
       paymentReference?: string;
+      verificationStatus?: string;
+      rawSmsProof?: string;
     }
   ) => Promise<void>;
   deleteExpense: (tripId: string, expenseId: string) => Promise<void>;
@@ -240,20 +242,30 @@ export const useTrips = (): TripContextType => {
 function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: any): Trip {
   const tripId = String(g.id || g.group_id);
 
-  const members: Participant[] = (detail?.members || g.travelers || g.members || []).map((m: any) => ({
-    id: String(m.id || m.memberId || m.email),
-    tripId,
-    userId: m.userId || m.id,
-    name: m.name || 'Traveler',
-    email: m.email || '',
-    role: m.role === 'Organizer' ? 'Organizer' : 'Traveler',
-    avatarBg: m.avatarBg || '#059669',
-    isUser: Boolean(m.isUser),
-    balance: Number(m.balance || 0),
-    status: (m.status || (m.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')) as any,
-    inviteCode: m.inviteCode || null,
-    syncStatus: 'SYNCED',
-  }));
+  const settleMemberMap = new Map<string, any>();
+  if (Array.isArray(settleData?.members)) {
+    for (const sm of settleData.members) {
+      settleMemberMap.set(String(sm.id), sm);
+    }
+  }
+
+  const members: Participant[] = (detail?.members || g.travelers || g.members || []).map((m: any) => {
+    const sm = settleMemberMap.get(String(m.id || m.memberId || m.email));
+    return {
+      id: String(m.id || m.memberId || m.email),
+      tripId,
+      userId: m.userId || m.id,
+      name: m.name || 'Traveler',
+      email: m.email || '',
+      role: m.role === 'Organizer' ? 'Organizer' : 'Traveler',
+      avatarBg: m.avatarBg || '#059669',
+      isUser: Boolean(m.isUser),
+      balance: Number(sm?.netBalance !== undefined ? sm.netBalance : (m.balance || 0)),
+      status: (m.status || (m.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')) as any,
+      inviteCode: m.inviteCode || null,
+      syncStatus: 'SYNCED',
+    };
+  });
 
   // Deduplicate expenses strictly so each has a unique ID and only 1 entry exists
   const seenExpIds = new Set<string>();
@@ -322,8 +334,10 @@ function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: a
     currency: g.currency || 'INR',
     currencySymbol: g.currencySymbol || '₹',
     totalBudget: Number(g.totalBudget || 0),
-    totalSpent: Number(g.totalSpent || 0),
-    userBalance: Number(g.userBalance || 0),
+    totalSpent: Number(settleData?.totalSpend !== undefined ? settleData.totalSpend : (g.totalSpent || 0)),
+    userBalance: Number(
+      members.find((m) => m.isUser)?.balance ?? g.userBalance ?? 0
+    ),
     inviteCode: detail?.inviteCode || g.inviteCode || null,
     createdBy: detail?.createdBy || g.createdBy || null,
     description: g.description || '',
