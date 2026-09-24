@@ -145,7 +145,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
           <View style={styles.sheetHeader}>
             <View>
               <Text style={styles.sheetTitle}>Add Group Expense</Text>
-              <Text style={styles.sheetSubtitle}>Recalculates ledger in SQLite immediately</Text>
+              <Text style={styles.sheetSubtitle}>Add expense and split costs with group</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <X size={18} color={colors.slate600} />
@@ -318,7 +318,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               activeOpacity={0.85}
             >
               <Text style={styles.submitBtnText}>
-                {isSubmitting ? 'Saving to SQLite...' : `Add Expense • ₹${numAmount.toLocaleString()}`}
+                {isSubmitting ? 'Saving Expense...' : `Add Expense • ₹${numAmount.toLocaleString()}`}
               </Text>
             </TouchableOpacity>
           </View>

@@ -34,9 +34,14 @@ import {
   Clock,
   ChevronRight,
   Lock,
+  ThumbsUp,
+  ThumbsDown,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
 import { useTrips } from '../context/TripContext';
+import { useAuth } from '../context/AuthContext';
 import { groupService } from '../api/group.service';
 import { ledgerEngine } from '../sync/ledgerEngine';
 import { AddExpenseModal } from '../components/group/AddExpenseModal';
@@ -54,6 +59,8 @@ interface GroupMenuScreenProps {
 
 export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack }) => {
   const { trips, addExpense, deleteExpense, addMember, recordSettlement, refreshTrips } = useTrips();
+  const { user } = useAuth();
+  const [votingExpenseId, setVotingExpenseId] = useState<string | null>(null);
   const isSyncing = false;
 
   const [refreshing, setRefreshing] = useState(false);
@@ -163,13 +170,54 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const isUserOwed = userBalance > 0.01;
   const doesUserOwe = userBalance < -0.01;
 
+  const isExpensePayer = (exp: Expense): boolean => {
+    if (userMember) {
+      if (String(exp.paidById) === String(userMember.id)) return true;
+      if (userMember.userId && String(exp.paidById) === String(userMember.userId)) return true;
+      if (userMember.name && String(exp.paidByName).trim().toLowerCase() === userMember.name.trim().toLowerCase()) return true;
+    }
+    if (user) {
+      if (String(exp.paidById) === String(user.id)) return true;
+      if (user.username && String(exp.paidByName).trim().toLowerCase() === user.username.trim().toLowerCase()) return true;
+      if (user.name && String(exp.paidByName).trim().toLowerCase() === user.name.trim().toLowerCase()) return true;
+    }
+    return false;
+  };
+
+  const handleCastVote = async (expense: Expense, action: 'APPROVE' | 'DISPUTE') => {
+    setVotingExpenseId(expense.id);
+    try {
+      const res = await groupService.reviewExpenseApproval(trip.id, expense.id, action);
+      const data = res?.data;
+      if (data?.isFinalized && data?.verificationStatus === 'VERIFIED') {
+        Alert.alert('✅ Expense Approved', `"${expense.title}" reached 60% group approval and is verified.`);
+      } else if (action === 'APPROVE') {
+        Alert.alert('✅ Vote Submitted', 'Your approval vote has been counted.');
+      } else {
+        Alert.alert('⚠️ Dispute Recorded', 'Your dispute vote has been registered.');
+      }
+      await refreshTrips();
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to submit vote. Please try again.');
+    } finally {
+      setVotingExpenseId(null);
+    }
+  };
+
   const handleDeleteExpense = (expId: string, title: string) => {
     Alert.alert('Delete Expense', `Are you sure you want to delete "${title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => deleteExpense(trip.id, expId),
+        onPress: async () => {
+          try {
+            await deleteExpense(trip.id, expId);
+            setExpandedExpenseId(null);
+          } catch (err: any) {
+            Alert.alert('Cannot Delete', err?.message || 'Only the member who added this expense can delete it.');
+          }
+        },
       },
     ]);
   };
@@ -436,14 +484,162 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                           <Text style={styles.drawerValue}>{exp.paymentMethod || 'CASH'}</Text>
                         </View>
 
-                        <TouchableOpacity
-                          style={styles.deleteExpBtn}
-                          onPress={() => handleDeleteExpense(exp.id, exp.title)}
-                          activeOpacity={0.8}
-                        >
-                          <Trash2 size={13} color={colors.accentRose} />
-                          <Text style={styles.deleteExpBtnText}>Delete Expense</Text>
-                        </TouchableOpacity>
+                        {/* Member Approvals (60% Consensus) */}
+                        {(() => {
+                          const isPayer = isExpensePayer(exp);
+                          const approvals = Array.isArray(exp.approvals) ? exp.approvals : [];
+                          const approveCount = approvals.filter((a: any) => a.action === 'APPROVE').length;
+                          const otherMembersCount = Math.max(1, members.filter((m) => String(m.id) !== String(exp.paidById)).length);
+                          const requiredApprovals = exp.requiredApprovals || Math.max(1, Math.ceil(otherMembersCount * 0.6));
+                          const progressPct = Math.min(100, Math.round((approveCount / requiredApprovals) * 100));
+
+                          const currentVote = approvals.find((a: any) =>
+                            (userMember && String(a.memberId) === String(userMember.id)) ||
+                            (user && String(a.userId) === String(user.id)) ||
+                            (user && (a.memberName === user.username || a.memberName === user.name))
+                          );
+                          const isFinalized = exp.verificationStatus === 'VERIFIED' || exp.verificationStatus === 'AUTO_VERIFIED';
+                          const isPending = exp.verificationStatus === 'PENDING_APPROVAL' || (!isFinalized && !exp.verificationStatus);
+
+                          return (
+                            <View style={styles.drawerApprovalBox}>
+                              <View style={styles.drawerApprovalHeader}>
+                                <View style={styles.drawerApprovalLabelRow}>
+                                  <ShieldCheck size={14} color={isFinalized ? colors.primary600 : '#d97706'} />
+                                  <Text style={styles.drawerApprovalTitle}>MEMBER APPROVAL</Text>
+                                </View>
+                                <View
+                                  style={[
+                                    styles.drawerApprovalBadge,
+                                    isFinalized ? styles.badgeSuccess : styles.badgePending,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.drawerApprovalBadgeText,
+                                      isFinalized ? styles.badgeTextSuccess : styles.badgeTextPending,
+                                    ]}
+                                  >
+                                    {isFinalized
+                                      ? exp.verificationStatus === 'AUTO_VERIFIED'
+                                        ? '⚡ Bank Verified'
+                                        : '✅ 100% Approved'
+                                      : `⏳ ${approveCount}/${requiredApprovals} Approved`}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Progress Bar */}
+                              <View style={styles.drawerProgressBar}>
+                                <View
+                                  style={[
+                                    styles.drawerProgressFill,
+                                    { width: `${progressPct}%` },
+                                    isFinalized && { backgroundColor: colors.primary600 },
+                                  ]}
+                                />
+                              </View>
+                              <Text style={styles.drawerProgressNote}>
+                                {isFinalized
+                                  ? 'All required group member approvals confirmed.'
+                                  : `${approveCount} of ${requiredApprovals} companion approvals needed (60% consensus)`}
+                              </Text>
+
+                              {/* Voter List pills if any */}
+                              {approvals.length > 0 && (
+                                <View style={styles.votersRow}>
+                                  {approvals.map((a: any, idx: number) => (
+                                    <View key={idx} style={styles.voterPill}>
+                                      <Text style={styles.voterPillText}>
+                                        {a.memberName || 'Companion'}: {a.action === 'APPROVE' ? '👍 Approved' : '👎 Disputed'}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              )}
+
+                              {/* Action or Notice */}
+                              {isPayer ? (
+                                <View style={styles.payerStatusNotice}>
+                                  <Clock size={12} color="#475569" />
+                                  <Text style={styles.payerStatusText}>
+                                    {isFinalized
+                                      ? 'You added this expense — verified by group.'
+                                      : 'You added this expense — waiting for companions to review and approve.'}
+                                  </Text>
+                                </View>
+                              ) : isPending ? (
+                                currentVote ? (
+                                  <View style={styles.alreadyVotedNotice}>
+                                    <CheckCircle2
+                                      size={13}
+                                      color={currentVote.action === 'APPROVE' ? '#059669' : '#dc2626'}
+                                    />
+                                    <Text style={styles.alreadyVotedText}>
+                                      You voted: {currentVote.action === 'APPROVE' ? 'Approved ✅' : 'Disputed ❌'}
+                                    </Text>
+                                  </View>
+                                ) : (
+                                  <View style={styles.drawerVoteActions}>
+                                    <TouchableOpacity
+                                      style={[styles.voteBtn, styles.approveBtn]}
+                                      onPress={() => handleCastVote(exp, 'APPROVE')}
+                                      disabled={votingExpenseId === exp.id}
+                                      activeOpacity={0.8}
+                                    >
+                                      {votingExpenseId === exp.id ? (
+                                        <ActivityIndicator size="small" color="#ffffff" />
+                                      ) : (
+                                        <>
+                                          <ThumbsUp size={13} color="#ffffff" />
+                                          <Text style={styles.voteBtnText}>Approve</Text>
+                                        </>
+                                      )}
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                      style={[styles.voteBtn, styles.disputeBtn]}
+                                      onPress={() => handleCastVote(exp, 'DISPUTE')}
+                                      disabled={votingExpenseId === exp.id}
+                                      activeOpacity={0.8}
+                                    >
+                                      <ThumbsDown size={13} color="#dc2626" />
+                                      <Text style={styles.disputeBtnText}>Dispute</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                )
+                              ) : null}
+                            </View>
+                          );
+                        })()}
+
+                        {/* Cost Split Breakdown list if present */}
+                        {exp.splits && exp.splits.length > 0 && (
+                          <View style={styles.splitBreakdownBox}>
+                            <Text style={styles.splitBreakdownTitle}>Cost Splits:</Text>
+                            <View style={styles.splitChipsWrap}>
+                              {exp.splits.map((s: any, idx: number) => (
+                                <View key={idx} style={styles.splitChip}>
+                                  <Text style={styles.splitChipText}>
+                                    {s.memberName || 'Member'}: ₹{Number(s.computedAmount || s.shareAmount || 0).toFixed(0)}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        )}
+
+                        {/* Delete Expense Button - ONLY for the user who added that expense */}
+                        {isExpensePayer(exp) && (
+                          <TouchableOpacity
+                            style={styles.deleteExpBtn}
+                            onPress={() => handleDeleteExpense(exp.id, exp.title)}
+                            activeOpacity={0.8}
+                          >
+                            <Trash2 size={13} color={colors.accentRose} />
+                            <Text style={styles.deleteExpBtnText}>Delete Expense</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     )}
                   </View>
@@ -884,6 +1080,186 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
     color: colors.accentRose,
+  },
+  drawerApprovalBox: {
+    marginTop: 10,
+    padding: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  drawerApprovalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  drawerApprovalLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  drawerApprovalTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: colors.slate600,
+    letterSpacing: 0.5,
+  },
+  drawerApprovalBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 12,
+  },
+  badgeSuccess: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  badgePending: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+  },
+  drawerApprovalBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  badgeTextSuccess: {
+    color: '#059669',
+  },
+  badgeTextPending: {
+    color: '#b45309',
+  },
+  drawerProgressBar: {
+    height: 5,
+    backgroundColor: colors.slate200,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  drawerProgressFill: {
+    height: '100%',
+    backgroundColor: '#d97706',
+    borderRadius: 3,
+  },
+  drawerProgressNote: {
+    fontSize: 10.5,
+    color: colors.slate500,
+    marginTop: 2,
+  },
+  votersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  voterPill: {
+    backgroundColor: colors.slate100,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  voterPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.slate700,
+  },
+  payerStatusNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: colors.slate100,
+    borderRadius: 6,
+  },
+  payerStatusText: {
+    fontSize: 11,
+    color: colors.slate600,
+    flex: 1,
+  },
+  alreadyVotedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: colors.slate50,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  alreadyVotedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.slate700,
+  },
+  drawerVoteActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  voteBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: radii.md,
+    gap: 5,
+  },
+  approveBtn: {
+    backgroundColor: colors.primary600,
+  },
+  disputeBtn: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  voteBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  disputeBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#dc2626',
+  },
+  splitBreakdownBox: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  splitBreakdownTitle: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: colors.slate500,
+    marginBottom: 5,
+    textTransform: 'uppercase',
+  },
+  splitChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  splitChip: {
+    backgroundColor: colors.slate100,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  splitChipText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: colors.slate700,
   },
   optimizerHeaderBox: {
     backgroundColor: colors.slate900,

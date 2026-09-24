@@ -482,12 +482,27 @@ async function deleteExpense(req, res) {
             return sendError(res, "Access denied. You are not a member of this trip.", null, 403);
         }
 
-        const expRes = await client.query('SELECT description, amount, currency FROM expenses WHERE id = $1 AND group_id = $2', [expenseId, groupId]);
+        const expRes = await client.query('SELECT description, amount, currency, paid_by_member_id, paid_by, created_by FROM expenses WHERE id = $1 AND group_id = $2', [expenseId, groupId]);
         if (expRes.rows.length === 0) {
             client.release();
             return sendError(res, "Expense not found", null, 404);
         }
         const exp = expRes.rows[0];
+
+        // Ensure ONLY the user who added that expense can delete it
+        const callerRes = await client.query('SELECT id, role FROM group_members WHERE group_id = $1 AND (user_id = $2 OR email = (SELECT email FROM users WHERE id = $2))', [groupId, userId]);
+        const callerMember = callerRes.rows[0];
+
+        const isOwner = Boolean(
+            (exp.created_by && String(exp.created_by) === String(userId)) ||
+            (callerMember && String(exp.paid_by_member_id) === String(callerMember.id)) ||
+            (callerMember && String(exp.paid_by) === String(callerMember.id))
+        );
+
+        if (!isOwner) {
+            client.release();
+            return sendError(res, "Only the member who added this expense can delete it.", null, 403);
+        }
 
         await client.query('BEGIN');
 
