@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Send
 } from 'lucide-react';
+import { createSupportTicket } from '../services/support.service';
 
 interface HelpSupportPageProps {
   onBack: () => void;
@@ -65,6 +66,10 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
   // Contact form state
   const [ticketSubject, setTicketSubject] = useState('');
   const [ticketMessage, setTicketMessage] = useState('');
+  const [ticketCategory, setTicketCategory] = useState('split');
+  const [ticketAttachment, setTicketAttachment] = useState<File | null>(null);
+  const [ticketError, setTicketError] = useState('');
+  const [ticketNumber, setTicketNumber] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [ticketSubmitted, setTicketSubmitted] = useState(false);
 
@@ -77,17 +82,23 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     return true;
   });
 
-  const handleSubmitTicket = (e: React.FormEvent) => {
+  const handleSubmitTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ticketSubject.trim() || !ticketMessage.trim()) return;
     setIsSubmitting(true);
-    setTimeout(() => {
+    setTicketError('');
+    try {
+      const response = await createSupportTicket({ category: ticketCategory, subject: ticketSubject, message: ticketMessage, attachment: ticketAttachment });
+      setTicketNumber(response.ticketNumber);
       setIsSubmitting(false);
       setTicketSubmitted(true);
       setTicketSubject('');
       setTicketMessage('');
-      setTimeout(() => setTicketSubmitted(false), 5000);
-    }, 800);
+      setTicketAttachment(null);
+    } catch (err: any) {
+      setTicketError(err.message || 'Could not submit your ticket. Please try again.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -296,13 +307,6 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
               <FileText size={16} color="var(--accent-olive)" />
             </div>
 
-            {ticketSubmitted && (
-              <div style={{ padding: '8px 10px', background: 'rgba(70, 75, 41, 0.1)', color: 'var(--accent-olive)', borderRadius: 'var(--radius-md)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem' }}>
-                <CheckCircle2 size={16} />
-                <span>Ticket #TRIP-8842 submitted! We will reply within 4 hours.</span>
-              </div>
-            )}
-
             <form onSubmit={handleSubmitTicket} style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
               <div style={{ width: '100%' }}>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
@@ -311,6 +315,8 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                 <select
                   className="styled-select-input"
                   style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.8rem', padding: '8px 10px', background: 'var(--bg-surface-warm)' }}
+                  value={ticketCategory}
+                  onChange={(e) => setTicketCategory(e.target.value)}
                 >
                   <option value="split">Settlement Calculation Query</option>
                   <option value="upi">UPI Payment Confirmation</option>
@@ -336,6 +342,22 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
               </div>
 
               <div style={{ width: '100%' }}>
+                <label htmlFor="support-attachment" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  Attachment <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional, max 5 MB)</span>
+                </label>
+                <input
+                  id="support-attachment"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf,text/plain"
+                  onChange={(e) => setTicketAttachment(e.target.files?.[0] || null)}
+                  style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.76rem', padding: '8px', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-md)', background: 'var(--bg-surface-warm)' }}
+                />
+                {ticketAttachment && <span style={{ display: 'block', marginTop: '4px', color: 'var(--accent-olive)', fontSize: '0.7rem' }}>{ticketAttachment.name}</span>}
+              </div>
+
+              {ticketError && <div className="auth-modern-alert alert-error" role="alert"><HelpCircle size={15} /><span>{ticketError}</span></div>}
+
+              <div style={{ width: '100%' }}>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
                   Detailed Description
                 </label>
@@ -357,9 +379,15 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                 style={{ width: '100%', justifyContent: 'center', padding: '9px 14px', fontSize: '0.78rem', marginTop: '2px', boxSizing: 'border-box' }}
               >
                 <Send size={13} />
-                <span>{isSubmitting ? 'Submitting Ticket...' : 'Send to Support Desk'}</span>
+                <span>{isSubmitting ? 'Submitting Ticket...' : 'Raise Support Ticket'}</span>
               </button>
             </form>
+            {ticketSubmitted && (
+              <div style={{ marginTop: '10px', padding: '10px', background: 'rgba(70, 75, 41, 0.1)', color: 'var(--accent-olive)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem' }}>
+                <CheckCircle2 size={16} />
+                <span>Ticket {ticketNumber} submitted. We will reply within 4 hours.</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

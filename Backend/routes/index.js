@@ -8,6 +8,7 @@ const paymentRoutes = require('./payment.route');
 const notificationRoutes = require('./notification.route');
 const packageRoutes = require('./package.route');
 const savedTripRoutes = require('./savedTrip.route');
+const supportRoutes = require('./support.route');
 const healthController = require('../controllers/health.controller');
 
 // Health Check Endpoint
@@ -25,6 +26,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/user-notifications', notificationRoutes);
 router.use('/packages', packageRoutes);
 router.use('/saved-trips', savedTripRoutes);
+router.use('/support', supportRoutes);
 router.post('/user-push-tokens', verifyToken, userController.registerPushToken);
 router.delete('/user-push-tokens', verifyToken, userController.unregisterPushToken);
 

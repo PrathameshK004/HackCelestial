@@ -293,6 +293,22 @@ const initializeDatabase = async () => {
         )
     `);
 
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS support_tickets (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            ticket_number VARCHAR(32) NOT NULL UNIQUE,
+            category VARCHAR(80) NOT NULL DEFAULT 'other',
+            subject VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            attachment_name VARCHAR(255),
+            attachment_type VARCHAR(100),
+            attachment_size INTEGER,
+            attachment_data BYTEA,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+
     // Data Migration: Clean up legacy member status inconsistencies where invited members were erroneously set to ACCEPTED
     await pool.query(`
         UPDATE group_members gm

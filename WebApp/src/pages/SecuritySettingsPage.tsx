@@ -7,8 +7,6 @@ import {
   Check,
   AlertTriangle,
   LogOut,
-  Mail,
-  Send,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authService } from '../services/auth.service';
@@ -290,22 +288,6 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
                 </div>
               )}
 
-              <button
-                type="button"
-                className="profile-header-icon-btn"
-                onClick={handleSendOtp}
-                disabled={isSendingOtp}
-                style={{
-                  width: '100%',
-                  justifyContent: 'center',
-                  padding: '9px 14px',
-                  fontSize: '0.78rem',
-                  boxSizing: 'border-box'
-                }}
-              >
-                {isSendingOtp ? <Mail size={14} /> : <Send size={14} />}
-                <span>{isSendingOtp ? 'Sending OTP...' : 'Send Verification OTP'}</span>
-              </button>
             </div>
           </div>
 
