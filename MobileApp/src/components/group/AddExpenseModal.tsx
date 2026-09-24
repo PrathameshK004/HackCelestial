@@ -206,17 +206,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               ))}
             </ScrollView>
 
-            {/* Paid By — auto-detected as the logged-in user, no prompt needed */}
-            <View style={styles.payerAutoRow}>
-              <View style={[styles.avatarMini, { backgroundColor: autoDetectedPayer?.avatarBg || colors.primary600 }]}>
-                <Text style={styles.avatarMiniText}>{(autoDetectedPayer?.name || 'Y').charAt(0)}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.payerAutoLabel}>Paid by</Text>
-                <Text style={styles.payerAutoName}>You ({autoDetectedPayer?.name || 'Me'})</Text>
-              </View>
-            </View>
-
             {/* Split Model Picker */}
             <Text style={styles.inputLabel}>Cost-Sharing Model</Text>
             {SPLIT_MODELS.map((model) => (
