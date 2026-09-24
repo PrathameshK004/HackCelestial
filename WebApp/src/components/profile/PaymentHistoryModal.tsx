@@ -85,7 +85,7 @@ const MOCK_PAYMENTS: PaymentRecord[] = [
     txId: 'UPI-1192834012',
     type: 'sent',
     amount: 450,
-    currencySymbol: '$',
+    currencySymbol: '₹',
     counterpart: 'Amit Patel',
     groupName: 'Bali Tropical Retreat',
     method: 'Bank IMPS',

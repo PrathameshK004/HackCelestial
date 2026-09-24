@@ -53,6 +53,20 @@ const initializeDatabase = async () => {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_saved_trips (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            stay_id VARCHAR(255) NOT NULL,
+            stay_data JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT unique_user_saved_trip UNIQUE (user_id, stay_id)
+        )
+    `);
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_user_saved_trips_user ON user_saved_trips(user_id, created_at DESC)
+    `);
 
     // 3. Groups / Trips Table
     await pool.query(`
@@ -248,7 +262,7 @@ const initializeDatabase = async () => {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS in_app_notifications (
             id UUID PRIMARY KEY,
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
             type VARCHAR(50) NOT NULL,
             title VARCHAR(255) NOT NULL,
             body TEXT NOT NULL,
@@ -256,6 +270,66 @@ const initializeDatabase = async () => {
             is_read BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+    `);
+
+    await pool.query(`
+        ALTER TABLE in_app_notifications ALTER COLUMN user_id DROP NOT NULL;
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS notification_dismissals (
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            notification_id UUID NOT NULL REFERENCES in_app_notifications(id) ON DELETE CASCADE,
+            dismissed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (user_id, notification_id)
+        )
+    `);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS notification_reads (
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            notification_id UUID NOT NULL REFERENCES in_app_notifications(id) ON DELETE CASCADE,
+            read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (user_id, notification_id)
+        )
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS support_tickets (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            ticket_number VARCHAR(32) NOT NULL UNIQUE,
+            category VARCHAR(80) NOT NULL DEFAULT 'other',
+            subject VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            status VARCHAR(32) NOT NULL DEFAULT 'OPEN',
+            attachment_name VARCHAR(255),
+            attachment_type VARCHAR(100),
+            attachment_size INTEGER,
+            attachment_data BYTEA,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await pool.query(`
+        ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'OPEN';
+        ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS attachment_url TEXT;
+        ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS attachment_key VARCHAR(512);
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS support_ticket_messages (
+            id UUID PRIMARY KEY,
+            ticket_id UUID NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+            sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            sender_name VARCHAR(120),
+            sender_role VARCHAR(32) NOT NULL DEFAULT 'USER',
+            message TEXT,
+            attachment_url TEXT,
+            attachment_name VARCHAR(255),
+            attachment_type VARCHAR(100),
+            attachment_size INTEGER,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id, created_at ASC);
     `);
 
     // Data Migration: Clean up legacy member status inconsistencies where invited members were erroneously set to ACCEPTED

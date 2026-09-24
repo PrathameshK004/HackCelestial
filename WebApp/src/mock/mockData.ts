@@ -58,11 +58,7 @@ export const MOCK_DESTINATIONS: DestinationOption[] = [
 ];
 
 export const CURRENCY_OPTIONS = [
-  { code: 'INR', symbol: '₹', label: 'INR — Indian Rupee', subtitle: 'Default for India trips' },
-  { code: 'USD', symbol: '$', label: 'USD — US Dollar', subtitle: 'Global standard' },
-  { code: 'EUR', symbol: '€', label: 'EUR — Euro', subtitle: 'Eurozone destinations' },
-  { code: 'GBP', symbol: '£', label: 'GBP — British Pound', subtitle: 'United Kingdom' },
-  { code: 'AED', symbol: 'AED', label: 'AED — UAE Dirham', subtitle: 'Middle East trips' }
+  { code: 'INR', symbol: '₹', label: 'INR — Indian Rupee', subtitle: 'Default currency' }
 ] as const;
 
 export const EXPENSE_SPLIT_OPTIONS = [

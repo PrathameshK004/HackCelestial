@@ -942,7 +942,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
           </div>
         </form>
 
-        {/* 4. Dedicated Security: Password Update Section */}
+        {false && <>
+        {/* Password changes are handled in Security Settings. */}
         <section
           className="clean-section-card"
           style={{
@@ -1118,6 +1119,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             </div>
           </form>
         </section>
+        </>}
       </div>
     </div>
   );

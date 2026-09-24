@@ -522,10 +522,10 @@ async function updateUser(req, res) {
  */
 async function changePassword(req, res) {
     const userId = req.userKey || req.params.userId;
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword, code } = req.body;
 
-    if (!currentPassword || !newPassword) {
-        return sendError(res, "Current password and new password are required", null, 400);
+    if ((!currentPassword && !code) || !newPassword) {
+        return sendError(res, "Verification code and new password are required", null, 400);
     }
 
     if (newPassword.length < 6) {
@@ -543,13 +543,25 @@ async function changePassword(req, res) {
             return sendError(res, "User not found", null, 404);
         }
 
-        const isMatch = await verifyPassword(currentPassword, user.password);
-        if (!isMatch) {
-            return sendError(res, "Incorrect current password. Please try again.", null, 400);
+        if (code) {
+            if (isOTPExpired(user.codeExpiry)) {
+                return sendError(res, "Verification code has expired. Please request a new one.", null, 400);
+            }
+            const isValidCode = await verifyOTP(String(code).trim(), user.code);
+            if (!isValidCode) {
+                return sendError(res, "Invalid verification code. Please check your email.", null, 400);
+            }
+        } else {
+            const isMatch = await verifyPassword(currentPassword, user.password);
+            if (!isMatch) {
+                return sendError(res, "Incorrect current password. Please try again.", null, 400);
+            }
         }
 
         // Set and hash new password
         user.password = newPassword;
+        user.code = null;
+        user.codeExpiry = null;
         await user.save();
 
         return sendSuccess(res, "Password updated successfully");

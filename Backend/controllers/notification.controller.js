@@ -17,11 +17,21 @@ async function getUserNotifications(req, res) {
         const userId = req.userKey || null;
 
         const notifsRes = await pool.query(`
-            SELECT id, type, title, body, data, is_read as "isRead", created_at as "createdAt"
+            SELECT id, type, title, body, data,
+                   CASE WHEN user_id = $1 THEN is_read ELSE EXISTS (
+                       SELECT 1 FROM notification_reads nr
+                       WHERE nr.notification_id = in_app_notifications.id AND nr.user_id = $1
+                   ) END as "isRead",
+                   created_at as "createdAt"
             FROM in_app_notifications
             WHERE (user_id = $1 AND $1 IS NOT NULL) 
-               OR user_id IS NULL 
-               OR user_id = '00000000-0000-0000-0000-000000000000'
+               OR (
+                    (user_id IS NULL OR user_id = '00000000-0000-0000-0000-000000000000')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM notification_dismissals nd
+                        WHERE nd.notification_id = in_app_notifications.id AND nd.user_id = $1
+                    )
+               )
             ORDER BY created_at DESC
             LIMIT 100
         `, [userId]);
@@ -48,9 +58,23 @@ async function markNotificationAsRead(req, res) {
 
         if (markAll) {
             await pool.query('UPDATE in_app_notifications SET is_read = TRUE WHERE user_id = $1', [userId]);
+            await pool.query(
+                `INSERT INTO notification_reads (user_id, notification_id)
+                 SELECT $1, id FROM in_app_notifications
+                 WHERE user_id IS NULL OR user_id = '00000000-0000-0000-0000-000000000000'
+                 ON CONFLICT DO NOTHING`,
+                [userId]
+            );
             return sendSuccess(res, "All notifications marked as read", { markAll: true });
         } else if (notificationId) {
             await pool.query('UPDATE in_app_notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2', [notificationId, userId]);
+            await pool.query(
+                `INSERT INTO notification_reads (user_id, notification_id)
+                 SELECT $1, id FROM in_app_notifications
+                 WHERE id = $2 AND (user_id IS NULL OR user_id = '00000000-0000-0000-0000-000000000000')
+                 ON CONFLICT DO NOTHING`,
+                [userId, notificationId]
+            );
             return sendSuccess(res, "Notification marked as read", { notificationId });
         } else {
             return sendError(res, "notificationId or markAll is required", null, 400);
@@ -74,7 +98,20 @@ async function deleteNotification(req, res) {
             return sendError(res, "Authentication required", null, 401);
         }
 
-        await pool.query('DELETE FROM in_app_notifications WHERE id = $1 AND user_id = $2', [id, userId]);
+        const result = await pool.query(
+            `DELETE FROM in_app_notifications WHERE id = $1 AND user_id = $2
+             RETURNING id`,
+            [id, userId]
+        );
+        if (result.rowCount === 0) {
+            await pool.query(
+                `INSERT INTO notification_dismissals (user_id, notification_id)
+                 SELECT $1, id FROM in_app_notifications
+                 WHERE id = $2 AND (user_id IS NULL OR user_id = '00000000-0000-0000-0000-000000000000')
+                 ON CONFLICT DO NOTHING`,
+                [userId, id]
+            );
+        }
         return sendSuccess(res, "Notification deleted", { id });
 
     } catch (error) {
@@ -94,6 +131,13 @@ async function clearAllNotifications(req, res) {
         }
 
         await pool.query('DELETE FROM in_app_notifications WHERE user_id = $1', [userId]);
+        await pool.query(
+            `INSERT INTO notification_dismissals (user_id, notification_id)
+             SELECT $1, id FROM in_app_notifications
+             WHERE user_id IS NULL OR user_id = '00000000-0000-0000-0000-000000000000'
+             ON CONFLICT DO NOTHING`,
+            [userId]
+        );
         return sendSuccess(res, "All notifications cleared", { success: true });
 
     } catch (error) {

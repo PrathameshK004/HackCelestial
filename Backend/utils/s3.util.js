@@ -1,5 +1,6 @@
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const path = require('path');
+const fs = require('fs');
 
 // Extract environment configuration
 const region = process.env.AWS_REGION || 'ap-south-1';
@@ -130,9 +131,67 @@ async function deleteS3Object(s3UrlOrKey) {
     }
 }
 
+/**
+ * Upload support ticket document or chat attachment to AWS S3
+ * @param {Object} params
+ * @param {Buffer} params.buffer - In-memory file buffer
+ * @param {string} params.mimeType - File mimetype
+ * @param {string} params.originalName - Original uploaded file name
+ * @param {string} params.ticketNumber - Associated ticket number
+ * @returns {Promise<{ url: string, key: string, bucket: string|null, storage: string }>}
+ */
+async function uploadSupportDocumentToS3({ buffer, mimeType, originalName, ticketNumber }) {
+    if (!buffer || buffer.length === 0) {
+        throw new Error('No document data provided for upload');
+    }
+
+    const safeTicket = String(ticketNumber || 'TICKET').replace(/[^a-zA-Z0-9_-]/g, '');
+    const cleanFileName = path.basename(originalName || 'document').replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const timestamp = Date.now();
+    const key = `support-docs/${safeTicket}/${timestamp}-${cleanFileName}`;
+
+    if (isS3Configured()) {
+        const s3Client = getS3Client();
+        const command = new PutObjectCommand({
+            Bucket: bucketName,
+            Key: key,
+            Body: buffer,
+            ContentType: mimeType || 'application/octet-stream',
+        });
+
+        await s3Client.send(command);
+        const url = `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
+        console.log(`[S3 Upload] Support document uploaded to AWS S3: ${url}`);
+        return {
+            url,
+            key,
+            bucket: bucketName,
+            storage: 's3'
+        };
+    } else {
+        // Fallback to local storage if AWS S3 credentials are not yet set
+        const uploadDir = path.join(__dirname, '..', 'uploads', 'support-docs', safeTicket);
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        const filePath = path.join(uploadDir, `${timestamp}-${cleanFileName}`);
+        fs.writeFileSync(filePath, buffer);
+        const url = `/uploads/support-docs/${safeTicket}/${timestamp}-${cleanFileName}`;
+        console.log(`[Local Fallback Upload] Saved support document locally: ${url}`);
+        return {
+            url,
+            key,
+            bucket: null,
+            storage: 'local'
+        };
+    }
+}
+
 module.exports = {
     isS3Configured,
     uploadProfilePictureToS3,
+    uploadSupportDocumentToS3,
     deleteS3Object,
     ALLOWED_MIME_TYPES,
 };
+
