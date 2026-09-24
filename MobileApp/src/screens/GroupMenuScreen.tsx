@@ -223,135 +223,45 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   return (
     <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
-      {/* Top Header Section (Full Width, Merged with Balance & Tabular Menu) */}
-      <View style={styles.headerSection}>
-        {/* Row 1: Nav Bar */}
-        <View style={styles.navBar}>
-          <TouchableOpacity
-            onPress={handleBack}
-            style={styles.backBtn}
-            activeOpacity={0.7}
-            accessibilityLabel="Back"
-          >
-            <ArrowLeft size={20} color={colors.slate800} />
-          </TouchableOpacity>
+      {/* Top Navigation Bar */}
+      <View style={styles.navBar}>
+        <TouchableOpacity
+          onPress={handleBack}
+          style={styles.backBtn}
+          activeOpacity={0.7}
+          accessibilityLabel="Back"
+        >
+          <ArrowLeft size={20} color={colors.slate800} />
+        </TouchableOpacity>
 
-          <View style={styles.titleWrap}>
-            <Text style={styles.tripTitle} numberOfLines={1}>
-              {trip?.name || 'Trip Ledger'}
-            </Text>
-            <Text style={styles.tripSubtitle}>
-              {trip?.destination} • {confirmedMembers.length}/{members.length} Confirmed
-            </Text>
-          </View>
-
-          <View style={styles.navActions}>
-            <TouchableOpacity
-              style={styles.actionIconBtn}
-              onPress={() => handleRefresh()}
-              activeOpacity={0.7}
-            >
-              {isSyncing || refreshing ? (
-                <ActivityIndicator size="small" color={colors.primary600} />
-              ) : (
-                <RefreshCw size={16} color={colors.slate600} />
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionIconBtn}
-              onPress={() => setIsMembersModalOpen(true)}
-              activeOpacity={0.7}
-            >
-              <Users size={16} color={colors.slate700} />
-            </TouchableOpacity>
-          </View>
+        <View style={styles.titleWrap}>
+          <Text style={styles.tripTitle} numberOfLines={1}>
+            {trip?.name || 'Trip Ledger'}
+          </Text>
+          <Text style={styles.tripSubtitle}>
+            {trip?.destination} • {confirmedMembers.length}/{members.length} Confirmed
+          </Text>
         </View>
 
-        {/* Row 2: Net Balance Section (Full Width, Seamless Header Part) */}
-        <View style={styles.balanceSection}>
-          <View style={styles.balanceTextCol}>
-            <Text style={styles.balanceLabel}>Your Net Balance</Text>
-            <Text
-              style={[
-                styles.balanceValue,
-                isUserOwed && styles.balanceValueOwed,
-                doesUserOwe && styles.balanceValueOwes,
-              ]}
-            >
-              {isUserOwed
-                ? `+₹${Math.abs(userBalance).toLocaleString()}`
-                : doesUserOwe
-                ? `-₹${Math.abs(userBalance).toLocaleString()}`
-                : '₹0.00'}
-            </Text>
-            <Text style={styles.balanceStatusNote}>
-              {isUserOwed
-                ? 'You are owed by group travelers'
-                : doesUserOwe
-                ? 'You owe other group travelers'
-                : 'All expenses are fully settled'}
-            </Text>
-          </View>
-
+        <View style={styles.navActions}>
           <TouchableOpacity
-            style={styles.calloutSettleBtn}
-            onPress={() => {
-              setSettlePayerId(undefined);
-              setSettleReceiverId(undefined);
-              setSettleAmount(undefined);
-              setIsSettleUpOpen(true);
-            }}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.calloutSettleText}>Settle Up</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Row 3: Standard Underlined Tabular Menu (Full Width, Seamless Header Part) */}
-        <View style={styles.underlinedTabBar}>
-          <TouchableOpacity
-            style={[styles.underlinedTabItem, activeTab === 'expenses' && styles.underlinedTabItemActive]}
-            onPress={() => setActiveTab('expenses')}
+            style={styles.actionIconBtn}
+            onPress={() => handleRefresh()}
             activeOpacity={0.7}
           >
-            <Receipt size={14} color={activeTab === 'expenses' ? colors.primary600 : colors.slate500} />
-            <Text style={[styles.underlinedTabText, activeTab === 'expenses' && styles.underlinedTabTextActive]}>
-              Expenses ({expenses.length})
-            </Text>
+            {isSyncing || refreshing ? (
+              <ActivityIndicator size="small" color={colors.primary600} />
+            ) : (
+              <RefreshCw size={16} color={colors.slate600} />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.underlinedTabItem, activeTab === 'debts' && styles.underlinedTabItemActive]}
-            onPress={() => setActiveTab('debts')}
+            style={styles.actionIconBtn}
+            onPress={() => setIsMembersModalOpen(true)}
             activeOpacity={0.7}
           >
-            <IndianRupee size={14} color={activeTab === 'debts' ? colors.primary600 : colors.slate500} />
-            <Text style={[styles.underlinedTabText, activeTab === 'debts' && styles.underlinedTabTextActive]}>
-              Debts ({optimalResult?.transfers.length || 0})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.underlinedTabItem, activeTab === 'balances' && styles.underlinedTabItemActive]}
-            onPress={() => setActiveTab('balances')}
-            activeOpacity={0.7}
-          >
-            <Scale size={14} color={activeTab === 'balances' ? colors.primary600 : colors.slate500} />
-            <Text style={[styles.underlinedTabText, activeTab === 'balances' && styles.underlinedTabTextActive]}>
-              Balances
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.underlinedTabItem, activeTab === 'transactions' && styles.underlinedTabItemActive]}
-            onPress={() => setActiveTab('transactions')}
-            activeOpacity={0.7}
-          >
-            <History size={14} color={activeTab === 'transactions' ? colors.primary600 : colors.slate500} />
-            <Text style={[styles.underlinedTabText, activeTab === 'transactions' && styles.underlinedTabTextActive]}>
-              Audit
-            </Text>
+            <Users size={16} color={colors.slate700} />
           </TouchableOpacity>
         </View>
       </View>
@@ -370,7 +280,99 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         }
       >
 
-        {/* TAB 1: EXPENSES */}
+        {/* Unified Net Balance & Tabular Menu (Full-Width, No Card) */}
+        <View style={styles.fullWidthSection}>
+          {/* Top: Net Balance Row */}
+          <View style={styles.balanceSection}>
+            <View style={styles.balanceTextCol}>
+              <Text style={styles.balanceLabel}>Your Net Balance</Text>
+              <Text
+                style={[
+                  styles.balanceValue,
+                  isUserOwed && styles.balanceValueOwed,
+                  doesUserOwe && styles.balanceValueOwes,
+                ]}
+              >
+                {isUserOwed
+                  ? `+₹${Math.abs(userBalance).toLocaleString()}`
+                  : doesUserOwe
+                  ? `-₹${Math.abs(userBalance).toLocaleString()}`
+                  : '₹0.00'}
+              </Text>
+              <Text style={styles.balanceStatusNote}>
+                {isUserOwed
+                  ? 'You are owed by group travelers'
+                  : doesUserOwe
+                  ? 'You owe other group travelers'
+                  : 'All expenses are fully settled'}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.calloutSettleBtn}
+              onPress={() => {
+                setSettlePayerId(undefined);
+                setSettleReceiverId(undefined);
+                setSettleAmount(undefined);
+                setIsSettleUpOpen(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.calloutSettleText}>Settle Up</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Bottom: Standard Underlined Tabular Menu */}
+          <View style={styles.underlinedTabBar}>
+            <TouchableOpacity
+              style={[styles.underlinedTabItem, activeTab === 'expenses' && styles.underlinedTabItemActive]}
+              onPress={() => setActiveTab('expenses')}
+              activeOpacity={0.7}
+            >
+              <Receipt size={14} color={activeTab === 'expenses' ? colors.primary600 : colors.slate500} />
+              <Text style={[styles.underlinedTabText, activeTab === 'expenses' && styles.underlinedTabTextActive]}>
+                Expenses ({expenses.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.underlinedTabItem, activeTab === 'debts' && styles.underlinedTabItemActive]}
+              onPress={() => setActiveTab('debts')}
+              activeOpacity={0.7}
+            >
+              <IndianRupee size={14} color={activeTab === 'debts' ? colors.primary600 : colors.slate500} />
+              <Text style={[styles.underlinedTabText, activeTab === 'debts' && styles.underlinedTabTextActive]}>
+                Debts ({optimalResult?.transfers.length || 0})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.underlinedTabItem, activeTab === 'balances' && styles.underlinedTabItemActive]}
+              onPress={() => setActiveTab('balances')}
+              activeOpacity={0.7}
+            >
+              <Scale size={14} color={activeTab === 'balances' ? colors.primary600 : colors.slate500} />
+              <Text style={[styles.underlinedTabText, activeTab === 'balances' && styles.underlinedTabTextActive]}>
+                Balances
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.underlinedTabItem, activeTab === 'transactions' && styles.underlinedTabItemActive]}
+              onPress={() => setActiveTab('transactions')}
+              activeOpacity={0.7}
+            >
+              <History size={14} color={activeTab === 'transactions' ? colors.primary600 : colors.slate500} />
+              <Text style={[styles.underlinedTabText, activeTab === 'transactions' && styles.underlinedTabTextActive]}>
+                Audit
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Tab Content Area */}
+        <View style={styles.tabContentWrap}>
+          {/* TAB 1: EXPENSES */}
         {activeTab === 'expenses' && (
           <View>
 
@@ -576,6 +578,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
             )}
           </View>
         )}
+        </View>
 
         <View style={{ height: 110 }} />
       </ScrollView>
@@ -657,19 +660,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bgApp,
   },
-  headerSection: {
+  navBar: {
+    height: 56,
     backgroundColor: colors.bgCard,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSubtle,
-    ...shadows.sm,
-  },
-  navBar: {
-    height: 54,
-    backgroundColor: colors.bgCard,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     gap: 10,
+    ...shadows.sm,
   },
   backBtn: {
     width: 36,
@@ -707,14 +707,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    padding: 0,
   },
-
+  fullWidthSection: {
+    width: '100%',
+    backgroundColor: colors.bgCard,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+    marginBottom: 16,
+  },
   balanceSection: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 14,
   },
   balanceTextCol: {
@@ -781,6 +788,9 @@ const styles = StyleSheet.create({
   underlinedTabTextActive: {
     color: colors.primary600,
     fontWeight: '700',
+  },
+  tabContentWrap: {
+    paddingHorizontal: 16,
   },
   expenseCard: {
     backgroundColor: colors.bgCard,
