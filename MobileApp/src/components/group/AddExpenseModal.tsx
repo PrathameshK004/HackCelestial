@@ -17,6 +17,7 @@ import {
 import { X, Check, Users, Split, Clock, AlertCircle, ShieldCheck } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { Participant, CostSharingModel } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 interface AddExpenseModalProps {
   visible: boolean;
@@ -65,11 +66,19 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
   const isExpenseLocked = members.length > 1 && (pendingMembers.length > 0 || declinedMembers.length > 0 || acceptedMembers.length < members.length);
 
+  const { user } = useAuth();
+
+  // Auto-detect the logged-in user as the payer without prompting
+  const autoDetectedPayer = acceptedMembers.find(
+    (m) =>
+      m.isUser ||
+      (user && (String(m.userId) === String(user.id) || (m.email && user.email && m.email.toLowerCase() === user.email.toLowerCase())))
+  ) || acceptedMembers[0] || members[0];
+
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<'Stay' | 'Food' | 'Transport' | 'Activities' | 'Supplies' | 'Other'>('Food');
   const [splitModel, setSplitModel] = useState<CostSharingModel>('EQUAL');
-  const [paidById, setPaidById] = useState(acceptedMembers[0]?.id || members[0]?.id || 'user-1');
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(acceptedMembers.map((m) => m.id));
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI'>('UPI');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -110,7 +119,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
-      const payer = acceptedMembers.find((m) => m.id === paidById) || acceptedMembers[0];
+      const payer = autoDetectedPayer;
       if (!payer) {
         Alert.alert('Action Required', 'At least one traveler must have accepted the invitation to record expenses.');
         return;
@@ -197,25 +206,16 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               ))}
             </ScrollView>
 
-            {/* Paid By Member Picker (Confirmed Members Only) */}
-            <Text style={styles.inputLabel}>Paid By</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-              {acceptedMembers.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[styles.payerChip, paidById === m.id && styles.payerChipActive]}
-                  onPress={() => setPaidById(m.id)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.avatarMini, { backgroundColor: m.avatarBg }]}>
-                    <Text style={styles.avatarMiniText}>{m.name.charAt(0)}</Text>
-                  </View>
-                  <Text style={[styles.payerChipText, paidById === m.id && styles.payerChipTextActive]}>
-                    {m.isUser ? 'You' : m.name.split(' ')[0]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {/* Paid By — auto-detected as the logged-in user, no prompt needed */}
+            <View style={styles.payerAutoRow}>
+              <View style={[styles.avatarMini, { backgroundColor: autoDetectedPayer?.avatarBg || colors.primary600 }]}>
+                <Text style={styles.avatarMiniText}>{(autoDetectedPayer?.name || 'Y').charAt(0)}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.payerAutoLabel}>Paid by</Text>
+                <Text style={styles.payerAutoName}>You ({autoDetectedPayer?.name || 'Me'})</Text>
+              </View>
+            </View>
 
             {/* Split Model Picker */}
             <Text style={styles.inputLabel}>Cost-Sharing Model</Text>
@@ -440,42 +440,30 @@ const styles = StyleSheet.create({
   catChipTextActive: {
     color: '#ffffff',
   },
-  payerChip: {
+  payerAutoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radii.full,
-    backgroundColor: colors.bgApp,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    marginRight: 8,
-    gap: 6,
-  },
-  payerChipActive: {
+    gap: 10,
+    marginBottom: 14,
+    marginTop: 2,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: colors.primary50,
-    borderColor: colors.primary500,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.primary200,
   },
-  avatarMini: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarMiniText: {
-    color: '#ffffff',
-    fontSize: 9.5,
-    fontWeight: '800',
-  },
-  payerChipText: {
-    fontSize: 11.5,
+  payerAutoLabel: {
+    fontSize: 10,
+    color: colors.slate500,
     fontWeight: '600',
-    color: colors.slate700,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
-  payerChipTextActive: {
-    color: colors.primary700,
+  payerAutoName: {
+    fontSize: 13,
     fontWeight: '700',
+    color: colors.primary700,
   },
   modelCard: {
     backgroundColor: colors.bgApp,
@@ -623,6 +611,18 @@ const styles = StyleSheet.create({
     gap: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#fef3c7',
+  },
+  avatarMini: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarMiniText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
   },
   avatarMiniMuted: {
     width: 22,
