@@ -26,6 +26,7 @@ const verifyToken = async (req, res, next) => {
         }
 
         req.userKey = user._id; 
+        req.user = user;
         next(); 
     } catch (err) {
         if (err.name === 'TokenExpiredError') {

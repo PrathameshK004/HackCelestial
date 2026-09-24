@@ -311,6 +311,25 @@ const initializeDatabase = async () => {
     `);
     await pool.query(`
         ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'OPEN';
+        ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS attachment_url TEXT;
+        ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS attachment_key VARCHAR(512);
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS support_ticket_messages (
+            id UUID PRIMARY KEY,
+            ticket_id UUID NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+            sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            sender_name VARCHAR(120),
+            sender_role VARCHAR(32) NOT NULL DEFAULT 'USER',
+            message TEXT,
+            attachment_url TEXT,
+            attachment_name VARCHAR(255),
+            attachment_type VARCHAR(100),
+            attachment_size INTEGER,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id, created_at ASC);
     `);
 
     // Data Migration: Clean up legacy member status inconsistencies where invited members were erroneously set to ACCEPTED

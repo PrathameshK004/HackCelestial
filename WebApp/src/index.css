@@ -5714,3 +5714,398 @@ html, body {
   }
 }
 
+/* =====================================================================
+   HELP & SUPPORT CONCIERGE & TICKET SYSTEM STYLES (HOME PAGE PALETTE)
+   Warm Cream & Alabaster Palette, Olive (#464B29) & Chartreuse (#E5EC68)
+   ===================================================================== */
+.support-hero-header {
+  background: linear-gradient(135deg, var(--accent-olive-dark, #2E331B) 0%, #3A4023 50%, var(--accent-olive, #464B29) 100%);
+  border-radius: var(--radius-lg, 24px);
+  padding: 24px 22px;
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 28px -4px rgba(46, 51, 27, 0.35);
+  margin-bottom: 18px;
+  border: 1px solid rgba(229, 236, 104, 0.2);
+}
+
+.support-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--badge-match-bg, #E5EC68);
+  color: var(--badge-match-text, #1A1C12);
+  border: 1px solid var(--badge-match-border, rgba(229, 236, 104, 0.4));
+  padding: 4px 11px;
+  border-radius: var(--radius-full, 9999px);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+.support-tabs-bar {
+  display: flex;
+  background: var(--bg-surface-warm, #F6F3EC);
+  padding: 5px;
+  border-radius: var(--radius-full, 9999px);
+  gap: 5px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border-card, #E8E4DA);
+}
+
+.support-tab-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary, #585952);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full, 9999px);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.support-tab-btn:hover:not(.active) {
+  color: var(--text-primary, #181916);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.support-tab-btn.active {
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--accent-olive, #464B29);
+  box-shadow: var(--shadow-sm, 0 2px 6px rgba(35, 30, 20, 0.06));
+  border: 1px solid var(--border-card, #E8E4DA);
+  font-weight: 700;
+}
+
+.support-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full, 9999px);
+  font-size: 0.68rem;
+  font-weight: 800;
+  background: var(--badge-match-bg, #E5EC68);
+  color: var(--badge-match-text, #1A1C12);
+  border: 1px solid var(--badge-match-border, rgba(229, 236, 104, 0.4));
+}
+
+.support-tab-btn.active .support-tab-count {
+  background: var(--accent-olive, #464B29);
+  color: #ffffff;
+  border: none;
+}
+
+/* Ticket Cards */
+.ticket-card {
+  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid var(--border-card, #E8E4DA);
+  border-radius: var(--radius-lg, 24px);
+  padding: 18px;
+  transition: all var(--transition-smooth, 0.25s ease);
+  box-shadow: var(--shadow-xs, 0 1px 3px rgba(35, 30, 20, 0.04));
+  position: relative;
+  overflow: hidden;
+}
+
+.ticket-card:hover {
+  box-shadow: var(--shadow-md, 0 8px 22px -4px rgba(35, 30, 20, 0.08));
+  border-color: var(--accent-olive-light, #5E6438);
+  transform: translateY(-1px);
+}
+
+.ticket-card.is-solved {
+  opacity: 0.92;
+  background: var(--bg-surface-warm, #F6F3EC);
+}
+
+.ticket-id-tag {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-olive, #464B29);
+  background: var(--bg-surface-warm, #F6F3EC);
+  padding: 3px 8px;
+  border-radius: var(--radius-xs, 8px);
+  border: 1px solid var(--border-card, #E8E4DA);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ticket-status-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--badge-match-bg, #E5EC68);
+  color: var(--badge-match-text, #1A1C12);
+  border: 1px solid var(--badge-match-border, rgba(229, 236, 104, 0.4));
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: var(--radius-full, 9999px);
+}
+
+.pulse-dot-green {
+  width: 6px;
+  height: 6px;
+  background-color: var(--accent-olive, #464B29);
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(70, 75, 41, 0.6);
+  animation: pulseOlive 1.8s infinite;
+}
+
+@keyframes pulseOlive {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(70, 75, 41, 0.6);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(70, 75, 41, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(70, 75, 41, 0);
+  }
+}
+
+.ticket-status-resolved {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-surface-subtle, #F2EFE8);
+  color: var(--text-muted, #8E8F87);
+  border: 1px solid var(--border-card, #E8E4DA);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 10px;
+  border-radius: var(--radius-full, 9999px);
+}
+
+.ticket-doc-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-surface-warm, #F6F3EC);
+  border: 1px solid var(--border-card, #E8E4DA);
+  border-radius: var(--radius-md, 18px);
+  padding: 10px 14px;
+  margin-top: 10px;
+  gap: 8px;
+}
+
+.btn-view-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--accent-olive, #464B29);
+  border: 1px solid var(--border-card, #E8E4DA);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: var(--radius-full, 9999px);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+  white-space: nowrap;
+  box-shadow: var(--shadow-xs, 0 1px 3px rgba(35, 30, 20, 0.04));
+}
+
+.btn-view-doc:hover {
+  background: var(--accent-olive-subtle, #EFF1E4);
+  border-color: var(--accent-olive, #464B29);
+  color: var(--accent-olive-dark, #2E331B);
+}
+
+.btn-mark-solved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--accent-olive, #464B29);
+  border: 1.5px solid var(--accent-olive, #464B29);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: var(--radius-full, 9999px);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.btn-mark-solved:hover:not(:disabled) {
+  background: var(--accent-olive, #464B29);
+  color: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(70, 75, 41, 0.25);
+}
+
+.btn-ticket-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-olive, #464B29);
+  color: #FFFFFF;
+  border: none;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 7px 16px;
+  border-radius: var(--radius-full, 9999px);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(70, 75, 41, 0.25);
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.btn-ticket-chat:hover:not(:disabled) {
+  background: var(--accent-olive-dark, #2E331B);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(70, 75, 41, 0.35);
+}
+
+/* Dedicated Chat Modal */
+.ticket-chat-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 25, 22, 0.65);
+  backdrop-filter: blur(8px);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ticket-chat-window {
+  background: var(--bg-surface, #FFFFFF);
+  border-radius: var(--radius-xl, 32px);
+  width: 100%;
+  max-width: 620px;
+  height: 90vh;
+  max-height: 720px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg, 0 16px 36px -6px rgba(35, 30, 20, 0.12));
+  border: 1px solid var(--border-card, #E8E4DA);
+  overflow: hidden;
+  animation: slideUpScale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpScale {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ticket-chat-header {
+  padding: 16px 20px;
+  background: linear-gradient(135deg, var(--accent-olive-dark, #2E331B) 0%, #3A4023 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(229, 236, 104, 0.2);
+}
+
+.ticket-chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-app, #FAF8F5);
+}
+
+.chat-bubble-user {
+  align-self: flex-end;
+  max-width: 82%;
+  background: var(--accent-olive, #464B29);
+  color: #ffffff;
+  padding: 11px 15px;
+  border-radius: 18px 18px 3px 18px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  box-shadow: 0 3px 10px rgba(70, 75, 41, 0.2);
+  word-break: break-word;
+}
+
+.chat-bubble-support {
+  align-self: flex-start;
+  max-width: 82%;
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--text-primary, #181916);
+  border: 1px solid var(--border-card, #E8E4DA);
+  padding: 11px 15px;
+  border-radius: 18px 18px 18px 3px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  box-shadow: var(--shadow-xs, 0 1px 3px rgba(35, 30, 20, 0.04));
+  word-break: break-word;
+}
+
+.chat-bubble-system {
+  align-self: center;
+  background: var(--bg-surface-warm, #F6F3EC);
+  color: var(--text-muted, #8E8F87);
+  border: 1px solid var(--border-card, #E8E4DA);
+  border-radius: var(--radius-full, 9999px);
+  padding: 4px 14px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin: 6px 0;
+}
+
+.chat-attachment-thumb {
+  margin-top: 8px;
+  border-radius: var(--radius-sm, 12px);
+  overflow: hidden;
+  max-width: 220px;
+  max-height: 170px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.chat-attachment-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 5px 10px;
+  border-radius: var(--radius-xs, 8px);
+  font-size: 0.72rem;
+  margin-top: 6px;
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.chat-input-bar {
+  padding: 12px 16px;
+  background: var(--bg-surface, #FFFFFF);
+  border-top: 1px solid var(--border-card, #E8E4DA);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+

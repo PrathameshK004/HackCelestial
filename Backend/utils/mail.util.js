@@ -66,7 +66,6 @@ const sendViaSmtp = async ({ to, subject, html, text, fromAddress }) => {
         html,
         text: text || undefined
     });
-    console.log(`[Mail SMTP Success] Delivered to ${to} (MessageId: ${info.messageId})`);
     return { success: true, messageId: info.messageId };
 };
 
@@ -85,7 +84,6 @@ const sendViaHttp = async ({ to, subject, html, sender }) => {
             Authorization: `Bearer ${process.env.EMAIL_SERVICE_API}`
         }
     });
-    console.log(`[Mail HTTP Success] Delivered to ${to}`);
     return { success: true, data: response.data };
 };
 
@@ -419,9 +417,98 @@ const sendWelcomeEmail = async (emailId, username) => {
     }
 };
 
+/**
+ * Send Support Ticket Confirmation Email
+ * Notifies the user that their ticket has been created and our team is looking into the issue.
+ */
+const sendTicketCreatedEmail = async ({ to, username, ticketNumber, subject, category }) => {
+    try {
+        const liveDomain = (process.env.APP_URL || process.env.FRONTEND_URL || 'https://triptual-web.vercel.app').trim().replace(/\/+$/, '');
+        const recipientName = username || 'Traveler';
+        const formattedTicket = ticketNumber || 'TICKET';
+
+        const result = await sendMail({
+            to,
+            subject: `[${formattedTicket}] We will looking into Issue - Support Ticket Confirmation`,
+            html: `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);">
+                    <div style="text-align: center; padding: 22px 16px; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #ffffff;">
+                        <div style="font-size: 26px; margin-bottom: 6px;">🛎️</div>
+                        <h2 style="margin: 0; font-size: 19px; font-weight: 700; color: #ffffff;">Support Ticket Created</h2>
+                        <div style="margin-top: 8px;">
+                            <span style="background-color: rgba(255, 255, 255, 0.22); padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; color: #ffffff;">
+                                ${formattedTicket}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="padding: 22px 20px; color: #1e293b;">
+                        <p style="font-size: 14.5px; margin: 0 0 12px 0;">Dear <strong>${recipientName}</strong>,</p>
+                        
+                        <div style="background-color: #ecfdf5; border-left: 4px solid #059669; padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 16px;">
+                            <p style="margin: 0; font-size: 14px; font-weight: 600; color: #047857;">
+                                We will looking into Issue
+                            </p>
+                        </div>
+
+                        <p style="font-size: 13px; line-height: 1.5; color: #475569; margin: 0 0 16px 0;">
+                            Thank you for contacting our customer concierge desk. Your support ticket has been received and logged into our resolution queue. Our dedicated engineering and support specialists are actively reviewing the details.
+                        </p>
+
+                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 18px;">
+                            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                                TICKET SUMMARY
+                            </div>
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="font-size: 12.5px; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 5px 0; color: #64748b; width: 110px;">Ticket ID:</td>
+                                    <td style="padding: 5px 0; color: #0f172a; font-weight: 700; font-family: monospace;">${formattedTicket}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 5px 0; color: #64748b;">Category:</td>
+                                    <td style="padding: 5px 0; color: #0f172a; font-weight: 600; text-transform: capitalize;">${category || 'General'}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 5px 0; color: #64748b;">Subject:</td>
+                                    <td style="padding: 5px 0; color: #0f172a; font-weight: 600;">${subject}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 5px 0; color: #64748b;">Status:</td>
+                                    <td style="padding: 5px 0; color: #059669; font-weight: 700;">OPEN (In Review)</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <p style="font-size: 12.5px; color: #475569; line-height: 1.45; margin: 0 0 18px 0;">
+                            You can check live updates, chat with our support engineers, or upload additional documents anytime from your dedicated ticket view in the app.
+                        </p>
+
+                        <div style="text-align: center; margin: 18px 0 10px 0;">
+                            <a href="${liveDomain}" style="background-color: #059669; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 9999px; font-weight: 700; font-size: 13px; display: inline-block;">
+                                View Ticket in Dashboard →
+                            </a>
+                        </div>
+                    </div>
+
+                    <div style="text-align: center; padding: 12px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8;">
+                        <p style="margin: 0;">Automated notification from GroupTrip Support Concierge Desk</p>
+                    </div>
+                </div>
+            `,
+            text: `Dear ${recipientName},\n\nWe will looking into Issue.\n\nYour support ticket ${formattedTicket} has been created.\nSubject: ${subject}\nCategory: ${category}\nStatus: OPEN\n\nOur team is reviewing your ticket and will update you shortly.`
+        });
+        return result;
+    } catch (err) {
+        console.warn(`[Support Ticket Email Warning] Could not dispatch email to ${to}:`, err.message);
+        return { success: false, error: err.message };
+    }
+};
+
 module.exports = {
     sendOTPEmail,
     sendEmail,
     sendOfficialInviteEmail,
-    sendWelcomeEmail
+    sendWelcomeEmail,
+    sendTicketCreatedEmail
 };
+

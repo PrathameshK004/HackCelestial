@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { isS3Configured, uploadProfilePictureToS3, deleteS3Object, ALLOWED_MIME_TYPES } = require('../utils/s3.util');
+const { isS3Configured, uploadProfilePictureToS3, uploadSupportDocumentToS3, deleteS3Object, ALLOWED_MIME_TYPES } = require('../utils/s3.util');
 
 test('S3 Utility: Configuration & Validation', async () => {
     // 1. Verify allowed MIME types map standard formats
@@ -40,3 +40,31 @@ test('S3 Utility: Configuration & Validation', async () => {
     const nonS3Result = await deleteS3Object('https://example.com/other-file.jpg');
     assert.strictEqual(nonS3Result, false);
 });
+
+test('S3 Utility: Support Document Upload Handling', async () => {
+    // Reject empty buffer
+    await assert.rejects(
+        async () => {
+            await uploadSupportDocumentToS3({
+                buffer: null,
+                mimeType: 'application/pdf',
+                originalName: 'doc.pdf',
+                ticketNumber: 'TICKET-TEST123'
+            });
+        },
+        /No document data provided for upload/
+    );
+
+    // Handle valid file
+    const sampleBuffer = Buffer.from('Support invoice details');
+    const uploadRes = await uploadSupportDocumentToS3({
+        buffer: sampleBuffer,
+        mimeType: 'application/pdf',
+        originalName: 'invoice.pdf',
+        ticketNumber: 'TICKET-TEST123'
+    });
+
+    assert.ok(uploadRes.url, 'Upload result should contain a url');
+    assert.ok(uploadRes.key.includes('support-docs/TICKET-TEST123'), 'Key should include ticket directory');
+});
+
