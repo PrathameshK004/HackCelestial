@@ -766,6 +766,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
     backgroundColor: colors.bgCard,
+    paddingHorizontal: 8,
   },
   underlinedTabItem: {
     flex: 1,
