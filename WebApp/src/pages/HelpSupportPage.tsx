@@ -29,7 +29,7 @@ const FAQS: FAQItem[] = [
     id: 'faq-1',
     category: 'expenses',
     q: 'How does the Triptual AI debt minimization algorithm work?',
-    a: 'Triptual computes a mathematical directed graph of all pairwise obligations and eliminates redundant intermediate transactions. For example, if Member A owes B $50 and B owes C $50, the algorithm collapses this into a single direct payment from A to C, saving over 70% in transfer volume and banking friction.'
+    a: 'Triptual computes a mathematical directed graph of all pairwise obligations and eliminates redundant intermediate transactions. For example, if Member A owes B ₹500 and B owes C ₹500, the algorithm collapses this into a single direct payment from A to C, saving over 70% in transfer volume and banking friction.'
   },
   {
     id: 'faq-2',

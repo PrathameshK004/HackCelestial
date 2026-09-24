@@ -1,6 +1,6 @@
 export type TripType = 'Friends' | 'Family' | 'Corporate' | 'Student' | 'Other';
 
-export type Currency = 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED';
+export type Currency = 'INR';
 
 export type ExpenseSplit = 'equal' | 'participant' | 'organizer' | 'custom';
 

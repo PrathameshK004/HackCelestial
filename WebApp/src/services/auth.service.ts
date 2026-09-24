@@ -160,6 +160,13 @@ export const authService = {
     });
   },
 
+  async changePasswordWithOtp(payload: { code: string; newPassword: string }): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/change-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async updateProfile(payload: Partial<User>): Promise<AuthResponse> {
     return request<AuthResponse>('/users/profile', {
       method: 'PUT',

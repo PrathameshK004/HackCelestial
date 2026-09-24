@@ -560,9 +560,9 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                 }}
               >
                 {userNetBalance > 0.01
-                  ? `+${group.currency} ${userNetBalance.toFixed(2)}`
+                  ? `+₹${userNetBalance.toFixed(2)}`
                   : userNetBalance < -0.01
-                  ? `-${group.currency} ${Math.abs(userNetBalance).toFixed(2)}`
+                  ? `-₹${Math.abs(userNetBalance).toFixed(2)}`
                   : 'Balanced'}
               </div>
             </div>

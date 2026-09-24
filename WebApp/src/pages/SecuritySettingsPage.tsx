@@ -9,8 +9,6 @@ import {
   LogOut,
   Mail,
   Send,
-  Eye,
-  EyeOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authService } from '../services/auth.service';
@@ -23,14 +21,12 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
   const { user } = useAuth();
 
   // Reset Password State
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [otp, setOtp] = useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [passwordStatus, setPasswordStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Forgot Password / OTP Flow State
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpSentMessage, setOtpSentMessage] = useState<string | null>(null);
 
@@ -52,8 +48,8 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
   // Handle Reset Password Submit
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentPassword) {
-      setPasswordStatus({ type: 'error', text: 'Please enter your current password.' });
+    if (!otp.trim()) {
+      setPasswordStatus({ type: 'error', text: 'Please enter the OTP sent to your email.' });
       return;
     }
     if (newPassword.length < 6) {
@@ -68,15 +64,11 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
     setIsUpdatingPassword(true);
     setPasswordStatus(null);
     try {
-      if (authService.changePassword) {
-        await authService.changePassword({ currentPassword, newPassword });
-      } else {
-        await new Promise((r) => setTimeout(r, 600));
-      }
+      await authService.changePasswordWithOtp({ code: otp, newPassword });
       setPasswordStatus({ type: 'success', text: 'Password updated successfully!' });
-      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setOtp('');
     } catch (err: any) {
       setPasswordStatus({
         type: 'error',
@@ -87,20 +79,15 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
     }
   };
 
-  // Handle Forgot Password OTP Send
-  const handleSendForgotOtp = async () => {
+  const handleSendOtp = async () => {
     const userEmail = user?.emailId || 'organizer@triptual.com';
     setIsSendingOtp(true);
     setOtpSentMessage(null);
     try {
-      if (authService.forgotPassword) {
-        await authService.forgotPassword({ emailId: userEmail });
-      } else {
-        await new Promise((r) => setTimeout(r, 700));
-      }
-      setOtpSentMessage(`Reset link & OTP sent to ${userEmail}`);
+      await authService.sendOtp({ emailId: userEmail, purpose: 'Password Change' });
+      setOtpSentMessage(`Verification OTP sent to ${userEmail}`);
     } catch (err: any) {
-      setOtpSentMessage(`Reset link generated for ${userEmail}`);
+      setOtpSentMessage(err?.message || `Could not send OTP to ${userEmail}`);
     } finally {
       setIsSendingOtp(false);
     }
@@ -199,15 +186,15 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
             <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
               <div style={{ width: '100%' }}>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  Current Password
+                  Verification OTP
                 </label>
                 <div style={{ position: 'relative', width: '100%' }}>
                   <input
-                    type={showPassword ? 'text' : 'password'}
+                    type="text"
                     className="styled-text-input"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="Enter current password"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Enter 4-digit OTP"
                     style={{
                       width: '100%',
                       boxSizing: 'border-box',
@@ -219,21 +206,8 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
                     }}
                     required
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '10px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: 'var(--text-muted)'
-                    }}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <button type="button" onClick={handleSendOtp} disabled={isSendingOtp} className="profile-header-icon-btn" style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', padding: '5px 8px', fontSize: '0.68rem' }}>
+                    {isSendingOtp ? 'Sending...' : 'Send OTP'}
                   </button>
                 </div>
               </div>
@@ -243,7 +217,7 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
                   New Password
                 </label>
                 <input
-                  type={showPassword ? 'text' : 'password'}
+                    type="text"
                   className="styled-text-input"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
@@ -277,7 +251,7 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
                   Confirm New Password
                 </label>
                 <input
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   className="styled-text-input"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
@@ -295,30 +269,18 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
                 />
               </div>
 
-              <button
-                type="submit"
-                className="btn-primary-luxury"
-                disabled={isUpdatingPassword}
-                style={{
-                  width: '100%',
-                  padding: '10px 16px',
-                  fontSize: '0.82rem',
-                  justifyContent: 'center',
-                  marginTop: '4px',
-                  boxSizing: 'border-box'
-                }}
-              >
-                <span>{isUpdatingPassword ? 'Updating...' : 'Save New Password'}</span>
+              <button type="submit" className="btn-primary-luxury" disabled={isUpdatingPassword} style={{ width: '100%', padding: '10px 16px', fontSize: '0.82rem', justifyContent: 'center' }}>
+                {isUpdatingPassword ? 'Updating...' : 'Change Password'}
               </button>
-            </form>
 
-            {/* Forgot Password Section */}
+            </form>
+            {/* OTP delivery status */}
             <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '14px', marginTop: '4px' }}>
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
-                Forgot your password?
+                Verify before changing password
               </div>
               <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0 0 10px' }}>
-                We'll email a secure one-time reset code to your registered email.
+                Send a one-time code to your registered email, then enter it above.
               </p>
 
               {otpSentMessage && (
@@ -331,7 +293,7 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
               <button
                 type="button"
                 className="profile-header-icon-btn"
-                onClick={handleSendForgotOtp}
+                onClick={handleSendOtp}
                 disabled={isSendingOtp}
                 style={{
                   width: '100%',
@@ -342,7 +304,7 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
                 }}
               >
                 {isSendingOtp ? <Mail size={14} /> : <Send size={14} />}
-                <span>{isSendingOtp ? 'Sending reset link...' : 'Email Me Reset Code'}</span>
+                <span>{isSendingOtp ? 'Sending OTP...' : 'Send Verification OTP'}</span>
               </button>
             </div>
           </div>

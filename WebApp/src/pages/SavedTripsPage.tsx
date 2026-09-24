@@ -95,7 +95,7 @@ export const SavedTripsPage: React.FC<SavedTripsPageProps> = ({
 
   const handleShareWishlist = () => {
     const text = `*🌟 Triptual Shared Wishlist (${activeStays.length} stays)*\n\n` +
-      activeStays.map((s, i) => `${i + 1}. ${s.name} (${s.destination}) — $${s.pricePerNight}/night [${s.matchScore}% Match]`).join('\n') +
+      activeStays.map((s, i) => `${i + 1}. ${s.name} (${s.destination}) — ₹${s.pricePerNight}/night [${s.matchScore}% Match]`).join('\n') +
       `\n\n_Curated via Triptual Luxury Travel Platform_`;
     navigator.clipboard.writeText(text);
     setIsCopied(true);
@@ -183,7 +183,7 @@ export const SavedTripsPage: React.FC<SavedTripsPageProps> = ({
               <Star size={14} color="var(--accent-olive)" />
             </div>
             <div className="expense-metric-val" style={{ fontSize: '1.15rem' }}>
-              ${Math.min(...activeStays.map(s => s.pricePerNight), 280)}–${Math.max(...activeStays.map(s => s.pricePerNight), 420)}
+              ₹{Math.min(...activeStays.map(s => s.pricePerNight), 280)}–₹{Math.max(...activeStays.map(s => s.pricePerNight), 420)}
             </div>
             <div className="expense-metric-sub" style={{ fontSize: '0.7rem' }}>Per night group stay</div>
           </div>
@@ -272,7 +272,7 @@ export const SavedTripsPage: React.FC<SavedTripsPageProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-light)', paddingTop: '8px', marginTop: '2px' }}>
                   <div>
                     <span style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      ${stay.pricePerNight}
+                      ₹{stay.pricePerNight}
                     </span>
                     <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}> / night</span>
                   </div>

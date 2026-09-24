@@ -717,7 +717,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
         startDate: g.startDate || '',
         endDate: g.endDate || '',
         currency: g.currency || 'INR',
-        currencySymbol: g.currency === 'USD' ? '$' : (g.currency === 'EUR' ? '€' : '₹'),
+        currencySymbol: '₹',
         totalBudget: 0,
         totalSpent: isSelected && expenseGroupSettlement?.totalSpend ? expenseGroupSettlement.totalSpend : 0,
         userBalance: 0,
@@ -1131,10 +1131,10 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                     <tr>
                       <td>Price</td>
                       <td className="active-col" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        ${selectedStay.pricePerNight}
+                        ₹{selectedStay.pricePerNight}
                       </td>
-                      <td>$132</td>
-                      <td>$120</td>
+                      <td>₹132</td>
+                      <td>₹120</td>
                     </tr>
                     <tr>
                       <td>Style</td>
@@ -1186,11 +1186,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
               <div className="sticky-action-header-row">
                 <div className="sticky-price-col">
                   <div className="price-main">
-                    ${selectedStay.pricePerNight}
+                    ₹{selectedStay.pricePerNight}
                     <span className="price-period">/night</span>
                   </div>
                   <div className="price-sub">
-                    ${selectedStay.pricePerNight * selectedStay.totalNights} total · {selectedStay.totalNights} nights
+                    ₹{selectedStay.pricePerNight * selectedStay.totalNights} total · {selectedStay.totalNights} nights
                   </div>
                 </div>
 
@@ -2045,7 +2045,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
           }
 
           const activeGrp = groups.find((g) => g.id === selectedExpenseGroupId) || groups[0];
-          const currencySymbol = activeGrp.currency === 'USD' ? '$' : (activeGrp.currency === 'EUR' ? '€' : '₹');
+          const currencySymbol = '₹';
           const totalSpent = expenseGroupSettlement?.totalSpend ?? 0;
           const transfers = expenseGroupSettlement?.transfers ?? [];
           const bills = expenseGroupBills ?? [];

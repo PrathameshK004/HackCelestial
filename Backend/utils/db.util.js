@@ -53,7 +53,6 @@ const initializeDatabase = async () => {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
-
     await pool.query(`
         CREATE TABLE IF NOT EXISTS user_saved_trips (
             id UUID PRIMARY KEY,
@@ -263,13 +262,34 @@ const initializeDatabase = async () => {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS in_app_notifications (
             id UUID PRIMARY KEY,
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
             type VARCHAR(50) NOT NULL,
             title VARCHAR(255) NOT NULL,
             body TEXT NOT NULL,
             data JSONB DEFAULT '{}'::jsonb,
             is_read BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+
+    await pool.query(`
+        ALTER TABLE in_app_notifications ALTER COLUMN user_id DROP NOT NULL;
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS notification_dismissals (
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            notification_id UUID NOT NULL REFERENCES in_app_notifications(id) ON DELETE CASCADE,
+            dismissed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (user_id, notification_id)
+        )
+    `);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS notification_reads (
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            notification_id UUID NOT NULL REFERENCES in_app_notifications(id) ON DELETE CASCADE,
+            read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (user_id, notification_id)
         )
     `);
 

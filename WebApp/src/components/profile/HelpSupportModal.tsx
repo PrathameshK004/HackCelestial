@@ -23,7 +23,7 @@ const FAQS = [
   },
   {
     q: 'Can I split expenses in multiple currencies like USD and INR?',
-    a: 'Yes! GroupTrip Ledger automatically converts exchange rates for overseas trips and keeps an itemized audit trail in your home currency.'
+    a: 'Yes! Triptual keeps an itemized audit trail in Indian Rupees (₹), so every group member sees the same clear total.'
   },
   {
     q: 'How do I invite friends who don’t have an account yet?',
