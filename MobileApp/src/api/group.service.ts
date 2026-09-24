@@ -60,11 +60,31 @@ export const groupService = {
     participants?: any[];
     paymentMethod?: string;
     paymentReference?: string;
+    verificationStatus?: string;
+    rawSmsProof?: string;
   }): Promise<{ message: string; data: any }> {
     return apiRequest<{ message: string; data: any }>(`/groups/${groupId}/expenses`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  },
+
+  /**
+   * Cast a vote on a PENDING_APPROVAL expense (APPROVE | DISPUTE)
+   * 60% of group companions must APPROVE before expense is VERIFIED
+   */
+  async reviewExpenseApproval(
+    groupId: string,
+    expenseId: string,
+    action: 'APPROVE' | 'DISPUTE'
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/groups/${groupId}/expenses/${expenseId}/review`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      }
+    );
   },
 
   async getExpenses(groupId: string): Promise<{ message: string; data: any[] }> {

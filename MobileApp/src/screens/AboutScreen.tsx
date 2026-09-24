@@ -1,7 +1,7 @@
 /**
  * AboutScreen - About Triptual
- * Industry-Grade, Premium Aesthetic Mobile Screen
- * Visual parity with WebApp luxury warm alabaster & emerald design system
+ * User-Centric Platform Purpose, Mission, Features & Trust
+ * Visual parity with WebApp luxury design system & Mobile theme tokens
  */
 
 import React, { useState, useEffect } from 'react';
@@ -15,36 +15,50 @@ import {
   Linking,
   Platform,
   StatusBar,
-  Animated,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
-  Palmtree,
   Sparkles,
+  Compass,
   ShieldCheck,
   Zap,
-  Cpu,
-  Layers,
   Heart,
-  Globe,
-  Lock,
-  ChevronRight,
-  ExternalLink,
-  Code2,
-  Share2,
+  Users,
+  CreditCard,
   CheckCircle2,
-  Radio,
+  Lock,
+  Share2,
+  Check,
+  ChevronRight,
+  Award,
+  Globe,
+  Smile,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
+import {
+  backgrounds,
+  borders,
+  cardRadius,
+  fontSize as fs,
+  fontWeight as fw,
+  spacing,
+} from '../theme/theme';
 
 interface AboutScreenProps {
   onBack?: () => void;
+  onCreateTrip?: () => void;
+  onExploreStays?: () => void;
 }
 
-export const AboutScreen: React.FC<AboutScreenProps> = ({ onBack }) => {
+export const AboutScreen: React.FC<AboutScreenProps> = ({
+  onBack,
+  onCreateTrip,
+  onExploreStays,
+}) => {
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<'overview' | 'features' | 'tech' | 'privacy'>('overview');
+  const [activeTab, setActiveTab] = useState<'mission' | 'features' | 'security' | 'values'>('mission');
   const [copiedLink, setCopiedLink] = useState(false);
 
   // Hardware Back Handler
@@ -63,43 +77,66 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ onBack }) => {
 
   const headerTopPadding =
     Platform.OS === 'android'
-      ? Math.max(StatusBar.currentHeight || 0, insets.top, 24) + 10
+      ? Math.max(StatusBar.currentHeight || 0, insets.top, 24) + 6
       : insets.top > 0
-      ? 12
-      : 16;
-
-  const handleOpenLink = (url: string) => {
-    Linking.openURL(url).catch(() => {});
-  };
+      ? insets.top + 4
+      : 14;
 
   const handleShareApp = () => {
     setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
+    Alert.alert('Triptual Shared', 'App link copied to clipboard. Share it with your travel squad!');
+    setTimeout(() => setCopiedLink(false), 2500);
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Top Header */}
+      {/* Top Header - Consistent with Help Center & Security Screen */}
       <View style={[styles.header, { paddingTop: headerTopPadding }]}>
-        <View style={styles.headerLeft}>
-          {onBack && (
+        <View style={styles.headerRow}>
+          {onBack ? (
             <TouchableOpacity
               onPress={onBack}
               style={styles.backBtn}
               activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityLabel="Back"
             >
-              <ArrowLeft size={22} color="#0F172A" strokeWidth={2.2} />
+              <ArrowLeft size={20} color="#0F172A" strokeWidth={2.4} />
             </TouchableOpacity>
+          ) : (
+            <View style={styles.headerSpacer} />
           )}
+
           <Text style={styles.headerTitle}>About Triptual</Text>
+
+          <View style={styles.headerSpacer} />
         </View>
 
-        <View style={styles.versionBadge}>
-          <Text style={styles.versionBadgeText}>v1.4.2</Text>
+        {/* Top Navigation Tabs */}
+        <View style={styles.tabsContainer}>
+          {[
+            { key: 'mission', label: 'Our Mission' },
+            { key: 'features', label: 'Features' },
+            { key: 'security', label: 'Trust & Safety' },
+            { key: 'values', label: 'Values' },
+          ].map((tab) => {
+            const isSelected = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={styles.tabBtn}
+                onPress={() => setActiveTab(tab.key as any)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.tabText, isSelected && styles.tabTextActive]}>
+                  {tab.label}
+                </Text>
+                {isSelected && <View style={styles.activeTabIndicator} />}
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -108,274 +145,319 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ onBack }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero Banner Card */}
+        {/* Clean Hero Banner Card */}
         <View style={styles.heroCard}>
-          <View style={styles.heroLogoRow}>
-            <View style={styles.logoCircle}>
-              <Palmtree size={30} color={colors.primary600} strokeWidth={2.4} />
-            </View>
-            <View style={styles.heroTitleCol}>
-              <View style={styles.brandTitleRow}>
-                <Text style={styles.brandName}>Triptual</Text>
-                <View style={styles.aiBadge}>
-                  <Sparkles size={11} color="#059669" />
-                  <Text style={styles.aiBadgeText}>AI Powered</Text>
-                </View>
-              </View>
-              <Text style={styles.brandTagline}>Collaborative Travel & Smart Ledger</Text>
+          <View style={styles.heroBadgeRow}>
+            <View style={styles.heroBadge}>
+              <Sparkles size={12} color={colors.primary600} />
+              <Text style={styles.heroBadgeText}>Harmonizing Group Travel & Finances</Text>
             </View>
           </View>
 
-          <Text style={styles.heroDescription}>
-            Triptual revolutionizes group travel by combining AI-driven stay matching with real-time expense recalculation engines and event-driven squad coordination.
+          <Text style={styles.heroHeading}>
+            Architected for Explorers.{'\n'}
+            <Text style={{ color: colors.primary600 }}>Refined by Mathematics.</Text>
           </Text>
 
-          {/* Live Architecture Status Indicator */}
-          <View style={styles.architectureBar}>
-            <View style={styles.pulseDot} />
-            <Text style={styles.architectureText}>
-              Aiven Kafka Event Mesh & Socket.io WebSockets Active
-            </Text>
-          </View>
-        </View>
+          <Text style={styles.heroBody}>
+            Adventures should be remembered for breathtaking sunrises and shared laughter—not ruined by messy spreadsheets, unpaid IOUs, and awkward money talks.
+          </Text>
 
-        {/* Tab Navigation Pill Selector */}
-        <View style={styles.navSegmentContainer}>
-          {[
-            { key: 'overview', label: 'Overview' },
-            { key: 'features', label: 'Features' },
-            { key: 'tech', label: 'Tech Stack' },
-            { key: 'privacy', label: 'Privacy' },
-          ].map((tab) => {
-            const isSelected = activeTab === tab.key;
-            return (
+          <View style={styles.heroActionsRow}>
+            {onCreateTrip && (
               <TouchableOpacity
-                key={tab.key}
-                style={[styles.segmentBtn, isSelected && styles.segmentBtnActive]}
-                onPress={() => setActiveTab(tab.key as any)}
-                activeOpacity={0.7}
+                style={styles.heroPrimaryBtn}
+                onPress={onCreateTrip}
+                activeOpacity={0.85}
               >
-                <Text style={[styles.segmentText, isSelected && styles.segmentTextActive]}>
-                  {tab.label}
-                </Text>
+                <Text style={styles.heroPrimaryBtnText}>Launch a Trip</Text>
+                <ChevronRight size={14} color="#FFFFFF" strokeWidth={2.5} />
               </TouchableOpacity>
-            );
-          })}
+            )}
+
+            {onExploreStays && (
+              <TouchableOpacity
+                style={styles.heroSecondaryBtn}
+                onPress={onExploreStays}
+                activeOpacity={0.8}
+              >
+                <Compass size={13} color={colors.slate600} />
+                <Text style={styles.heroSecondaryBtnText}>Curated Stays</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        {/* Dynamic Tab Content */}
-
-        {/* 1. OVERVIEW TAB */}
-        {activeTab === 'overview' && (
-          <View style={styles.tabSection}>
-            <Text style={styles.sectionHeading}>Our Core Mission</Text>
-            <Text style={styles.paragraphText}>
-              Planning group travel is notoriously complex—from negotiating destinations to tracking shared expenses. Triptual solves this with an integrated platform that keeps your group synchronized at every step.
-            </Text>
-
-            {/* Key Metrics Stats Grid */}
-            <View style={styles.statsGrid}>
-              <View style={styles.statBox}>
-                <Text style={styles.statNumber}>100%</Text>
-                <Text style={styles.statLabel}>Transparent Split</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statNumber}>&lt; 50ms</Text>
-                <Text style={styles.statLabel}>Real-Time Sync</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statNumber}>Zero</Text>
-                <Text style={styles.statLabel}>Manual Math</Text>
-              </View>
-            </View>
-
-            {/* Company Values */}
-            <View style={styles.cardList}>
-              <View style={styles.infoCard}>
-                <View style={[styles.iconWrapper, { backgroundColor: '#ECFDF5' }]}>
-                  <Zap size={20} color={colors.primary600} strokeWidth={2.2} />
-                </View>
-                <View style={styles.cardTextCol}>
-                  <Text style={styles.cardTitle}>Event-Driven Speed</Text>
-                  <Text style={styles.cardSub}>
-                    Powered by Apache Kafka, all trip updates, expense entries, and member invites stream instantly to every device.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.infoCard}>
-                <View style={[styles.iconWrapper, { backgroundColor: '#EFF6FF' }]}>
-                  <ShieldCheck size={20} color={colors.accentBlue} strokeWidth={2.2} />
-                </View>
-                <View style={styles.cardTextCol}>
-                  <Text style={styles.cardTitle}>Bank-Grade Security</Text>
-                  <Text style={styles.cardSub}>
-                    JWT token rotation, encrypted storage, and Razorpay integration ensure your financial and personal data remain protected.
-                  </Text>
-                </View>
-              </View>
-            </View>
+        {/* Live Platform Impact Counters (Matching WebApp metrics) */}
+        <View style={styles.metricsGrid}>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricNumber}>45,000+</Text>
+            <Text style={styles.metricLabel}>Trips Hosted</Text>
           </View>
-        )}
 
-        {/* 2. FEATURES TAB */}
-        {activeTab === 'features' && (
-          <View style={styles.tabSection}>
-            <Text style={styles.sectionHeading}>Platform Capabilities</Text>
-
-            <View style={styles.featureRow}>
-              <View style={styles.featureIconBadge}>
-                <Sparkles size={18} color={colors.primary600} />
-              </View>
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>AI Curated Stays</Text>
-                <Text style={styles.featureDesc}>
-                  Algorithms match villas, resorts, and hotels based on group size, budget, distance, and vibe score.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.featureRow}>
-              <View style={styles.featureIconBadge}>
-                <Layers size={18} color={colors.accentPurple} />
-              </View>
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Recalculation Engine</Text>
-                <Text style={styles.featureDesc}>
-                  Simplifies complex multi-currency group expenses into minimum direct settlements via UPI VPAs.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.featureRow}>
-              <View style={styles.featureIconBadge}>
-                <Radio size={18} color={colors.accentRose} />
-              </View>
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Kafka Multi-Channel Alerts</Text>
-                <Text style={styles.featureDesc}>
-                  Sub-second notifications via WebSockets, Firebase FCM Push, In-App Inbox, and Email receipts.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.featureRow}>
-              <View style={styles.featureIconBadge}>
-                <Globe size={18} color={colors.accentAmber} />
-              </View>
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Cross-Platform Workspace</Text>
-                <Text style={styles.featureDesc}>
-                  Seamless synchronization between React Native Mobile App (iOS/Android) and Next.js Web App.
-                </Text>
-              </View>
-            </View>
+          <View style={styles.metricCard}>
+            <Text style={[styles.metricNumber, { color: colors.primary600 }]}>73%</Text>
+            <Text style={styles.metricLabel}>Less Friction</Text>
           </View>
-        )}
 
-        {/* 3. TECH STACK TAB */}
-        {activeTab === 'tech' && (
-          <View style={styles.tabSection}>
-            <Text style={styles.sectionHeading}>Engineering Architecture</Text>
-            <Text style={styles.paragraphText}>
-              Triptual is engineered using high-performance microservices designed for low-latency collaboration and zero data loss.
-            </Text>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricNumber}>1-Tap</Text>
+            <Text style={styles.metricLabel}>UPI Settle</Text>
+          </View>
 
-            <View style={styles.techPillGrid}>
-              {[
-                { name: 'React Native & Expo', cat: 'Frontend Mobile' },
-                { name: 'Node.js & Express 5', cat: 'Backend Gateway' },
-                { name: 'Aiven Apache Kafka', cat: 'Event Streaming' },
-                { name: 'PostgreSQL (Neon DB)', cat: 'Relational Database' },
-                { name: 'Socket.io', cat: 'Real-Time WebSockets' },
-                { name: 'Upstash Redis', cat: 'Session & Cache' },
-                { name: 'Firebase FCM', cat: 'Push Notifications' },
-                { name: 'Razorpay API', cat: 'Payment Gateway' },
-              ].map((tech, idx) => (
-                <View key={idx} style={styles.techPill}>
-                  <Code2 size={14} color={colors.primary600} />
-                  <View>
-                    <Text style={styles.techName}>{tech.name}</Text>
-                    <Text style={styles.techCat}>{tech.cat}</Text>
-                  </View>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricNumber}>100%</Text>
+            <Text style={styles.metricLabel}>Transparency</Text>
+          </View>
+        </View>
+
+        {/* TAB 1: OUR MISSION */}
+        {activeTab === 'mission' && (
+          <View style={styles.tabContentBlock}>
+            {/* Why We Built Triptual Card */}
+            <View style={styles.contentCard}>
+              <View style={styles.cardHeaderRow}>
+                <View style={[styles.iconCircle, { backgroundColor: backgrounds.enableBg }]}>
+                  <Heart size={18} color={colors.primary600} />
                 </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* 4. PRIVACY & LEGAL TAB */}
-        {activeTab === 'privacy' && (
-          <View style={styles.tabSection}>
-            <Text style={styles.sectionHeading}>Data Protection & Compliance</Text>
-
-            <View style={styles.legalBox}>
-              <View style={styles.legalHeader}>
-                <Lock size={18} color={colors.primary600} />
-                <Text style={styles.legalTitle}>Privacy First Guarantee</Text>
+                <Text style={styles.cardHeaderTitle}>Why We Built Triptual</Text>
               </View>
-              <Text style={styles.legalBody}>
-                Your data is stored securely in encrypted databases. We do not sell your personal information or sharing payment details to third-party advertisers.
+
+              <Text style={styles.paragraphText}>
+                Planning trips with friends is one of life’s greatest joys, but managing expenses has always been tedious. Between lost counter bills, mixed payment methods, and confusing calculations, someone always ends up carrying an unfair burden.
+              </Text>
+              <Text style={[styles.paragraphText, { marginTop: 8 }]}>
+                Triptual provides an autonomous, real-time ledger that simplifies shared debts into the fewest possible direct payments—allowing you to focus on discovering new destinations together.
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.legalLinkRow}
-              onPress={() => handleOpenLink('https://triptual-web.vercel.app/privacy')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.legalLinkText}>Privacy Policy</Text>
-              <ExternalLink size={16} color={colors.slate500} />
-            </TouchableOpacity>
+            {/* Core Value Pillars */}
+            <View style={styles.featureCard}>
+              <View style={[styles.featureIconBox, { backgroundColor: '#ECFDF5' }]}>
+                <Zap size={18} color={colors.primary600} />
+              </View>
+              <View style={styles.featureTextBox}>
+                <Text style={styles.featureTitle}>Debt Minimization Engine</Text>
+                <Text style={styles.featureDescription}>
+                  Our algorithm automatically simplifies complex web debts among friends into minimum direct settlements, eliminating circular transactions.
+                </Text>
+              </View>
+            </View>
 
-            <TouchableOpacity
-              style={styles.legalLinkRow}
-              onPress={() => handleOpenLink('https://triptual-web.vercel.app/terms')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.legalLinkText}>Terms of Service</Text>
-              <ExternalLink size={16} color={colors.slate500} />
-            </TouchableOpacity>
+            <View style={styles.featureCard}>
+              <View style={[styles.featureIconBox, { backgroundColor: '#F0FDF4' }]}>
+                <Compass size={18} color={colors.primary600} />
+              </View>
+              <View style={styles.featureTextBox}>
+                <Text style={styles.featureTitle}>Boutique Stays & Curated Packages</Text>
+                <Text style={styles.featureDescription}>
+                  Discover handpicked eco-villas, alpine cabins, and bespoke stays scored to match your squad’s size, travel style, and budget.
+                </Text>
+              </View>
+            </View>
 
-            <TouchableOpacity
-              style={styles.legalLinkRow}
-              onPress={() => handleOpenLink('https://triptual-web.vercel.app/security')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.legalLinkText}>Security Disclosure</Text>
-              <ExternalLink size={16} color={colors.slate500} />
-            </TouchableOpacity>
+            <View style={styles.featureCard}>
+              <View style={[styles.featureIconBox, { backgroundColor: '#EFF6FF' }]}>
+                <CreditCard size={18} color={colors.accentBlue} />
+              </View>
+              <View style={styles.featureTextBox}>
+                <Text style={styles.featureTitle}>Direct 1-Tap UPI Settle Up</Text>
+                <Text style={styles.featureDescription}>
+                  Instantly settle dues with any group member using their saved UPI VPA (Google Pay, PhonePe, Paytm) without manual account math.
+                </Text>
+              </View>
+            </View>
           </View>
         )}
 
-        {/* Quick Action Footer Buttons */}
-        <View style={styles.footerSection}>
+        {/* TAB 2: PLATFORM FEATURES */}
+        {activeTab === 'features' && (
+          <View style={styles.tabContentBlock}>
+            {/* Step-by-Step Flow */}
+            <View style={styles.contentCard}>
+              <Text style={styles.cardHeaderTitle}>How Triptual Works For You</Text>
+              <Text style={styles.subtleText}>A complete group travel toolkit built for seamless coordination.</Text>
+
+              {/* Steps */}
+              <View style={styles.stepRow}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>1</Text>
+                </View>
+                <View style={styles.stepTextCol}>
+                  <Text style={styles.stepTitle}>Create Your Trip & Invite Squad</Text>
+                  <Text style={styles.stepDescription}>
+                    Set your destination and dates. Share your unique 6-character code with friends for instant 1-tap join.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.stepRow}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>2</Text>
+                </View>
+                <View style={styles.stepTextCol}>
+                  <Text style={styles.stepTitle}>Add Shared Expenses On-The-Go</Text>
+                  <Text style={styles.stepDescription}>
+                    Log meals, cabs, activities, or stays. Choose equal splits, custom amounts, or specific member shares.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.stepRow}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>3</Text>
+                </View>
+                <View style={styles.stepTextCol}>
+                  <Text style={styles.stepTitle}>Real-Time Balance Sync</Text>
+                  <Text style={styles.stepDescription}>
+                    Everyone sees their live balance immediately. No end-of-trip spreadsheet headaches or forgotten receipts.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.stepRow, { borderBottomWidth: 0, paddingBottom: 0 }]}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>4</Text>
+                </View>
+                <View style={styles.stepTextCol}>
+                  <Text style={styles.stepTitle}>Instant Settlement with UPI</Text>
+                  <Text style={styles.stepDescription}>
+                    Tap 'Settle Up' to open your UPI app and pay members directly with zero transaction friction.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* TAB 3: TRUST & SAFETY */}
+        {activeTab === 'security' && (
+          <View style={styles.tabContentBlock}>
+            <View style={styles.contentCard}>
+              <View style={styles.cardHeaderRow}>
+                <View style={[styles.iconCircle, { backgroundColor: backgrounds.enableBg }]}>
+                  <ShieldCheck size={18} color={colors.primary600} />
+                </View>
+                <Text style={styles.cardHeaderTitle}>Our Privacy First Guarantee</Text>
+              </View>
+              <Text style={styles.paragraphText}>
+                We believe that financial and trip details are deeply personal. Triptual was built from day one with strict confidentiality safeguards:
+              </Text>
+
+              <View style={styles.trustItemRow}>
+                <CheckCircle2 size={16} color={colors.primary600} />
+                <Text style={styles.trustItemText}>
+                  Zero advertising tracking or selling of your personal data.
+                </Text>
+              </View>
+
+              <View style={styles.trustItemRow}>
+                <CheckCircle2 size={16} color={colors.primary600} />
+                <Text style={styles.trustItemText}>
+                  End-to-end encrypted storage for group records and balances.
+                </Text>
+              </View>
+
+              <View style={styles.trustItemRow}>
+                <CheckCircle2 size={16} color={colors.primary600} />
+                <Text style={styles.trustItemText}>
+                  Direct peer-to-peer UPI payments—we never hold your money.
+                </Text>
+              </View>
+
+              <View style={styles.trustItemRow}>
+                <CheckCircle2 size={16} color={colors.primary600} />
+                <Text style={styles.trustItemText}>
+                  Verified payment gateways (Razorpay) for secure package bookings.
+                </Text>
+              </View>
+            </View>
+
+            {/* Quick Links */}
+            <View style={styles.linksCard}>
+              <TouchableOpacity
+                style={styles.linkRow}
+                onPress={() => Linking.openURL('https://triptual.app/privacy').catch(() => {})}
+                activeOpacity={0.7}
+              >
+                <Lock size={15} color={colors.slate500} />
+                <Text style={styles.linkText}>Privacy Policy</Text>
+                <ChevronRight size={15} color={colors.slate400} />
+              </TouchableOpacity>
+
+              <View style={styles.linkDivider} />
+
+              <TouchableOpacity
+                style={styles.linkRow}
+                onPress={() => Linking.openURL('https://triptual.app/terms').catch(() => {})}
+                activeOpacity={0.7}
+              >
+                <Award size={15} color={colors.slate500} />
+                <Text style={styles.linkText}>Terms of Service</Text>
+                <ChevronRight size={15} color={colors.slate400} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* TAB 4: VALUES */}
+        {activeTab === 'values' && (
+          <View style={styles.tabContentBlock}>
+            <View style={styles.featureCard}>
+              <View style={[styles.featureIconBox, { backgroundColor: '#ECFDF5' }]}>
+                <Award size={18} color={colors.primary600} />
+              </View>
+              <View style={styles.featureTextBox}>
+                <Text style={styles.featureTitle}>Radical Transparency</Text>
+                <Text style={styles.featureDescription}>
+                  Every calculation is open and verified by every member in real time. Nobody is left guessing what they paid for.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.featureCard}>
+              <View style={[styles.featureIconBox, { backgroundColor: '#F0FDF4' }]}>
+                <Users size={18} color={colors.primary600} />
+              </View>
+              <View style={styles.featureTextBox}>
+                <Text style={styles.featureTitle}>Squad Harmony</Text>
+                <Text style={styles.featureDescription}>
+                  Travel brings people closer. Our mission is to keep money conversations light, effortless, and stress-free.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.featureCard}>
+              <View style={[styles.featureIconBox, { backgroundColor: '#EFF6FF' }]}>
+                <Smile size={18} color={colors.accentBlue} />
+              </View>
+              <View style={styles.featureTextBox}>
+                <Text style={styles.featureTitle}>Fairness for Everyone</Text>
+                <Text style={styles.featureDescription}>
+                  Whether splitting equally, per-item, or custom shares, Triptual respects each traveler's preference and budget.
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Share Triptual Box */}
+        <View style={styles.shareCard}>
+          <View style={styles.shareTextCol}>
+            <Text style={styles.shareTitle}>Love traveling with Triptual?</Text>
+            <Text style={styles.shareSub}>Invite friends or share Triptual with your next squad.</Text>
+          </View>
           <TouchableOpacity
             style={styles.shareBtn}
             onPress={handleShareApp}
             activeOpacity={0.8}
           >
-            {copiedLink ? (
-              <CheckCircle2 size={18} color="#059669" />
-            ) : (
-              <Share2 size={18} color={colors.slate800} />
-            )}
-            <Text style={styles.shareBtnText}>
-              {copiedLink ? 'App Link Copied!' : 'Share Triptual App'}
-            </Text>
+            {copiedLink ? <Check size={14} color="#FFFFFF" /> : <Share2 size={14} color="#FFFFFF" />}
+            <Text style={styles.shareBtnText}>{copiedLink ? 'Copied' : 'Share App'}</Text>
           </TouchableOpacity>
-
-          <View style={styles.copyrightCol}>
-            <Text style={styles.copyrightText}>
-              © 2026 Triptual Inc. All rights reserved.
-            </Text>
-            <Text style={styles.buildText}>
-              Crafted with ❤️ for modern travelers worldwide.
-            </Text>
-          </View>
         </View>
 
-        <View style={{ height: 32 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
@@ -384,369 +466,384 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ onBack }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: backgrounds.screen,
   },
   header: {
+    backgroundColor: backgrounds.card,
+    borderBottomWidth: 1,
+    borderBottomColor: borders.card,
+    paddingHorizontal: spacing.headerHorizontal,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.slate100,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    paddingBottom: 10,
   },
   backBtn: {
-    padding: 4,
-    alignItems: 'center',
+    width: 36,
+    height: 36,
     justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  headerSpacer: {
+    width: 36,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.3,
+    fontSize: fs.headerTitle, // 16
+    fontWeight: fw.semiBold,
+    color: colors.slate900,
+    textAlign: 'center',
+    letterSpacing: -0.2,
   },
-  versionBadge: {
-    backgroundColor: colors.primary50,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: colors.primary200,
-  },
-  versionBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary700,
-  },
-  scroll: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-  heroCard: {
-    backgroundColor: '#FAF8F5',
-    borderRadius: 22,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#EFECE6',
-    ...shadows.sm,
-    marginBottom: 20,
-  },
-  heroLogoRow: {
+
+  // Navigation Tabs
+  tabsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    marginBottom: 12,
   },
-  logoCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#ECFDF5',
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary200,
+    position: 'relative',
   },
-  heroTitleCol: {
+  tabText: {
+    fontSize: fs.inputText, // 13
+    fontWeight: fw.medium,
+    color: colors.slate500,
+  },
+  tabTextActive: {
+    color: colors.primary600,
+    fontWeight: fw.semiBold,
+  },
+  activeTabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 2.5,
+    backgroundColor: colors.primary600,
+    borderRadius: 1.5,
+  },
+
+  // Scroll Container
+  scroll: {
     flex: 1,
   },
-  brandTitleRow: {
+  scrollContent: {
+    paddingHorizontal: spacing.headerHorizontal,
+    paddingTop: 14,
+  },
+
+  // Hero Card
+  heroCard: {
+    backgroundColor: backgrounds.card,
+    borderRadius: cardRadius.card, // 10
+    borderWidth: 1,
+    borderColor: borders.card,
+    padding: 16,
+    marginBottom: 12,
+    ...shadows.sm,
+  },
+  heroBadgeRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: backgrounds.enableBg,
+    borderWidth: 1,
+    borderColor: borders.infoBox,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: cardRadius.inner,
+  },
+  heroBadgeText: {
+    fontSize: fs.badgeText - 0.5, // 10.5
+    fontWeight: fw.semiBold,
+    color: colors.primary700,
+  },
+  heroHeading: {
+    fontSize: 16,
+    fontWeight: fw.semiBold,
+    color: colors.slate900,
+    lineHeight: 22,
+    marginBottom: 6,
+  },
+  heroBody: {
+    fontSize: fs.modalSubtitle, // 12
+    color: colors.slate600,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  heroActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  brandName: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.slate900,
-    letterSpacing: -0.4,
-  },
-  aiBadge: {
+  heroPrimaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.full,
+    backgroundColor: colors.primary600,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: cardRadius.inner,
   },
-  aiBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#047857',
+  heroPrimaryBtnText: {
+    fontSize: fs.badgeText, // 11
+    fontWeight: fw.semiBold,
+    color: '#FFFFFF',
   },
-  brandTagline: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: colors.slate600,
-    marginTop: 2,
+  heroSecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: backgrounds.screen,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: cardRadius.inner,
+    borderWidth: 1,
+    borderColor: borders.card,
   },
-  heroDescription: {
-    fontSize: 13.5,
+  heroSecondaryBtnText: {
+    fontSize: fs.badgeText, // 11
+    fontWeight: fw.medium,
     color: colors.slate700,
-    lineHeight: 20,
-    marginBottom: 16,
   },
-  architectureBar: {
+
+  // Impact Metrics Grid
+  metricsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  metricCard: {
+    flex: 1,
+    backgroundColor: backgrounds.card,
+    borderRadius: cardRadius.card, // 10
+    borderWidth: 1,
+    borderColor: borders.card,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
+  metricNumber: {
+    fontSize: fs.headerTitle - 1, // 15
+    fontWeight: fw.semiBold,
+    color: colors.slate900,
+  },
+  metricLabel: {
+    fontSize: fs.deviceMeta, // 10.5
+    color: colors.slate500,
+    marginTop: 2,
+    fontWeight: fw.medium,
+    textAlign: 'center',
+  },
+
+  // Tab Content Blocks
+  tabContentBlock: {
+    gap: 10,
+  },
+  contentCard: {
+    backgroundColor: backgrounds.card,
+    borderRadius: cardRadius.card, // 10
+    borderWidth: 1,
+    borderColor: borders.card,
+    padding: 16,
+    ...shadows.sm,
+  },
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: '#E8E4DA',
+    marginBottom: 10,
   },
-  pulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#10B981',
-  },
-  architectureText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: colors.slate700,
-    flex: 1,
-  },
-  navSegmentContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: radii.lg,
-    padding: 4,
-    marginBottom: 20,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: 9,
+  iconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radii.md,
   },
-  segmentBtnActive: {
-    backgroundColor: '#FFFFFF',
-    ...shadows.sm,
-  },
-  segmentText: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: colors.slate600,
-  },
-  segmentTextActive: {
-    color: colors.primary700,
-    fontWeight: '800',
-  },
-  tabSection: {
-    marginBottom: 24,
-  },
-  sectionHeading: {
-    fontSize: 17,
-    fontWeight: '800',
+  cardHeaderTitle: {
+    fontSize: fs.sectionTitle, // 14
+    fontWeight: fw.semiBold,
     color: colors.slate900,
-    marginBottom: 8,
-    letterSpacing: -0.2,
   },
   paragraphText: {
-    fontSize: 13.5,
+    fontSize: fs.modalSubtitle, // 12
+    lineHeight: 18,
     color: colors.slate600,
-    lineHeight: 20,
-    marginBottom: 16,
   },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: radii.md,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.slate200,
-  },
-  statNumber: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.primary600,
-  },
-  statLabel: {
-    fontSize: 11,
+  subtleText: {
+    fontSize: fs.infoText, // 11.5
     color: colors.slate500,
     marginTop: 2,
-    textAlign: 'center',
+    marginBottom: 14,
   },
-  cardList: {
-    gap: 12,
-  },
-  infoCard: {
+
+  // Feature Cards
+  featureCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 14,
-    backgroundColor: '#F8FAFC',
-    borderRadius: radii.lg,
-    padding: 14,
+    backgroundColor: backgrounds.card,
+    borderRadius: cardRadius.card, // 10
     borderWidth: 1,
-    borderColor: colors.slate200,
+    borderColor: borders.card,
+    padding: 14,
+    gap: 12,
+    ...shadows.sm,
   },
-  iconWrapper: {
+  featureIconBox: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: cardRadius.inner, // 10
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardTextCol: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: colors.slate900,
-    marginBottom: 2,
-  },
-  cardSub: {
-    fontSize: 12.5,
-    color: colors.slate600,
-    lineHeight: 18,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.slate100,
-  },
-  featureIconBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  featureContent: {
+  featureTextBox: {
     flex: 1,
   },
   featureTitle: {
-    fontSize: 14.5,
-    fontWeight: '700',
+    fontSize: fs.sectionTitle - 0.5, // 13.5
+    fontWeight: fw.semiBold,
     color: colors.slate900,
+    marginBottom: 3,
   },
-  featureDesc: {
-    fontSize: 12.5,
+  featureDescription: {
+    fontSize: fs.modalSubtitle, // 12
+    lineHeight: 17,
     color: colors.slate600,
-    marginTop: 2,
-    lineHeight: 18,
   },
-  techPillGrid: {
-    gap: 10,
-    marginTop: 8,
-  },
-  techPill: {
+
+  // Steps
+  stepRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
-    backgroundColor: '#F8FAFC',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.slate200,
-  },
-  techName: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: colors.slate900,
-  },
-  techCat: {
-    fontSize: 11,
-    color: colors.slate500,
-  },
-  legalBox: {
-    backgroundColor: '#ECFDF5',
-    borderRadius: radii.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.primary200,
-    marginBottom: 16,
-  },
-  legalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  legalTitle: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: colors.primary900,
-  },
-  legalBody: {
-    fontSize: 12.5,
-    color: colors.primary900,
-    lineHeight: 18,
-  },
-  legalLinkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
+    paddingBottom: 14,
+    marginBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: colors.slate100,
   },
-  legalLinkText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.slate800,
-  },
-  footerSection: {
-    marginTop: 10,
+  stepNumberBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: backgrounds.enableBg,
+    borderWidth: 1,
+    borderColor: borders.infoBox,
     alignItems: 'center',
-    gap: 16,
+    justifyContent: 'center',
+  },
+  stepNumberText: {
+    fontSize: fs.badgeText, // 11
+    fontWeight: fw.semiBold,
+    color: colors.primary600,
+  },
+  stepTextCol: {
+    flex: 1,
+  },
+  stepTitle: {
+    fontSize: fs.sectionTitle - 0.5, // 13.5
+    fontWeight: fw.semiBold,
+    color: colors.slate900,
+    marginBottom: 2,
+  },
+  stepDescription: {
+    fontSize: fs.infoText, // 11.5
+    color: colors.slate600,
+    lineHeight: 17,
+  },
+
+  // Trust items
+  trustItemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 10,
+  },
+  trustItemText: {
+    flex: 1,
+    fontSize: fs.modalSubtitle, // 12
+    color: colors.slate600,
+    lineHeight: 18,
+  },
+
+  // Links Card
+  linksCard: {
+    backgroundColor: backgrounds.card,
+    borderRadius: cardRadius.card, // 10
+    borderWidth: 1,
+    borderColor: borders.card,
+    overflow: 'hidden',
+    ...shadows.sm,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  linkText: {
+    flex: 1,
+    fontSize: fs.inputText, // 13
+    fontWeight: fw.medium,
+    color: colors.slate700,
+  },
+  linkDivider: {
+    height: 1,
+    backgroundColor: colors.slate100,
+    marginLeft: 42,
+  },
+
+  // Share Card
+  shareCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: backgrounds.card,
+    borderRadius: cardRadius.card, // 10
+    borderWidth: 1,
+    borderColor: borders.card,
+    padding: 14,
+    marginTop: 12,
+    gap: 10,
+    ...shadows.sm,
+  },
+  shareTextCol: {
+    flex: 1,
+  },
+  shareTitle: {
+    fontSize: fs.sectionTitle - 0.5, // 13.5
+    fontWeight: fw.semiBold,
+    color: colors.slate900,
+  },
+  shareSub: {
+    fontSize: fs.infoText, // 11.5
+    color: colors.slate500,
+    marginTop: 1,
   },
   shareBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: colors.slate200,
+    gap: 5,
+    backgroundColor: colors.primary600,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: cardRadius.inner,
   },
   shareBtnText: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: colors.slate800,
-  },
-  copyrightCol: {
-    alignItems: 'center',
-  },
-  copyrightText: {
-    fontSize: 12,
-    color: colors.slate500,
-  },
-  buildText: {
-    fontSize: 11,
-    color: colors.slate400,
-    marginTop: 2,
+    fontSize: fs.badgeText, // 11
+    fontWeight: fw.semiBold,
+    color: '#FFFFFF',
   },
 });

@@ -162,8 +162,61 @@ async function addExpense(req, res) {
             }));
         }
 
-        // Calculate splits via Recalculation Engine
-        const computedSplits = calculateExpenseSplits(numAmount, effectiveSplitModel, participantItems);
+        // Anti-duplicate / Idempotency check:
+        // If an expense with same group, description, amount, and payer was created within the last 10 seconds,
+        // or if paymentReference already exists, return the existing expense to prevent duplicate entry
+        let existingExpenseQuery = null;
+        if (paymentReference) {
+            existingExpenseQuery = await client.query(`
+                SELECT id, description, amount, category, currency, split_model as "splitModel",
+                       payment_method as "paymentMethod", verification_status as "verificationStatus",
+                       approvals, required_approvals as "requiredApprovals", created_at as "createdAt"
+                FROM expenses
+                WHERE group_id = $1 AND payment_reference = $2
+                LIMIT 1
+            `, [groupId, paymentReference]);
+        }
+        if (!existingExpenseQuery || existingExpenseQuery.rows.length === 0) {
+            existingExpenseQuery = await client.query(`
+                SELECT id, description, amount, category, currency, split_model as "splitModel",
+                       payment_method as "paymentMethod", verification_status as "verificationStatus",
+                       approvals, required_approvals as "requiredApprovals", created_at as "createdAt"
+                FROM expenses
+                WHERE group_id = $1
+                  AND LOWER(description) = LOWER($2)
+                  AND amount = $3
+                  AND (paid_by_member_id = $4 OR paid_by = $4)
+                  AND created_at >= NOW() - INTERVAL '10 seconds'
+                ORDER BY created_at DESC
+                LIMIT 1
+            `, [groupId, description.trim(), numAmount, payer.id]);
+        }
+
+        if (existingExpenseQuery && existingExpenseQuery.rows.length > 0) {
+            client.release();
+            const existingExp = existingExpenseQuery.rows[0];
+            return sendSuccess(res, "Expense already recorded", {
+                id: existingExp.id,
+                expenseId: existingExp.id,
+                description: existingExp.description,
+                amount: Number(existingExp.amount),
+                category: existingExp.category,
+                currency: existingExp.currency,
+                splitModel: existingExp.splitModel,
+                paymentMethod: existingExp.paymentMethod,
+                verificationStatus: existingExp.verificationStatus,
+                approvals: existingExp.approvals || [],
+                requiredApprovals: existingExp.requiredApprovals || 0,
+                createdAt: existingExp.createdAt,
+                paidBy: {
+                    id: payer.id,
+                    name: payer.name,
+                    role: payer.role,
+                    avatarBg: payer.avatar_bg
+                },
+                splits: []
+            }, 200);
+        }
 
         await client.query('BEGIN');
 
@@ -338,7 +391,26 @@ async function getGroupExpenses(req, res) {
             return sendSuccess(res, "No expenses recorded yet", []);
         }
 
-        const expenseIds = expensesRes.rows.map(e => e.id);
+        // Deduplicate in-memory to ensure strictly 1 entry per expense and unique IDs
+        const seenExpIds = new Set();
+        const seenExpFingerprints = new Set();
+        const uniqueExpenseRows = [];
+
+        for (const row of expensesRes.rows) {
+            const expId = String(row.id);
+            if (seenExpIds.has(expId)) continue;
+
+            // Fingerprint for rapid double-submission (< 15s window)
+            const createdSec = Math.floor(new Date(row.createdAt).getTime() / 15000);
+            const fingerprint = `${row.description?.trim().toLowerCase()}_${Number(row.amount)}_${row.paidById}_${createdSec}`;
+            if (seenExpFingerprints.has(fingerprint)) continue;
+
+            seenExpIds.add(expId);
+            seenExpFingerprints.add(fingerprint);
+            uniqueExpenseRows.push(row);
+        }
+
+        const expenseIds = uniqueExpenseRows.map(e => e.id);
         const splitsRes = await pool.query(`
             SELECT es.id, es.expense_id as "expenseId", es.member_id as "memberId",
                    es.share_type as "shareType", es.share_value as "shareValue",
@@ -355,7 +427,7 @@ async function getGroupExpenses(req, res) {
             splitsMap[s.expenseId].push(s);
         }
 
-        const data = expensesRes.rows.map(e => ({
+        const data = uniqueExpenseRows.map(e => ({
             id: e.id,
             description: e.description,
             amount: Number(e.amount),

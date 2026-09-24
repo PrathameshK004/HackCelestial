@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "MobileApp",
+    "name": "Triptual",
     "slug": "MobileApp",
+    "owner": "yog7284",
     "scheme": "triptual",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,7 +12,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.yog7284.MobileApp",
       "infoPlist": {
-        "NSCameraUsageDescription": "Allow Triptual to access your camera to scan merchant UPI QR codes at counters."
+        "NSCameraUsageDescription": "Allow Triptual to access your camera to scan merchant UPI QR codes at counters.",
+        "NSPhotoLibraryUsageDescription": "Allow Triptual to access your photos to select a profile picture."
       }
     },
     "androidStatusBar": {
@@ -43,6 +45,12 @@
         "expo-camera",
         {
           "cameraPermission": "Allow Triptual to access your camera to scan merchant UPI QR codes at counters."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Triptual to access your photos to select a profile picture."
         }
       ],
       "expo-web-browser",

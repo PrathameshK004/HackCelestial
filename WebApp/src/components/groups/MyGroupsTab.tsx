@@ -209,9 +209,11 @@ export const MyGroupsTab: React.FC<MyGroupsTabProps> = ({
                       <Calendar size={14} className="text-slate-400" />
                       <span>{formatDateRange(group.startDate, group.endDate)}</span>
                     </div>
-                    <div className="code-badge">
-                      Code: <strong>{group.inviteCode}</strong>
-                    </div>
+                    {group.inviteCode ? (
+                      <div className="code-badge">
+                        Code: <strong>{group.inviteCode}</strong>
+                      </div>
+                    ) : null}
                   </div>
 
                   <p className="group-desc-preview">{group.description}</p>

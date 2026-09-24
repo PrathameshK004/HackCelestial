@@ -126,6 +126,8 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       splits?: ExpenseParticipantSplit[];
       paymentMethod: 'CASH' | 'UPI';
       paymentReference?: string;
+      verificationStatus?: string;
+      rawSmsProof?: string;
     }
   ): Promise<void> => {
     await groupService.addExpense(tripId, {
@@ -137,6 +139,8 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       paymentMethod: expenseData.paymentMethod,
       paymentReference: expenseData.paymentReference,
       participants: expenseData.splits || [],
+      verificationStatus: expenseData.verificationStatus,
+      rawSmsProof: expenseData.rawSmsProof,
     });
 
     await loadTrips();
@@ -251,23 +255,45 @@ function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: a
     syncStatus: 'SYNCED',
   }));
 
-  const expenses: Expense[] = (expData || []).map((e: any) => ({
-    id: String(e.id),
+  // Deduplicate expenses strictly so each has a unique ID and only 1 entry exists
+  const seenExpIds = new Set<string>();
+  const seenExpFingerprints = new Set<string>();
+  const uniqueExpData = (expData || []).filter((e: any) => {
+    const eid = String(e?.id || '');
+    if (!eid || seenExpIds.has(eid)) return false;
+
+    const timeKey = e.createdAt ? Math.floor(new Date(e.createdAt).getTime() / 15000) : 0;
+    const fp = `${(e.description || e.title || '').trim().toLowerCase()}_${Number(e.amount || 0)}_${e.paidById || e.paidByMemberId || ''}_${timeKey}`;
+    if (timeKey > 0 && seenExpFingerprints.has(fp)) return false;
+
+    seenExpIds.add(eid);
+    if (timeKey > 0) seenExpFingerprints.add(fp);
+    return true;
+  });
+
+  const expenses: Expense[] = uniqueExpData.map((e: any) => ({
+    id: String(e.id || `exp-${tripId}-${Date.now()}-${Math.random()}`),
     tripId,
     title: e.description || e.title || 'Expense',
     description: e.description || '',
     amount: Number(e.amount || 0),
     currency: e.currency || 'INR',
     category: (e.category as any) || 'Food',
-    paidById: String(e.paidByMemberId || e.paidById || 'user-1'),
-    paidByName: e.paidByName || 'Member',
+    paidById: String(e.paidById || e.paidByMemberId || 'user-1'),
+    paidByName: e.paidByName || e.paidBy?.name || 'Member',
     splitModel: (e.splitModel as any) || 'EQUAL',
     splitCount: Number(e.splitCount || 1),
     paymentMethod: (e.paymentMethod as any) || 'CASH',
     paymentReference: e.paymentReference,
-    date: e.date || new Date().toISOString().split('T')[0],
-    time: e.time || '12:00',
+    date: e.date || (e.createdAt ? e.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+    time: e.time || (e.createdAt ? e.createdAt.split('T')[1]?.slice(0, 5) : '12:00'),
     syncStatus: 'SYNCED',
+    splits: e.splits || [],
+    // Verification & 60% consensus approval fields
+    verificationStatus: e.verificationStatus || 'VERIFIED',
+    approvals: Array.isArray(e.approvals) ? e.approvals : [],
+    requiredApprovals: Number(e.requiredApprovals || 0),
+    rawSmsProof: e.rawSmsProof || null,
   }));
 
   const settlements: SettlementTransfer[] = (settleData?.settlementPlan?.transfers || []).map((t: any) => ({
@@ -298,7 +324,8 @@ function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: a
     totalBudget: Number(g.totalBudget || 0),
     totalSpent: Number(g.totalSpent || 0),
     userBalance: Number(g.userBalance || 0),
-    inviteCode: g.inviteCode || null,
+    inviteCode: detail?.inviteCode || g.inviteCode || null,
+    createdBy: detail?.createdBy || g.createdBy || null,
     description: g.description || '',
     coverGradient: g.coverGradient || 'linear-gradient(135deg, #0ea5e9 0%, #10b981 100%)',
     syncStatus: 'SYNCED',

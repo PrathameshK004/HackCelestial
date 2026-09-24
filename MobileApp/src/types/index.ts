@@ -106,6 +106,16 @@ export interface ExpenseParticipantSplit {
   syncStatus?: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';
 }
 
+export type VerificationStatus = 'AUTO_VERIFIED' | 'PENDING_APPROVAL' | 'VERIFIED' | 'DISPUTED';
+
+export interface ExpenseApproval {
+  memberId: string;
+  memberName: string;
+  userId?: string;
+  action: 'APPROVE' | 'DISPUTE';
+  timestamp: string;
+}
+
 export interface Expense {
   id: string;
   tripId: string;
@@ -124,6 +134,11 @@ export interface Expense {
   time: string;
   syncStatus: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';
   splits?: ExpenseParticipantSplit[];
+  // Verification & Approval (60% consensus flow)
+  verificationStatus?: VerificationStatus;
+  approvals?: ExpenseApproval[];
+  requiredApprovals?: number;
+  rawSmsProof?: string;
 }
 
 export interface SettlementTransfer {
@@ -162,6 +177,7 @@ export interface Trip {
   totalSpent: number;
   userBalance: number;
   inviteCode?: string;
+  createdBy?: string;
   description?: string;
   coverGradient?: string;
   syncStatus: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';

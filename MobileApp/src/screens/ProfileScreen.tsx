@@ -21,7 +21,6 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
   User,
@@ -170,6 +169,23 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
 
   const handlePickFromGallery = async () => {
     setIsAvatarChoiceModalOpen(false);
+
+    let ImagePicker: typeof import('expo-image-picker') | null = null;
+    try {
+      // Dynamic require prevents Hermes crashing at bundle startup if client binary was built without expo-image-picker
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      ImagePicker = require('expo-image-picker');
+    } catch (e: any) {
+      console.warn('ExponentImagePicker native module not linked in current binary:', e);
+    }
+
+    if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
+      Alert.alert(
+        'Module Rebuild Required',
+        'Photo library access requires an updated app binary. Please rebuild your app (e.g. npx expo run:ios or EAS Build) to pick custom photos. In the meantime, you can use our built-in illustration avatars!'
+      );
+      return;
+    }
 
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();

@@ -22,7 +22,7 @@ import {
   Users,
   Plus,
   Receipt,
-  CircleDollarSign,
+  IndianRupee,
   Scale,
   History,
   Trash2,
@@ -42,7 +42,7 @@ import { ledgerEngine } from '../sync/ledgerEngine';
 import { AddExpenseModal } from '../components/group/AddExpenseModal';
 import { SettleUpModal } from '../components/group/SettleUpModal';
 import { GroupMembersModal } from '../components/group/GroupMembersModal';
-import { NaturalExpenseParser } from '../components/ai/NaturalExpenseParser';
+
 import { SettlementTransfer, Expense, CostSharingModel } from '../types';
 
 type LedgerTab = 'expenses' | 'debts' | 'balances' | 'transactions';
@@ -84,7 +84,22 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
 
   const trip = trips.find((t) => t.id === tripId) || trips[0];
   const members = trip?.members || [];
-  const expenses = trip?.expenses || [];
+  const rawExpenses = trip?.expenses || [];
+  const expenses = useMemo(() => {
+    const seenIds = new Set<string>();
+    const seenFp = new Set<string>();
+    return rawExpenses.filter((e) => {
+      const eid = String(e.id || '');
+      if (eid && seenIds.has(eid)) return false;
+      if (eid) seenIds.add(eid);
+
+      const fp = `${(e.title || '').trim().toLowerCase()}_${Number(e.amount || 0)}_${e.paidById || ''}_${e.date || ''}_${(e.time || '').slice(0, 4)}`;
+      if (seenFp.has(fp)) return false;
+      seenFp.add(fp);
+
+      return true;
+    });
+  }, [rawExpenses]);
   const settlements = trip?.settlements || [];
 
   const confirmedMembers = members.filter(
@@ -264,37 +279,6 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
           />
         }
       >
-        {/* Unstop Acceptance Alert Banner & Lock Indicator */}
-        {isExpenseLocked ? (
-          <TouchableOpacity
-            style={[styles.unstopStatusBanner, { backgroundColor: '#fffbe6', borderColor: '#fde68a' }]}
-            onPress={() => setIsMembersModalOpen(true)}
-            activeOpacity={0.85}
-          >
-            <View style={[styles.unstopBannerIcon, { backgroundColor: '#fef3c7' }]}>
-              <Lock size={13} color="#b45309" />
-            </View>
-            <Text style={styles.unstopStatusText}>
-              <Text style={{ fontWeight: '800', color: '#92400e' }}>Expense Logging Locked 🔒</Text> •{' '}
-              {pendingMembers.length > 0 ? (
-                <Text style={{ color: '#78350f' }}>{pendingMembers.length} traveler invitation{pendingMembers.length > 1 ? 's' : ''} pending acceptance. </Text>
-              ) : (
-                <Text style={{ color: '#78350f' }}>{declinedMembers.length} member{declinedMembers.length > 1 ? 's' : ''} declined invitation. </Text>
-              )}
-              Tap to view roster.
-            </Text>
-            <ChevronRight size={14} color="#b45309" />
-          </TouchableOpacity>
-        ) : (
-          <View style={[styles.unstopStatusBanner, { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }]}>
-            <View style={[styles.unstopBannerIcon, { backgroundColor: '#d1fae5' }]}>
-              <CheckCircle2 size={13} color="#059669" />
-            </View>
-            <Text style={[styles.unstopStatusText, { color: '#065f46' }]}>
-              <Text style={{ fontWeight: '700' }}>100% Team Confirmed</Text> • All {members.length} members active in split ledger.
-            </Text>
-          </View>
-        )}
 
         {/* Personal Balance Callout Card */}
         <View style={styles.balanceCalloutCard}>
@@ -354,7 +338,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
             onPress={() => setActiveTab('debts')}
             activeOpacity={0.8}
           >
-            <CircleDollarSign size={14} color={activeTab === 'debts' ? colors.primary600 : colors.slate500} />
+            <IndianRupee size={14} color={activeTab === 'debts' ? colors.primary600 : colors.slate500} />
             <Text style={[styles.tabItemText, activeTab === 'debts' && styles.tabItemTextActive]}>
               Debts ({optimalResult?.transfers.length || 0})
             </Text>
@@ -386,19 +370,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         {/* TAB 1: EXPENSES */}
         {activeTab === 'expenses' && (
           <View>
-            {/* Quick Natural Language Parser */}
-            <NaturalExpenseParser
-              members={members}
-              disabled={isExpenseLocked}
-              onDisabledPress={handleAttemptAddExpense}
-              onParsedExpense={(parsed) => {
-                if (isExpenseLocked) {
-                  handleAttemptAddExpense();
-                  return;
-                }
-                addExpense(trip.id, { ...parsed, paymentMethod: 'UPI' });
-              }}
-            />
+
 
             {expenses.length === 0 ? (
               <View style={styles.emptyWrap}>
@@ -552,12 +524,12 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                       </Text>
                       <View style={isConfirmed ? styles.confirmedSmallPill : styles.pendingSmallPill}>
                         <Text style={isConfirmed ? styles.confirmedSmallPillText : styles.pendingSmallPillText}>
-                          {isConfirmed ? 'Confirmed' : 'Pending Invite'}
+                          {isConfirmed ? 'Confirmed' : 'Pending'}
                         </Text>
                       </View>
                     </View>
                     <Text style={styles.memberRowRole}>
-                      {m.role} • {isConfirmed ? 'Active in Ledger' : 'No Debt Until Accepted'}
+                      {m.role} • {isConfirmed ? 'Active in Ledger' : 'Pending'}
                     </Text>
                   </View>
 
@@ -566,7 +538,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                       styles.memberNetBalance,
                       isConfirmed && m.balance > 0 && styles.memberNetBalanceOwed,
                       isConfirmed && m.balance < 0 && styles.memberNetBalanceOwes,
-                      !isConfirmed && { color: colors.slate400 }
+                      !isConfirmed && { color: '#b45309', fontSize: 12.5, fontWeight: '700' }
                     ]}
                   >
                     {isConfirmed
@@ -575,7 +547,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                         : m.balance < 0
                         ? `-₹${Math.abs(m.balance).toLocaleString()}`
                         : '₹0'
-                      : '₹0'}
+                      : 'Pending'}
                   </Text>
                 </View>
               );
@@ -638,7 +610,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
           onPress={() => setIsSettleUpOpen(true)}
           activeOpacity={0.85}
         >
-          <CircleDollarSign size={18} color={colors.primary700} strokeWidth={2.4} />
+          <IndianRupee size={17} color={colors.primary700} strokeWidth={2.4} />
           <Text style={styles.secondarySettleText}>Settle Up</Text>
         </TouchableOpacity>
       </View>
@@ -672,6 +644,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         visible={isMembersModalOpen}
         tripName={trip.name}
         inviteCode={trip.inviteCode}
+        createdBy={trip?.createdBy}
         members={members}
         onClose={() => setIsMembersModalOpen(false)}
         onAddMember={async (name, email) => {
@@ -1149,31 +1122,6 @@ const styles = StyleSheet.create({
     color: colors.slate900,
     marginBottom: 10,
     textTransform: 'uppercase',
-  },
-  unstopStatusBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fffbeb',
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    borderRadius: radii.md,
-    padding: 12,
-    marginBottom: 14,
-    gap: 8,
-  },
-  unstopBannerIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#fef3c7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  unstopStatusText: {
-    flex: 1,
-    fontSize: 11.5,
-    color: '#92400e',
-    lineHeight: 16,
   },
   balancesCardHeader: {
     flexDirection: 'row',

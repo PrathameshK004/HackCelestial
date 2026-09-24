@@ -34,6 +34,7 @@ interface GroupMembersModalProps {
   visible: boolean;
   tripName: string;
   inviteCode?: string;
+  createdBy?: string;
   members: Participant[];
   onClose: () => void;
   onAddMember: (name: string, email?: string) => Promise<void>;
@@ -42,7 +43,8 @@ interface GroupMembersModalProps {
 export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
   visible,
   tripName,
-  inviteCode = 'TRIP99',
+  inviteCode,
+  createdBy,
   members,
   onClose,
   onAddMember,
@@ -65,8 +67,20 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
     (m) => m.role !== 'Organizer' && (m.status === 'REJECTED' || m.status === 'DECLINED')
   );
 
-  const currentUserEmail = (user?.email || user?.emailId || '').toLowerCase();
-  const currentUserId = user?.id;
+  const currentUserEmail = (user?.email || user?.emailId || '').trim().toLowerCase();
+  const currentUserId = user?.id ? String(user.id) : (user as any)?.userKey ? String((user as any).userKey) : undefined;
+
+  // Determine if the current logged-in user is the trip creator / organizer
+  const isCreatorOrOrganizer = Boolean(
+    (createdBy && currentUserId && String(createdBy) === currentUserId) ||
+    members.some((m) => {
+      if (m.role !== 'Organizer') return false;
+      if (m.isUser) return true;
+      if (currentUserEmail && m.email && m.email.trim().toLowerCase() === currentUserEmail) return true;
+      if (currentUserId && (String(m.userId) === currentUserId || String(m.id) === currentUserId)) return true;
+      return false;
+    })
+  );
 
   const handleCopyCode = () => {
     setCopied(true);
@@ -112,11 +126,23 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
         <View style={styles.sheetContainer}>
           {/* Header */}
           <View style={styles.sheetHeader}>
-            <View>
-              <Text style={styles.sheetTitle}>Trip Travelers & Roster</Text>
-              <Text style={styles.sheetSubtitle}>
-                {confirmedMembers.length} confirmed • {pendingMembers.length} pending • {declinedMembers.length} declined
-              </Text>
+            <View style={styles.sheetTitleRow}>
+              <Text style={styles.sheetTitle}>Trip Travelers</Text>
+              <View
+                style={[
+                  styles.headerPendingBadge,
+                  pendingMembers.length === 0 && { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.headerPendingBadgeText,
+                    pendingMembers.length === 0 && { color: '#059669' },
+                  ]}
+                >
+                  {pendingMembers.length} pending / out of {members.length}
+                </Text>
+              </View>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <X size={18} color={colors.slate600} />
@@ -124,53 +150,24 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
           </View>
 
           <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
-            {/* Unstop Acceptance Summary Dashboard Card */}
-            <View style={styles.acceptanceDashboard}>
-              <View style={styles.dashHeaderRow}>
-                <Text style={styles.dashTitle}>Team Acceptance Status</Text>
-                <View style={styles.dashPillsRow}>
-                  <View style={styles.dashConfirmedPill}>
-                    <CheckCircle2 size={11} color="#059669" />
-                    <Text style={styles.dashConfirmedText}>{confirmedMembers.length} Confirmed</Text>
-                  </View>
-                  {pendingMembers.length > 0 && (
-                    <View style={styles.dashPendingPill}>
-                      <Clock size={11} color="#b45309" />
-                      <Text style={styles.dashPendingText}>{pendingMembers.length} Pending</Text>
-                    </View>
-                  )}
-                  {declinedMembers.length > 0 && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3', paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 999 }}>
-                      <XCircle size={11} color="#e11d48" />
-                      <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#e11d48' }}>{declinedMembers.length} Declined</Text>
-                    </View>
-                  )}
+
+
+            {/* General Trip Invite Box - Only visible for trip creator / organizer */}
+            {isCreatorOrOrganizer && inviteCode ? (
+              <View style={styles.inviteBox}>
+                <View>
+                  <Text style={styles.inviteLabel}>General Trip Invite Code</Text>
+                  <Text style={styles.inviteCodeText}>{inviteCode}</Text>
                 </View>
+
+                <TouchableOpacity style={styles.copyBtn} onPress={handleCopyCode} activeOpacity={0.8}>
+                  {copied ? <Check size={14} color="#ffffff" /> : <Copy size={14} color="#ffffff" />}
+                  <Text style={styles.copyBtnText}>{copied ? 'Copied' : 'Copy Code'}</Text>
+                </TouchableOpacity>
               </View>
+            ) : null}
 
-              <Text style={styles.dashRuleText}>
-                Unstop Policy: Expense logging & cost-sharing are locked until all invited members accept their group invitation. Unconfirmed members carry ₹0 liability.
-              </Text>
-            </View>
 
-            {/* General Trip Invite Box */}
-            <View style={styles.inviteBox}>
-              <View>
-                <Text style={styles.inviteLabel}>General Trip Invite Code</Text>
-                <Text style={styles.inviteCodeText}>{inviteCode}</Text>
-              </View>
-
-              <TouchableOpacity style={styles.copyBtn} onPress={handleCopyCode} activeOpacity={0.8}>
-                {copied ? <Check size={14} color="#ffffff" /> : <Copy size={14} color="#ffffff" />}
-                <Text style={styles.copyBtnText}>{copied ? 'Copied' : 'Copy Code'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Members List */}
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Traveler Roster ({members.length})</Text>
-              <Text style={styles.sectionSubCount}>{confirmedMembers.length}/{members.length} Active in Ledger</Text>
-            </View>
 
             {members.map((m) => {
               const isConfirmed = m.role === 'Organizer' || m.status === 'ACCEPTED';
@@ -230,11 +227,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                         <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, backgroundColor: '#ffe4e6' }}>
                           <Text style={{ fontSize: 11, fontWeight: '700', color: '#be123c' }}>Declined</Text>
                         </View>
-                      ) : (
-                        <View style={styles.pendingBalBadge}>
-                          <Text style={styles.pendingBalText}>₹0 (Pending)</Text>
-                        </View>
-                      )}
+                      ) : null}
                     </View>
                   </View>
 
@@ -243,47 +236,51 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                     {isConfirmed ? (
                       <View style={styles.statusAcceptedTag}>
                         <Check size={11} color="#059669" strokeWidth={2.6} />
-                        <Text style={styles.statusAcceptedText}>Accepted & Confirmed • Active in Split Ledger</Text>
+                        <Text style={styles.statusAcceptedText}>Accepted</Text>
                       </View>
                     ) : isDeclined ? (
                       <View style={styles.statusPendingWrap}>
                         <View style={styles.statusPendingTag}>
                           <XCircle size={11} color="#e11d48" strokeWidth={2.4} />
-                          <Text style={{ fontSize: 11, fontWeight: '600', color: '#e11d48' }}>Invitation Declined • Excluded from Splits</Text>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: '#e11d48' }}>Declined</Text>
                         </View>
 
-                        <TouchableOpacity
-                          style={[styles.resendBtn, { backgroundColor: '#e11d48' }]}
-                          onPress={() => handleCopyMemberInvite(m)}
-                          activeOpacity={0.8}
-                        >
-                          {isCopied ? (
-                            <Check size={11} color="#ffffff" strokeWidth={2.5} />
-                          ) : (
-                            <Share2 size={11} color="#ffffff" strokeWidth={2} />
-                          )}
-                          <Text style={styles.resendBtnText}>{isCopied ? 'Copied' : 'Resend Invite'}</Text>
-                        </TouchableOpacity>
+                        {isCreatorOrOrganizer && (
+                          <TouchableOpacity
+                            style={[styles.resendBtn, { backgroundColor: '#e11d48' }]}
+                            onPress={() => handleCopyMemberInvite(m)}
+                            activeOpacity={0.8}
+                          >
+                            {isCopied ? (
+                              <Check size={11} color="#ffffff" strokeWidth={2.5} />
+                            ) : (
+                              <Share2 size={11} color="#ffffff" strokeWidth={2} />
+                            )}
+                            <Text style={styles.resendBtnText}>{isCopied ? 'Copied' : 'Resend Invite'}</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     ) : (
                       <View style={styles.statusPendingWrap}>
                         <View style={styles.statusPendingTag}>
                           <Clock size={11} color="#b45309" strokeWidth={2.4} />
-                          <Text style={styles.statusPendingText}>Awaiting Acceptance • Excluded from Splits</Text>
+                          <Text style={styles.statusPendingText}>Pending</Text>
                         </View>
 
-                        <TouchableOpacity
-                          style={styles.resendBtn}
-                          onPress={() => handleCopyMemberInvite(m)}
-                          activeOpacity={0.8}
-                        >
-                          {isCopied ? (
-                            <Check size={11} color="#ffffff" strokeWidth={2.5} />
-                          ) : (
-                            <Share2 size={11} color="#ffffff" strokeWidth={2} />
-                          )}
-                          <Text style={styles.resendBtnText}>{isCopied ? 'Copied' : 'Share Invite'}</Text>
-                        </TouchableOpacity>
+                        {isCreatorOrOrganizer && (
+                          <TouchableOpacity
+                            style={styles.resendBtn}
+                            onPress={() => handleCopyMemberInvite(m)}
+                            activeOpacity={0.8}
+                          >
+                            {isCopied ? (
+                              <Check size={11} color="#ffffff" strokeWidth={2.5} />
+                            ) : (
+                              <Share2 size={11} color="#ffffff" strokeWidth={2} />
+                            )}
+                            <Text style={styles.resendBtnText}>{isCopied ? 'Copied' : 'Share Invite'}</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     )}
                   </View>
@@ -291,37 +288,41 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
               );
             })}
 
-            {/* Add Traveler Form */}
-            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Invite New Traveler</Text>
+            {/* Add Traveler Form - Only visible for trip creator / organizer */}
+            {isCreatorOrOrganizer && (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Invite New Traveler</Text>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Traveler Name (e.g. Sara Khan)"
-              placeholderTextColor={colors.slate400}
-              value={name}
-              onChangeText={setName}
-            />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Traveler Name (e.g. Sara Khan)"
+                  placeholderTextColor={colors.slate400}
+                  value={name}
+                  onChangeText={setName}
+                />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Email address (e.g. sara@example.com)"
-              placeholderTextColor={colors.slate400}
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-            />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email address (e.g. sara@example.com)"
+                  placeholderTextColor={colors.slate400}
+                  keyboardType="email-address"
+                  value={email}
+                  onChangeText={setEmail}
+                />
 
-            <TouchableOpacity
-              style={styles.addBtn}
-              onPress={handleAdd}
-              disabled={isSubmitting}
-              activeOpacity={0.85}
-            >
-              <UserPlus size={16} color="#ffffff" />
-              <Text style={styles.addBtnText}>
-                {isSubmitting ? 'Sending Invitation...' : 'Send Trip Invitation'}
-              </Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addBtn}
+                  onPress={handleAdd}
+                  disabled={isSubmitting}
+                  activeOpacity={0.85}
+                >
+                  <UserPlus size={16} color="#ffffff" />
+                  <Text style={styles.addBtnText}>
+                    {isSubmitting ? 'Sending Invitation...' : 'Send Trip Invitation'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             <View style={{ height: 30 }} />
           </ScrollView>
@@ -356,6 +357,24 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
     color: colors.slate900,
+  },
+  sheetTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerPendingBadge: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  headerPendingBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#b45309',
   },
   sheetSubtitle: {
     fontSize: 11,
@@ -439,7 +458,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
   dashTitle: {
     fontSize: 12.5,
@@ -482,11 +500,6 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '700',
     color: '#b45309',
-  },
-  dashRuleText: {
-    fontSize: 11,
-    color: colors.slate600,
-    lineHeight: 15,
   },
   memberCard: {
     backgroundColor: '#ffffff',

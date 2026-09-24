@@ -3,7 +3,7 @@
  * Supports all 5 project split models with instant offline SQLite writes
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { X, Check, DollarSign, Users, Split, Clock, AlertCircle, ShieldCheck } from 'lucide-react-native';
+import { X, Check, Users, Split, Clock, AlertCircle, ShieldCheck } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { Participant, CostSharingModel } from '../../types';
 
@@ -72,6 +72,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(acceptedMembers.map((m) => m.id));
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI'>('UPI');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   const numAmount = parseFloat(amount) || 0;
   const activeCount = selectedMemberIds.length || 1;
@@ -88,6 +89,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   };
 
   const handleSave = async () => {
+    if (isSubmitting || isSubmittingRef.current) return;
     if (isExpenseLocked) {
       Alert.alert(
         'Expense Management Locked 🔒',
@@ -104,6 +106,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       const payer = acceptedMembers.find((m) => m.id === paidById) || acceptedMembers[0];
@@ -130,6 +133,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       Alert.alert('Error', e.message || 'Failed to save expense');
     } finally {
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -273,7 +277,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                       </Text>
                     </View>
                     <Text style={styles.pendingSectionHint}>
-                      Per Unstop team rules, travelers must accept their trip invitation before expenses can be split with them.
+                      Travelers must accept their trip invitation before expenses can be split with them.
                     </Text>
 
                     {pendingMembers.map((m) => (

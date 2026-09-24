@@ -16,6 +16,7 @@ import {
   Clipboard,
   Image,
   NativeModules,
+  PermissionsAndroid,
 } from 'react-native';
 import {
   X,
@@ -117,6 +118,9 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
   const [verifiedResult, setVerifiedResult] = useState<any>(null);
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [copiedAmount, setCopiedAmount] = useState(false);
+  // SMS verification outcome: null=not checked, 'AUTO_VERIFIED', 'PENDING_APPROVAL'
+  const [smsVerifyStatus, setSmsVerifyStatus] = useState<'AUTO_VERIFIED' | 'PENDING_APPROVAL' | null>(null);
+  const [smsProof, setSmsProof] = useState<string | null>(null);
 
   // ── QR Timer State ────────────────────────────────────────────────────────
   const [qrCountdown, setQrCountdown] = useState(300);
@@ -149,6 +153,8 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
       setErrorMessage(null);
       setVerifiedResult(null);
       setIsVerifying(false);
+      setSmsVerifyStatus(null);
+      setSmsProof(null);
       isAwaitingReturn.current = false;
     }
   }, [visible, defaultUpiId, defaultPayeeName, defaultAmount, defaultNote, defaultRawQr]);
@@ -354,19 +360,61 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
     }
   };
 
-  // ── Commit Payment to Ledger (PostgreSQL Backend + SQLite Fallback) ───────
+  // ── Commit Payment to Ledger (SMS-Verified → AUTO_VERIFIED or PENDING_APPROVAL) ──
   const commitPaymentToLedger = async (overrideUtr?: string) => {
     if (!selectedTripId || !amount || isVerifying) return;
 
     setIsVerifying(true);
     setErrorMessage(null);
 
-    const finalUtr = overrideUtr || utrNumber.trim() || manualUtrInput.trim() || undefined;
     const finalTxnRef = txnRef || `UPI-TXN-${Date.now().toString().slice(-8)}`;
     const numAmount = parseFloat(amount) || 0;
+    let detectedUtr = overrideUtr || utrNumber.trim() || manualUtrInput.trim() || undefined;
+    let verificationStatus: 'AUTO_VERIFIED' | 'PENDING_APPROVAL' = 'PENDING_APPROVAL';
+    let rawSmsProof: string | null = null;
+
+    // ── Industry-Grade SMS Debit Verification (Android only) ─────────────────
+    // Silently request READ_SMS, then query for matching bank debit in last 10 min.
+    // If found: AUTO_VERIFIED (no member approval required, instant ledger commit).
+    // If not found / iOS: PENDING_APPROVAL (60% group member consensus required).
+    if (Platform.OS === 'android' && NativeModules.UpiPayment?.checkRecentDebitSms) {
+      try {
+        // Request SMS permission silently — no UX disruption
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_SMS,
+          {
+            title: 'Bank SMS Verification',
+            message:
+              'Triptual reads your bank debit SMS to auto-verify this payment without asking group members for approval.',
+            buttonPositive: 'Allow',
+            buttonNegative: 'Skip',
+          }
+        );
+
+        const hasPermission = granted === PermissionsAndroid.RESULTS.GRANTED;
+
+        if (hasPermission) {
+          const smsResult = await NativeModules.UpiPayment.checkRecentDebitSms(numAmount);
+          if (smsResult?.detected === true) {
+            verificationStatus = 'AUTO_VERIFIED';
+            rawSmsProof = smsResult.body || null;
+            setSmsProof(rawSmsProof);
+            // Prefer UTR extracted from SMS over any manual input
+            if (smsResult.utr && smsResult.utr.length >= 10) {
+              detectedUtr = smsResult.utr;
+            }
+          }
+        }
+      } catch (smsErr) {
+        // SMS check failed silently → fall through to PENDING_APPROVAL
+        console.warn('[SMS Check] Error during checkRecentDebitSms:', smsErr);
+      }
+    }
+
+    setSmsVerifyStatus(verificationStatus);
 
     try {
-      // 1. Try Backend API first
+      // 1. Try Backend API first (preferred path)
       const res = await apiRequest<any>('/payments/verify-status', {
         method: 'POST',
         body: JSON.stringify({
@@ -377,21 +425,24 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
             description.trim() || (vendorName ? `Paid to ${vendorName}` : 'Vendor Payment'),
           category,
           paymentMethod: `UPI (${UPI_APP_CONFIG[selectedApp].name})`,
-          utr: finalUtr,
+          utr: detectedUtr,
           vendorUpi,
           vendorName,
+          verificationStatus,
+          rawSmsProof,
         }),
       });
 
       if (res?.data) {
-        setVerifiedResult(res.data);
+        setVerifiedResult({ ...res.data, verificationStatus, requiredApprovals: res.data?.requiredApprovals });
       } else {
         setVerifiedResult({
           amount: numAmount,
           vendorName: vendorName || vendorUpi,
           groupName: currentTrip?.name,
           splitModel: (currentTrip as any)?.expenseSplit || 'EQUAL',
-          paymentReference: finalUtr || finalTxnRef,
+          paymentReference: detectedUtr || finalTxnRef,
+          verificationStatus,
         });
       }
 
@@ -406,7 +457,9 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
           category: mapCategory(category),
           description: description.trim() || `Paid to ${vendorName || vendorUpi}`,
           paymentMethod: 'UPI',
-          paymentReference: finalUtr || finalTxnRef,
+          paymentReference: detectedUtr || finalTxnRef,
+          verificationStatus,
+          rawSmsProof: rawSmsProof || undefined,
         });
       }
 
@@ -426,7 +479,9 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
           category: mapCategory(category),
           description: description.trim() || `Paid to ${vendorName || vendorUpi}`,
           paymentMethod: 'UPI',
-          paymentReference: finalUtr || finalTxnRef,
+          paymentReference: detectedUtr || finalTxnRef,
+          verificationStatus,
+          rawSmsProof: rawSmsProof || undefined,
         });
 
         setVerifiedResult({
@@ -434,7 +489,8 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
           vendorName: vendorName || vendorUpi,
           groupName: currentTrip?.name,
           splitModel: (currentTrip as any)?.expenseSplit || 'EQUAL',
-          paymentReference: finalUtr || finalTxnRef,
+          paymentReference: detectedUtr || finalTxnRef,
+          verificationStatus,
         });
 
         setStep('success');
@@ -1069,17 +1125,34 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                     {isVerifying ? (
                       <ActivityIndicator size="large" color="#243E36" />
                     ) : (
-                      <Zap size={32} color="#243E36" />
+                      <ShieldCheck size={32} color="#243E36" />
                     )}
                   </View>
 
                   <Text style={styles.verifyingTitle}>
-                    {isVerifying ? 'Recording to Ledger…' : 'Did your payment go through?'}
+                    {isVerifying ? '🔍 Scanning Bank SMS…' : 'Returned from UPI App?'}
                   </Text>
                   <Text style={styles.verifyingSub}>
-                    Payment of <Text style={{ fontWeight: '700', color: '#0F172A' }}>₹{Number(amount).toFixed(2)}</Text> was initiated for{' '}
-                    <Text style={{ fontWeight: '700', color: '#0F172A' }}>{vendorName || vendorUpi}</Text>. Please confirm the outcome from your UPI app screen.
+                    {isVerifying
+                      ? 'Checking your bank SMS for a debit of ₹' + Number(amount).toFixed(2) + '. If detected, expense will be auto-verified without asking group members.'
+                      : 'Payment of '}
+                    {!isVerifying && (
+                      <>
+                        <Text style={{ fontWeight: '700', color: '#0F172A' }}>₹{Number(amount).toFixed(2)}</Text>
+                        {' was initiated for '}
+                        <Text style={{ fontWeight: '700', color: '#0F172A' }}>{vendorName || vendorUpi}</Text>
+                        {'. Tap confirm — we\'ll auto-scan your bank SMS.'}
+                      </>
+                    )}
                   </Text>
+
+                  {/* Info banner */}
+                  <View style={{ backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 10, padding: 10, width: '100%' }}>
+                    <Text style={{ fontSize: 11.5, color: '#15803D', fontWeight: '600', textAlign: 'center' }}>
+                      🏦 Bank SMS detected → AUTO_VERIFIED (instant, no group approval){'\n'}
+                      📱 SMS not found → Sent for 60% group approval
+                    </Text>
+                  </View>
 
                   {/* Tracking Reference Pill */}
                   <View style={styles.trackingPill}>
@@ -1090,7 +1163,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                   {/* Optional UTR Input from receipt */}
                   <View style={[styles.inputGroup, { width: '100%', marginTop: 8 }]}>
                     <Text style={styles.inputLabel}>
-                      Bank UTR / Ref No. (Optional from Receipt)
+                      Bank UTR / Ref No. (Optional — auto-extracted from SMS)
                     </Text>
                     <TextInput
                       style={styles.textInput}
@@ -1115,9 +1188,9 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
                         <>
-                          <CheckCircle2 size={18} color="#FFFFFF" />
+                          <ShieldCheck size={18} color="#FFFFFF" />
                           <Text style={styles.primaryBtnText}>
-                            Yes, I Paid ₹{Number(amount).toFixed(2)}
+                            Confirm & Verify (Scan Bank SMS)
                           </Text>
                         </>
                       )}
@@ -1134,7 +1207,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                     >
                       <X size={16} color="#DC2626" />
                       <Text style={styles.cancelPaymentBtnText}>
-                        No, Payment was Canceled / Failed
+                        Payment Canceled / Failed
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -1165,24 +1238,59 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                 </View>
               )}
 
+
               {/* ───────────────────────────────────────────────────────────── */}
               {/* STEP 5: SUCCESS STATE & SPLIT RECEIPT                         */}
               {/* ───────────────────────────────────────────────────────────── */}
               {step === 'success' && (
                 <View style={styles.successContainer}>
-                  <View style={styles.successIconCircle}>
-                    <CheckCircle2 size={38} color="#15803D" />
+                  <View style={[
+                    styles.successIconCircle,
+                    smsVerifyStatus === 'PENDING_APPROVAL' && { backgroundColor: '#FFF7ED', borderColor: '#FB923C' }
+                  ]}>
+                    {smsVerifyStatus === 'AUTO_VERIFIED' ? (
+                      <ShieldCheck size={38} color="#15803D" />
+                    ) : (
+                      <Clock size={38} color="#D97706" />
+                    )}
                   </View>
 
-                  <Text style={styles.successTitle}>Payment Verified!</Text>
+                  <Text style={[
+                    styles.successTitle,
+                    smsVerifyStatus === 'PENDING_APPROVAL' && { color: '#92400E' }
+                  ]}>
+                    {smsVerifyStatus === 'AUTO_VERIFIED'
+                      ? '✅ Auto-Verified via Bank SMS!'
+                      : '⏳ Submitted for Group Approval'}
+                  </Text>
+
+                  {/* Verification status badge */}
+                  <View style={[
+                    styles.verifyBadge,
+                    smsVerifyStatus === 'AUTO_VERIFIED'
+                      ? { backgroundColor: '#DCFCE7', borderColor: '#16A34A' }
+                      : { backgroundColor: '#FEF3C7', borderColor: '#D97706' }
+                  ]}>
+                    <Text style={[
+                      styles.verifyBadgeText,
+                      { color: smsVerifyStatus === 'AUTO_VERIFIED' ? '#15803D' : '#92400E' }
+                    ]}>
+                      {smsVerifyStatus === 'AUTO_VERIFIED'
+                        ? '🏦 Bank SMS Detected · No Approval Needed'
+                        : `⚠️ 60% of Group Members Must Approve · ${verifiedResult?.requiredApprovals || '?'} Approvals Required`}
+                    </Text>
+                  </View>
+
                   <Text style={styles.successSub}>
-                    Committed to PostgreSQL & auto-split across {verifiedResult?.groupName || currentTrip?.name}
+                    {smsVerifyStatus === 'AUTO_VERIFIED'
+                      ? `Expense auto-split across ${verifiedResult?.groupName || currentTrip?.name}. No action needed from companions.`
+                      : `Expense queued for ${verifiedResult?.groupName || currentTrip?.name}. Companions will see an approval prompt in the app.`}
                   </Text>
 
                   {/* Summary Card */}
                   <View style={styles.receiptCard}>
                     <View style={styles.receiptRow}>
-                      <Text style={styles.receiptKey}>Amount Paid</Text>
+                      <Text style={styles.receiptKey}>Amount</Text>
                       <Text style={styles.receiptValHero}>
                         ₹{Number(verifiedResult?.amount || amount).toFixed(2)}
                       </Text>
@@ -1194,7 +1302,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                       </Text>
                     </View>
                     <View style={styles.receiptRow}>
-                      <Text style={styles.receiptKey}>Split Ratio</Text>
+                      <Text style={styles.receiptKey}>Split</Text>
                       <Text style={[styles.receiptVal, { color: '#059669', fontWeight: '700' }]}>
                         {verifiedResult?.splitModel || (currentTrip as any)?.expenseSplit || 'EQUAL'} SPLIT
                       </Text>
@@ -1203,6 +1311,15 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                       <Text style={styles.receiptKey}>Reference</Text>
                       <Text style={styles.receiptValMono}>
                         {verifiedResult?.paymentReference || txnRef}
+                      </Text>
+                    </View>
+                    <View style={styles.receiptRow}>
+                      <Text style={styles.receiptKey}>Status</Text>
+                      <Text style={[
+                        styles.receiptVal,
+                        { color: smsVerifyStatus === 'AUTO_VERIFIED' ? '#15803D' : '#D97706', fontWeight: '700' }
+                      ]}>
+                        {smsVerifyStatus === 'AUTO_VERIFIED' ? 'AUTO VERIFIED' : 'PENDING APPROVAL'}
                       </Text>
                     </View>
                   </View>
@@ -1914,5 +2031,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#475569',
+  },
+  verifyBadge: {
+    alignSelf: 'stretch',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 2,
+  },
+  verifyBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

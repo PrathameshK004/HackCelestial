@@ -1,9 +1,13 @@
 /**
- * Expenses Tab matching WebApp 'expenses' dock tab
- * Features Global Financial Stats, Min-Cash-Flow Smart Settlement Optimizer, and Unified Expense Stream
+ * Expenses Tab — Global Financial Stats, Smart Settlement Optimizer & Unified Expense Stream
+ * 
+ * KEY FEATURE: 60% Group Member Consensus Approval Banner
+ * - For every PENDING_APPROVAL expense, group companions see an Approve / Dispute prompt
+ * - Listens to Socket.IO 'EXPENSE_APPROVAL_UPDATED' for live auto-dismiss when 60% threshold is reached
+ * - AUTO_VERIFIED expenses (bank SMS detected) skip the approval flow entirely
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +19,7 @@ import {
   RefreshControl,
   Platform,
   NativeModules,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Zap,
@@ -25,11 +30,19 @@ import {
   Share2,
   TrendingDown,
   TrendingUp,
+  ShieldCheck,
+  Clock,
+  AlertTriangle,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { useTrips } from '../../context/TripContext';
+import { useAuth } from '../../context/AuthContext';
 import { ledgerEngine } from '../../sync/ledgerEngine';
-import { SettlementTransfer } from '../../types';
+import { SettlementTransfer, Expense } from '../../types';
+import { groupService } from '../../api/group.service';
+import { socketService } from '../../services/socketService';
 
 interface ExpensesTabProps {
   onOpenSettleModal?: (transfer: SettlementTransfer) => void;
@@ -37,9 +50,27 @@ interface ExpensesTabProps {
   onRefresh?: () => Promise<void> | void;
 }
 
+interface ApprovalState {
+  [expenseId: string]: {
+    loading: boolean;
+    voted: 'APPROVE' | 'DISPUTE' | null;
+    approveCount: number;
+    requiredApprovals: number;
+    isFinalized: boolean;
+    verificationStatus: string;
+  };
+}
+
 export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, searchQuery = '', onRefresh }) => {
   const { trips, recordSettlement, refreshTrips } = useTrips();
+  const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [subTab, setSubTab] = useState<'optimizer' | 'expenses'>('optimizer');
+
+  // Track approval UI state per-expense
+  const [approvalState, setApprovalState] = useState<ApprovalState>({});
+
+  const q = searchQuery.trim().toLowerCase();
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -53,10 +84,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
     }
   };
 
-  const [subTab, setSubTab] = useState<'optimizer' | 'expenses'>('optimizer');
-  const q = searchQuery.trim().toLowerCase();
-
-  // Compute global finances across all SQLite trips
+  // Build a flat list of all expenses (across trips) with trip context
   const { totalSpent, youOwe, youAreOwed, allExpenses, allMembers } = useMemo(() => {
     let spent = 0;
     let owe = 0;
@@ -70,8 +98,12 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
       if (t.userBalance < 0) owe += Math.abs(t.userBalance);
 
       if (t.expenses) {
+        const seenExpIds = new Set<string>();
         t.expenses.forEach((e) => {
-          expensesList.push({ ...e, tripName: t.name, currencySymbol: t.currencySymbol });
+          const eid = String(e.id || '');
+          if (!eid || seenExpIds.has(eid)) return;
+          seenExpIds.add(eid);
+          expensesList.push({ ...e, tripName: t.name, tripId: t.id, currencySymbol: t.currencySymbol });
         });
       }
       if (t.members) {
@@ -102,6 +134,116 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
     );
   }, [activeTrip]);
 
+  // ── Socket.IO: Real-time Approval Updates ──────────────────────────────────
+  // Listens for EXPENSE_APPROVAL_UPDATED events and dismisses/updates approval banners
+  useEffect(() => {
+    const unsub = socketService.on('EXPENSE_APPROVAL_UPDATED', (data: any) => {
+      if (!data?.expenseId) return;
+      setApprovalState((prev) => ({
+        ...prev,
+        [data.expenseId]: {
+          ...(prev[data.expenseId] || {}),
+          loading: false,
+          approveCount: data.approveCount ?? (prev[data.expenseId]?.approveCount || 0),
+          requiredApprovals: data.requiredApprovals ?? (prev[data.expenseId]?.requiredApprovals || 1),
+          isFinalized: Boolean(data.isFinalized),
+          verificationStatus: data.verificationStatus || 'PENDING_APPROVAL',
+        },
+      }));
+
+      if (data.isFinalized && data.verificationStatus === 'VERIFIED') {
+        // Refresh to pull finalized expense data from server
+        refreshTrips().catch(() => null);
+      }
+    });
+
+    // Also join each group's socket room so we receive group-scoped events
+    trips.forEach((t) => {
+      socketService.joinGroup(t.id);
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [trips, refreshTrips]);
+
+  // Initialize approval state from loaded expense data
+  useEffect(() => {
+    const initial: ApprovalState = {};
+    allExpenses.forEach((exp: any) => {
+      if (exp.verificationStatus === 'PENDING_APPROVAL' && !approvalState[exp.id]) {
+        const approveCount = (exp.approvals || []).filter((a: any) => a.action === 'APPROVE').length;
+        initial[exp.id] = {
+          loading: false,
+          voted: null,
+          approveCount,
+          requiredApprovals: exp.requiredApprovals || 1,
+          isFinalized: false,
+          verificationStatus: 'PENDING_APPROVAL',
+        };
+      }
+    });
+    if (Object.keys(initial).length > 0) {
+      setApprovalState((prev) => ({ ...initial, ...prev }));
+    }
+  }, [allExpenses]);
+
+  // ── Cast Approval Vote ─────────────────────────────────────────────────────
+  const handleCastVote = useCallback(
+    async (expense: any, action: 'APPROVE' | 'DISPUTE') => {
+      const expenseId = expense.id;
+      const tripId = expense.tripId;
+      if (!tripId || !expenseId) return;
+
+      setApprovalState((prev) => ({
+        ...prev,
+        [expenseId]: { ...(prev[expenseId] || {}), loading: true },
+      }));
+
+      try {
+        const res = await groupService.reviewExpenseApproval(tripId, expenseId, action);
+        const data = res?.data;
+        setApprovalState((prev) => ({
+          ...prev,
+          [expenseId]: {
+            loading: false,
+            voted: action,
+            approveCount: data?.approveCount ?? (prev[expenseId]?.approveCount || 0),
+            requiredApprovals: data?.requiredApprovals ?? (prev[expenseId]?.requiredApprovals || 1),
+            isFinalized: Boolean(data?.isFinalized),
+            verificationStatus: data?.verificationStatus || 'PENDING_APPROVAL',
+          },
+        }));
+
+        if (data?.isFinalized && data.verificationStatus === 'VERIFIED') {
+          Alert.alert(
+            '✅ Expense Approved!',
+            `"${expense.title}" has reached 60% group approval and has been verified.`
+          );
+          await refreshTrips();
+        } else if (action === 'APPROVE') {
+          Alert.alert(
+            '✅ Vote Recorded',
+            `Your approval (${data?.approveCount}/${data?.requiredApprovals}) has been submitted.`
+          );
+        } else {
+          Alert.alert(
+            '❌ Dispute Registered',
+            'Your dispute has been submitted. The payer will be notified.'
+          );
+        }
+      } catch (err: any) {
+        setApprovalState((prev) => ({
+          ...prev,
+          [expenseId]: { ...(prev[expenseId] || {}), loading: false },
+        }));
+        Alert.alert('Error', err?.message || 'Could not submit vote. Please try again.');
+      }
+    },
+    [refreshTrips]
+  );
+
+  // ── Settlement Handlers ────────────────────────────────────────────────────
   const handlePayUPI = (t: SettlementTransfer) => {
     const upiUrl = `upi://pay?pa=${t.toUpiId || 'yogesh@okaxis'}&pn=${encodeURIComponent(
       t.toMemberName
@@ -153,6 +295,109 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
     Alert.alert('Settled!', `Payment of ₹${t.amount} marked as completed in local ledger.`);
   };
 
+  // ── Approval Banner ────────────────────────────────────────────────────────
+  // Determine if current user is the payer for an expense
+  const isCurrentUserPayer = (exp: any): boolean => {
+    if (!user) return false;
+    // Match by userId embedded in expense paidById or by username/email
+    return (
+      exp.paidById === user.id ||
+      exp.paidByName === (user.username || user.name) ||
+      exp.paidByUserId === user.id
+    );
+  };
+
+  // Pending expenses where current user has NOT yet voted and has not finalized
+  const pendingApprovalExpenses = useMemo(() => {
+    return allExpenses.filter((exp: any) => {
+      if (exp.verificationStatus !== 'PENDING_APPROVAL') return false;
+      const state = approvalState[exp.id];
+      if (state?.isFinalized || state?.verificationStatus === 'VERIFIED') return false;
+      if (state?.voted) return false;
+      return true;
+    });
+  }, [allExpenses, approvalState]);
+
+  const renderApprovalBanner = (exp: any) => {
+    const state = approvalState[exp.id] || {
+      loading: false,
+      voted: null,
+      approveCount: (exp.approvals || []).filter((a: any) => a.action === 'APPROVE').length,
+      requiredApprovals: exp.requiredApprovals || 1,
+      isFinalized: false,
+      verificationStatus: 'PENDING_APPROVAL',
+    };
+
+    const isPayer = isCurrentUserPayer(exp);
+    const progressPct = Math.min(
+      100,
+      Math.round((state.approveCount / (state.requiredApprovals || 1)) * 100)
+    );
+
+    return (
+      <View key={exp.id} style={styles.approvalCard}>
+        {/* Header row */}
+        <View style={styles.approvalHeader}>
+          <View style={styles.approvalHeaderLeft}>
+            <AlertTriangle size={16} color="#D97706" />
+            <Text style={styles.approvalHeaderLabel}>APPROVAL NEEDED</Text>
+          </View>
+          <View style={styles.approvalBadge}>
+            <Text style={styles.approvalBadgeText}>
+              {state.approveCount}/{state.requiredApprovals} · 60%
+            </Text>
+          </View>
+        </View>
+
+        {/* Expense info */}
+        <Text style={styles.approvalExpenseTitle} numberOfLines={1}>
+          {exp.title}
+        </Text>
+        <Text style={styles.approvalExpenseMeta}>
+          ₹{Number(exp.amount).toFixed(2)} · Paid by {exp.paidByName} · {exp.tripName}
+        </Text>
+
+        {/* Progress bar */}
+        <View style={styles.progressBar}>
+          <View style={[styles.progressFill, { width: `${progressPct}%` as any }]} />
+        </View>
+        <Text style={styles.progressLabel}>
+          {state.approveCount} of {state.requiredApprovals} approvals (need 60% of group)
+        </Text>
+
+        {isPayer ? (
+          <View style={styles.payerNote}>
+            <ShieldCheck size={13} color="#059669" />
+            <Text style={styles.payerNoteText}>
+              You submitted this — waiting for companions to approve
+            </Text>
+          </View>
+        ) : state.loading ? (
+          <ActivityIndicator size="small" color="#464B29" style={{ marginTop: 10 }} />
+        ) : (
+          <View style={styles.approvalButtons}>
+            <TouchableOpacity
+              style={styles.approveBtn}
+              activeOpacity={0.85}
+              onPress={() => handleCastVote(exp, 'APPROVE')}
+            >
+              <ThumbsUp size={14} color="#FFFFFF" />
+              <Text style={styles.approveBtnText}>Approve</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.disputeBtn}
+              activeOpacity={0.85}
+              onPress={() => handleCastVote(exp, 'DISPUTE')}
+            >
+              <ThumbsDown size={14} color="#DC2626" />
+              <Text style={styles.disputeBtnText}>Dispute</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
     <ScrollView
       style={styles.container}
@@ -166,7 +411,17 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
         />
       }
     >
-      {/* 3-Card Financial Overview Header */}
+      {/* ── 60% Approval Banners (top priority) ─────────────────────────── */}
+      {pendingApprovalExpenses.length > 0 && (
+        <View style={styles.approvalSection}>
+          <Text style={styles.approvalSectionHeader}>
+            ⚠️ Expenses Awaiting Your Approval
+          </Text>
+          {pendingApprovalExpenses.map((exp: any) => renderApprovalBanner(exp))}
+        </View>
+      )}
+
+      {/* ── 3-Card Financial Overview ────────────────────────────────────── */}
       <View style={styles.metricsGrid}>
         <View style={styles.metricCard}>
           <Text style={styles.metricLabel}>Total Spent</Text>
@@ -182,143 +437,109 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
           <Text style={[styles.metricValue, { color: colors.primary700 }]}>
             ₹{youAreOwed.toLocaleString()}
           </Text>
-          <Text style={styles.metricFoot}>To receive</Text>
+          <Text style={styles.metricFoot}>Group owes you</Text>
         </View>
 
         <View style={[styles.metricCard, styles.metricCardOwes]}>
           <View style={styles.metricTitleRow}>
             <Text style={styles.metricLabel}>You Owe</Text>
-            <TrendingDown size={12} color={colors.accentAmber} />
+            <TrendingDown size={12} color="#D97706" />
           </View>
-          <Text style={[styles.metricValue, { color: '#92400e' }]}>
+          <Text style={[styles.metricValue, { color: '#B45309' }]}>
             ₹{youOwe.toLocaleString()}
           </Text>
-          <Text style={styles.metricFoot}>To settle</Text>
+          <Text style={styles.metricFoot}>Pay your share</Text>
         </View>
       </View>
 
-      {/* Sub-Tabs: Settlement Optimizer vs All Expenses */}
+      {/* ── Sub-Tab Toggle ───────────────────────────────────────────────── */}
       <View style={styles.subTabRow}>
         <TouchableOpacity
           style={[styles.subTabBtn, subTab === 'optimizer' && styles.subTabBtnActive]}
           onPress={() => setSubTab('optimizer')}
-          activeOpacity={0.8}
         >
-          <Zap
-            size={14}
-            color={subTab === 'optimizer' ? colors.primary600 : colors.slate500}
-          />
-          <Text
-            style={[
-              styles.subTabText,
-              subTab === 'optimizer' && styles.subTabTextActive,
-            ]}
-          >
-            Settlement Optimizer
+          <Zap size={13} color={subTab === 'optimizer' ? colors.primary700 : colors.slate400} />
+          <Text style={[styles.subTabText, subTab === 'optimizer' && styles.subTabTextActive]}>
+            Smart Settle
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.subTabBtn, subTab === 'expenses' && styles.subTabBtnActive]}
           onPress={() => setSubTab('expenses')}
-          activeOpacity={0.8}
         >
-          <Receipt
-            size={14}
-            color={subTab === 'expenses' ? colors.primary600 : colors.slate500}
-          />
-          <Text
-            style={[
-              styles.subTabText,
-              subTab === 'expenses' && styles.subTabTextActive,
-            ]}
-          >
-            Recent Expenses
+          <Receipt size={13} color={subTab === 'expenses' ? colors.primary700 : colors.slate400} />
+          <Text style={[styles.subTabText, subTab === 'expenses' && styles.subTabTextActive]}>
+            All Expenses
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* 1. Optimizer View */}
-      {subTab === 'optimizer' && optimalResult && (
+      {/* ── 1. Smart Settlement Optimizer ───────────────────────────────── */}
+      {subTab === 'optimizer' && (
         <View>
-
-          {/* Transfers List */}
-          <Text style={styles.sectionHeader}>Optimal Transfers Needed</Text>
-
-          {optimalResult.transfers.map((t, idx) => (
-            <View key={t.id} style={styles.transferCard}>
-              <View style={styles.transferHeader}>
-                <View style={styles.avatarRow}>
-                  <View
-                    style={[
-                      styles.avatarCircle,
-                      { backgroundColor: t.fromAvatarBg || colors.accentAmber },
-                    ]}
-                  >
-                    <Text style={styles.avatarLetter}>
-                      {t.fromMemberName.charAt(0)}
-                    </Text>
-                  </View>
-                  <Text style={styles.payerName}>{t.fromMemberName}</Text>
-                </View>
-
-                <View style={styles.arrowWrap}>
-                  <Text style={styles.transferAmount}>
-                    {t.currencySymbol}{t.amount.toLocaleString()}
-                  </Text>
-                  <ArrowRight size={14} color={colors.slate400} />
-                </View>
-
-                <View style={styles.avatarRow}>
-                  <View
-                    style={[
-                      styles.avatarCircle,
-                      { backgroundColor: t.toAvatarBg || colors.primary600 },
-                    ]}
-                  >
-                    <Text style={styles.avatarLetter}>
-                      {t.toMemberName.charAt(0)}
-                    </Text>
-                  </View>
-                  <Text style={styles.payerName}>{t.toMemberName}</Text>
-                </View>
-              </View>
-
-              {/* Action Buttons: UPI Pay & Mark Settled */}
-              <View style={styles.transferActions}>
-                <TouchableOpacity
-                  style={styles.upiBtn}
-                  onPress={() => handlePayUPI(t)}
-                  activeOpacity={0.8}
-                >
-                  <Smartphone size={13} color="#ffffff" />
-                  <Text style={styles.upiBtnText}>Pay via UPI</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.settleBtn}
-                  onPress={() => handleMarkSettled(t)}
-                  activeOpacity={0.8}
-                >
-                  <CheckCircle2 size={13} color={colors.primary700} />
-                  <Text style={styles.settleBtnText}>Mark Settled</Text>
-                </TouchableOpacity>
-              </View>
+          {(!optimalResult || optimalResult.transfers.length === 0) ? (
+            <View style={styles.emptyWrap}>
+              <CheckCircle2 size={32} color={colors.primary500} />
+              <Text style={styles.emptyText}>All balances settled!</Text>
             </View>
-          ))}
+          ) : (
+            optimalResult.transfers.map((t: SettlementTransfer) => (
+              <View key={t.id} style={styles.transferCard}>
+                <View style={styles.transferRow}>
+                  <View style={[styles.avatar, { backgroundColor: t.fromAvatarBg || '#7C3AED' }]}>
+                    <Text style={styles.avatarText}>{(t.fromMemberName || 'U')[0]}</Text>
+                  </View>
+                  <View style={styles.transferMid}>
+                    <Text style={styles.transferName}>{t.fromMemberName}</Text>
+                    <Text style={styles.transferSubLine}>→ owes →</Text>
+                    <Text style={styles.transferName}>{t.toMemberName}</Text>
+                  </View>
+                  <View style={[styles.avatar, { backgroundColor: t.toAvatarBg || '#059669' }]}>
+                    <Text style={styles.avatarText}>{(t.toMemberName || 'U')[0]}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.transferAmount}>
+                  {t.currencySymbol}{t.amount.toLocaleString()}
+                </Text>
+
+                <View style={styles.transferActions}>
+                  <TouchableOpacity
+                    style={styles.payUpiBtn}
+                    onPress={() => onOpenSettleModal ? onOpenSettleModal(t) : handlePayUPI(t)}
+                    activeOpacity={0.85}
+                  >
+                    <Smartphone size={13} color="#FFFFFF" />
+                    <Text style={styles.payUpiBtnText}>Pay via UPI</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.settleBtn}
+                    onPress={() => handleMarkSettled(t)}
+                    activeOpacity={0.8}
+                  >
+                    <CheckCircle2 size={13} color={colors.primary700} />
+                    <Text style={styles.settleBtnText}>Mark Settled</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
         </View>
       )}
 
-      {/* 2. Unified Expenses Stream */}
+      {/* ── 2. Unified Expenses Stream ───────────────────────────────────── */}
       {subTab === 'expenses' && (
         <View>
           <Text style={styles.sectionHeader}>All Recorded Expenses</Text>
           {(() => {
-            const displayed = q === '' ? allExpenses : allExpenses.filter((exp) =>
-              exp.title?.toLowerCase().includes(q) ||
-              exp.tripName?.toLowerCase().includes(q) ||
-              exp.paidByName?.toLowerCase().includes(q)
-            );
+            const displayed = q === ''
+              ? allExpenses
+              : allExpenses.filter((exp) =>
+                  exp.title?.toLowerCase().includes(q) ||
+                  exp.tripName?.toLowerCase().includes(q) ||
+                  exp.paidByName?.toLowerCase().includes(q)
+                );
             if (displayed.length === 0) return (
               <View style={styles.emptyWrap}>
                 <Receipt size={32} color={colors.slate400} />
@@ -327,22 +548,52 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
                 </Text>
               </View>
             );
-            return displayed.map((exp) => (
+            return displayed.map((exp: any) => (
               <View key={exp.id} style={styles.expenseRow}>
                 <View style={styles.expenseIconWrap}>
-                  <Receipt size={16} color={colors.primary600} />
+                  {exp.verificationStatus === 'AUTO_VERIFIED' ? (
+                    <ShieldCheck size={16} color="#15803D" />
+                  ) : exp.verificationStatus === 'PENDING_APPROVAL' ? (
+                    <Clock size={16} color="#D97706" />
+                  ) : (
+                    <Receipt size={16} color={colors.primary600} />
+                  )}
                 </View>
                 <View style={styles.expenseMain}>
                   <Text style={styles.expenseTitle}>{exp.title}</Text>
                   <Text style={styles.expenseSub}>
-                    Paid by {exp.paidByName} • {exp.tripName}
+                    Paid by {exp.paidByName} · {exp.tripName}
                   </Text>
                 </View>
                 <View style={styles.expenseAmountWrap}>
                   <Text style={styles.expenseAmount}>
                     {exp.currencySymbol}{exp.amount.toLocaleString()}
                   </Text>
-                  <Text style={styles.expenseCategory}>{exp.category}</Text>
+                  <View style={[
+                    styles.expenseStatusBadge,
+                    exp.verificationStatus === 'AUTO_VERIFIED'
+                      ? { backgroundColor: '#DCFCE7' }
+                      : exp.verificationStatus === 'PENDING_APPROVAL'
+                      ? { backgroundColor: '#FEF3C7' }
+                      : exp.verificationStatus === 'DISPUTED'
+                      ? { backgroundColor: '#FEE2E2' }
+                      : { backgroundColor: '#F0FDF4' }
+                  ]}>
+                    <Text style={[
+                      styles.expenseStatusText,
+                      exp.verificationStatus === 'AUTO_VERIFIED'
+                        ? { color: '#15803D' }
+                        : exp.verificationStatus === 'PENDING_APPROVAL'
+                        ? { color: '#92400E' }
+                        : exp.verificationStatus === 'DISPUTED'
+                        ? { color: '#DC2626' }
+                        : { color: '#059669' }
+                    ]}>
+                      {exp.verificationStatus === 'AUTO_VERIFIED' ? '✓ SMS' :
+                       exp.verificationStatus === 'PENDING_APPROVAL' ? '⏳ 60%' :
+                       exp.verificationStatus === 'DISPUTED' ? '⚠ Dispute' : '✓'}
+                    </Text>
+                  </View>
                 </View>
               </View>
             ));
@@ -355,6 +606,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
   );
 };
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -363,6 +615,138 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
   },
+
+  // ── Approval Banners ──────────────────────────────────────────────────────
+  approvalSection: {
+    marginBottom: 16,
+  },
+  approvalSectionHeader: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  approvalCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#FCD34D',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    ...shadows.sm,
+  },
+  approvalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  approvalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  approvalHeaderLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D97706',
+    letterSpacing: 0.4,
+  },
+  approvalBadge: {
+    backgroundColor: '#FDE68A',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+  },
+  approvalBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  approvalExpenseTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  approvalExpenseMeta: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#059669',
+    borderRadius: 3,
+  },
+  progressLabel: {
+    fontSize: 11,
+    color: '#475569',
+    marginBottom: 10,
+  },
+  payerNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    backgroundColor: '#F0FDF4',
+    padding: 8,
+    borderRadius: 8,
+  },
+  payerNoteText: {
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '600',
+    flex: 1,
+  },
+  approvalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  approveBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
+  },
+  approveBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  disputeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
+  },
+  disputeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+
+  // ── Metrics Grid ──────────────────────────────────────────────────────────
   metricsGrid: {
     flexDirection: 'row',
     gap: 10,
@@ -382,7 +766,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(70, 75, 41, 0.2)',
   },
   metricCardOwes: {
-    backgroundColor: colors.accentAmberLight,
+    backgroundColor: colors.accentAmberLight || '#FFF7ED',
     borderColor: '#fde68a',
   },
   metricTitleRow: {
@@ -407,6 +791,8 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     color: colors.editorialSubtle || colors.slate400,
   },
+
+  // ── Sub-Tab Toggle ────────────────────────────────────────────────────────
   subTabRow: {
     flexDirection: 'row',
     backgroundColor: colors.warmSurfaceMuted || colors.slate100,
@@ -438,115 +824,116 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  // ── Section Header ────────────────────────────────────────────────────────
   sectionHeader: {
     fontSize: 14,
     fontWeight: '800',
     color: colors.editorialDark || colors.slate900,
     marginBottom: 10,
   },
+
+  // ── Settlement Transfer Cards ─────────────────────────────────────────────
   transferCard: {
     backgroundColor: colors.warmSurface || colors.bgCard,
     borderRadius: radii.md,
     padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: colors.borderWarmLight || colors.borderSubtle,
-    marginBottom: 12,
     ...shadows.sm,
   },
-  transferHeader: {
+  transferRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 8,
   },
-  avatarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    maxWidth: '35%',
-  },
-  avatarCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarLetter: {
-    color: '#ffffff',
-    fontSize: 11,
+  avatarText: {
+    fontSize: 13,
     fontWeight: '800',
+    color: '#FFFFFF',
   },
-  payerName: {
+  transferMid: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  transferName: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.editorialDark || colors.slate800,
   },
-  arrowWrap: {
-    alignItems: 'center',
+  transferSubLine: {
+    fontSize: 10,
+    color: colors.slate400,
   },
   transferAmount: {
-    fontSize: 14,
+    fontSize: 22,
     fontWeight: '800',
-    color: colors.accentOliveDark || colors.primary700,
-    marginBottom: 2,
+    color: colors.editorialDark || colors.slate900,
+    textAlign: 'center',
+    marginBottom: 10,
   },
   transferActions: {
     flexDirection: 'row',
     gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderWarmLight || colors.slate100,
-    paddingTop: 10,
   },
-  upiBtn: {
+  payUpiBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentOlive || colors.primary600,
-    paddingVertical: 7,
+    backgroundColor: colors.primary700 || '#464B29',
+    paddingVertical: 9,
     borderRadius: radii.sm,
     gap: 5,
   },
-  upiBtnText: {
-    color: '#ffffff',
-    fontSize: 11.5,
+  payUpiBtnText: {
+    fontSize: 12,
     fontWeight: '700',
+    color: '#FFFFFF',
   },
   settleBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentOliveSubtle || colors.primary50,
-    paddingVertical: 7,
-    borderRadius: radii.sm,
+    backgroundColor: colors.primary50 || '#F0FDF4',
     borderWidth: 1,
-    borderColor: 'rgba(70, 75, 41, 0.2)',
+    borderColor: colors.primary200 || '#BBF7D0',
+    paddingVertical: 9,
+    borderRadius: radii.sm,
     gap: 5,
   },
   settleBtnText: {
-    color: colors.accentOliveDark || colors.primary700,
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
+    color: colors.primary700 || '#15803D',
   },
+
+  // ── Expense Row ───────────────────────────────────────────────────────────
   expenseRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.warmSurface || colors.bgCard,
+    borderRadius: radii.sm,
     padding: 12,
-    borderRadius: radii.md,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: colors.borderWarmLight || colors.borderSubtle,
-    marginBottom: 10,
-    gap: 12,
-    ...shadows.sm,
+    gap: 10,
   },
   expenseIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.accentOliveSubtle || colors.primary50,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.primary50 || '#F0FDF4',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -554,37 +941,43 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   expenseTitle: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '700',
-    color: colors.editorialDark || colors.slate900,
+    color: colors.editorialDark || colors.slate800,
   },
   expenseSub: {
     fontSize: 11,
     color: colors.editorialSubtle || colors.slate500,
-    marginTop: 2,
+    marginTop: 1,
   },
   expenseAmountWrap: {
     alignItems: 'flex-end',
+    gap: 4,
   },
   expenseAmount: {
     fontSize: 14,
     fontWeight: '800',
     color: colors.editorialDark || colors.slate900,
   },
-  expenseCategory: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.accentOlive || colors.primary600,
-    marginTop: 2,
+  expenseStatusBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
+  expenseStatusText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+
+  // ── Empty State ───────────────────────────────────────────────────────────
   emptyWrap: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-    gap: 10,
+    padding: 32,
+    gap: 8,
   },
   emptyText: {
     fontSize: 13,
     color: colors.editorialSubtle || colors.slate400,
+    textAlign: 'center',
   },
 });
