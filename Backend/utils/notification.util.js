@@ -242,6 +242,14 @@ async function sendPushToEmail(email, { title, body, data = {} }) {
 
 const { emitToUser, emitToGroup } = require('./socket.util');
 
+async function dispatchImmediateUserNotification({ userId, type, title, body, data = {} }) {
+    if (!userId) return null;
+
+    await createInAppNotification(userId, { type, title, body, data });
+    await sendPushToUser(userId, { title, body, data });
+    return true;
+}
+
 /**
  * Helper to save a persistent in-app notification in DB & emit via Socket.io
  */
@@ -318,6 +326,30 @@ async function createBroadcastNotification({ type = 'ANNOUNCEMENT', title, body,
  */
 async function sendGroupInviteNotification({ inviteeEmail, inviterName, groupName, groupId, inviteCode }) {
     try {
+        const normalizedEmail = String(inviteeEmail || '').trim().toLowerCase();
+        if (normalizedEmail) {
+            const userRes = await pool.query(
+                'SELECT id FROM users WHERE LOWER(email_id) = LOWER($1) LIMIT 1',
+                [normalizedEmail]
+            );
+
+            if (userRes.rows[0]?.id) {
+                await dispatchImmediateUserNotification({
+                    userId: userRes.rows[0].id,
+                    type: 'GROUP_INVITE',
+                    title: `Trip Invitation: ${groupName}`,
+                    body: `${inviterName || 'A trip member'} invited you to join "${groupName}"!`,
+                    data: {
+                        type: 'GROUP_INVITE',
+                        groupId: String(groupId || ''),
+                        inviteCode: String(inviteCode || ''),
+                        groupName: String(groupName || ''),
+                        screen: 'InvitationScreen'
+                    }
+                });
+            }
+        }
+
         const { publishNotificationEvent } = require('./kafkaProducer.util');
         await publishNotificationEvent('GROUP_INVITE', {
             inviteeEmail,
@@ -346,8 +378,13 @@ async function sendInviteAcceptedNotification({ organizerUserId, memberName, gro
             screen: 'GroupDetailScreen'
         };
 
-        await createInAppNotification(organizerUserId, { type: 'INVITE_ACCEPTED', title, body, data });
-        await sendPushToUser(organizerUserId, { title, body, data });
+        await dispatchImmediateUserNotification({
+            userId: organizerUserId,
+            type: 'INVITE_ACCEPTED',
+            title,
+            body,
+            data
+        });
     } catch (err) {
         console.warn('Failed to dispatch invite accepted notification:', err.message);
     }
@@ -368,8 +405,13 @@ async function sendInviteRejectedNotification({ organizerUserId, memberName, gro
             screen: 'GroupDetailScreen'
         };
 
-        await createInAppNotification(organizerUserId, { type: 'INVITE_REJECTED', title, body, data });
-        await sendPushToUser(organizerUserId, { title, body, data });
+        await dispatchImmediateUserNotification({
+            userId: organizerUserId,
+            type: 'INVITE_REJECTED',
+            title,
+            body,
+            data
+        });
     } catch (err) {
         console.warn('Failed to dispatch invite rejected notification:', err.message);
     }
@@ -386,7 +428,9 @@ async function sendExpenseNotification({
     description,
     totalAmount,
     currency = 'INR',
-    splits = []
+    splits = [],
+    verificationStatus = 'VERIFIED',
+    requiredApprovals = 0
 }) {
     try {
         // Fetch all group members with a registered user_id
@@ -398,11 +442,7 @@ async function sendExpenseNotification({
 
         const currSymbol = currency === 'INR' ? '₹' : (currency + ' ');
 
-        for (const member of membersRes.rows) {
-            if (member.user_id && String(member.user_id) === String(payerUserId)) {
-                continue;
-            }
-
+        await Promise.all(membersRes.rows.filter(member => member.user_id && String(member.user_id) !== String(payerUserId)).map(async (member) => {
             const memberSplit = splits.find(
                 s => String(s.memberId) === String(member.member_id) || (s.userId && String(s.userId) === String(member.user_id))
             );
@@ -442,18 +482,16 @@ async function sendExpenseNotification({
                 screen: 'GroupDetailScreen'
             };
 
-            createInAppNotification(member.user_id, {
+            await dispatchImmediateUserNotification({
+                userId: member.user_id,
                 type: verificationStatus === 'PENDING_APPROVAL' ? 'EXPENSE_APPROVAL_NEEDED' : 'EXPENSE_ADDED',
                 title,
                 body,
                 data
             }).catch(e =>
-                console.warn(`Failed inserting in-app notification for user ${member.user_id}:`, e.message)
+                console.warn(`Failed dispatching expense notification for user ${member.user_id}:`, e.message)
             );
-            sendPushToUser(member.user_id, { title, body, data }).catch(e =>
-                console.warn(`Failed sending expense push to user ${member.user_id}:`, e.message)
-            );
-        }
+        }));
         emitToGroup(groupId, 'trip:expense:added', {
             groupId,
             groupName,
@@ -481,11 +519,15 @@ async function sendExpenseDeletedNotification({ groupId, groupName, actorName, a
         const body = `${actorName} deleted expense "${description}" (${currSymbol}${Math.round(amount)})`;
         const data = { type: 'EXPENSE_DELETED', groupId: String(groupId), groupName: String(groupName) };
 
-        for (const member of membersRes.rows) {
-            if (member.user_id && String(member.user_id) === String(actorUserId)) continue;
-            createInAppNotification(member.user_id, { type: 'EXPENSE_DELETED', title, body, data }).catch(() => {});
-            sendPushToUser(member.user_id, { title, body, data }).catch(() => {});
-        }
+        await Promise.all(membersRes.rows.filter(member => member.user_id && String(member.user_id) !== String(actorUserId)).map(async (member) => {
+            await dispatchImmediateUserNotification({
+                userId: member.user_id,
+                type: 'EXPENSE_DELETED',
+                title,
+                body,
+                data
+            }).catch(() => {});
+        }));
         emitToGroup(groupId, 'trip:expense:deleted', { groupId, groupName, description });
     } catch (err) {
         console.warn('Failed to dispatch expense deleted notification:', err.message);
@@ -516,8 +558,13 @@ async function sendSettlementNotification({
         if (toUserId && String(toUserId) !== String(fromUserId)) {
             const recipientTitle = `Payment Received 🎉`;
             const recipientBody = `${fromName} transferred ${currSymbol}${Math.round(amount)} to you in "${groupName}" via ${paymentMethod}.`;
-            createInAppNotification(toUserId, { type: 'SETTLEMENT_RECORDED', title: recipientTitle, body: recipientBody, data }).catch(() => {});
-            sendPushToUser(toUserId, { title: recipientTitle, body: recipientBody, data }).catch(() => {});
+            await dispatchImmediateUserNotification({
+                userId: toUserId,
+                type: 'SETTLEMENT_RECORDED',
+                title: recipientTitle,
+                body: recipientBody,
+                data
+            }).catch(() => {});
         }
 
         // Broadcast trip update socket event
@@ -540,11 +587,15 @@ async function sendGroupSettledNotification({ groupId, groupName, organizerName,
         const body = `"${groupName}" has been marked as fully settled by ${organizerName}. All balances cleared!`;
         const data = { type: 'GROUP_SETTLED', groupId: String(groupId), groupName: String(groupName) };
 
-        for (const member of membersRes.rows) {
-            if (member.user_id && String(member.user_id) === String(organizerUserId)) continue;
-            createInAppNotification(member.user_id, { type: 'GROUP_SETTLED', title, body, data }).catch(() => {});
-            sendPushToUser(member.user_id, { title, body, data }).catch(() => {});
-        }
+        await Promise.all(membersRes.rows.filter(member => member.user_id && String(member.user_id) !== String(organizerUserId)).map(async (member) => {
+            await dispatchImmediateUserNotification({
+                userId: member.user_id,
+                type: 'GROUP_SETTLED',
+                title,
+                body,
+                data
+            }).catch(() => {});
+        }));
         emitToGroup(groupId, 'trip:settled', { groupId, groupName });
     } catch (err) {
         console.warn('Failed to dispatch group settled notification:', err.message);
@@ -560,8 +611,13 @@ async function sendMemberRemovedNotification({ groupId, groupName, removedUserId
             const title = `Removed from Trip`;
             const body = `You were removed from trip "${groupName}" by ${actorName}.`;
             const data = { type: 'MEMBER_REMOVED', groupId: String(groupId), groupName: String(groupName) };
-            createInAppNotification(removedUserId, { type: 'MEMBER_REMOVED', title, body, data }).catch(() => {});
-            sendPushToUser(removedUserId, { title, body, data }).catch(() => {});
+            await dispatchImmediateUserNotification({
+                userId: removedUserId,
+                type: 'MEMBER_REMOVED',
+                title,
+                body,
+                data
+            }).catch(() => {});
         }
         emitToGroup(groupId, 'trip:member:removed', { groupId, groupName, removedMemberName });
     } catch (err) {

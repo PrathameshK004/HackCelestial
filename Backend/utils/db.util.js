@@ -377,6 +377,7 @@ const initializeDatabase = async () => {
         );
         CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id, created_at ASC);
     `);
+    await pool.query('ALTER TABLE support_ticket_messages ALTER COLUMN sender_id DROP NOT NULL');
 
     await pool.query(`
         ALTER TABLE IF EXISTS support_ticket_messages

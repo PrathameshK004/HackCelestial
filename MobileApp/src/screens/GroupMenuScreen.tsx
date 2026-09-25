@@ -228,6 +228,31 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
     }
   };
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadFreshTripData = async () => {
+      if (!tripId) return;
+      try {
+        if (isMounted) {
+          setRefreshing(true);
+        }
+        await refreshTrips();
+      } catch (err) {
+        console.warn('Initial trip refresh error:', err);
+      } finally {
+        if (isMounted) {
+          setRefreshing(false);
+        }
+      }
+    };
+
+    loadFreshTripData();
+    return () => {
+      isMounted = false;
+    };
+  }, [tripId, refreshTrips]);
+
   const [activeTab, setActiveTab] = useState<LedgerTab>('expenses');
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 

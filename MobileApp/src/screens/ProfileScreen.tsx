@@ -35,6 +35,9 @@ import {
   Calendar as CalendarIcon,
   Wifi,
   Image as ImageIcon,
+  Images,
+  ImagePlus,
+  UserRoundX,
   Trash2,
   X,
 } from 'lucide-react-native';
@@ -101,6 +104,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
   const [isAvatarChoiceModalOpen, setIsAvatarChoiceModalOpen] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [pendingGalleryImage, setPendingGalleryImage] = useState<{
+    uri: string;
+    name: string;
+    type: string;
+  } | null>(null);
   const [travelStyle, setTravelStyle] = useState<TravelStyle>(
     (user?.travelStyle as TravelStyle) || 'Boutique'
   );
@@ -185,7 +193,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      aspect: [1, 1],
       quality: 0.8,
       exif: false,
     });
@@ -201,38 +208,42 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
       type: asset.mimeType || 'image/jpeg',
     };
 
-    setIsUploadingAvatar(true);
-    try {
-      const res = await authService.uploadProfilePicture(uploadFile);
-      const responseData = (res as any)?.data ?? {};
-      const avatarUrl = responseData.avatar || responseData.user?.avatar || responseData.url;
-      if (!avatarUrl) {
-        throw new Error(res.message || 'Profile picture upload failed.');
-      }
+    setPendingGalleryImage(uploadFile);
+    Alert.alert('Photo Selected', 'Tap Save Changes to save this profile picture.');
+  };
 
-      const persisted = await updateUser({ avatar: avatarUrl });
-      const refreshedUser = await refreshProfile?.();
-      const finalAvatar = refreshedUser?.avatar || persisted.user?.avatar || avatarUrl;
+  const uploadPendingGalleryImage = async () => {
+    if (!pendingGalleryImage) return null;
 
-      const nextAuthUser = {
-        ...(user || {}),
-        id: user?.id || refreshedUser?.id || persisted.user?.id || (user as any)?.userId || (refreshedUser as any)?.userId || (persisted.user as any)?.userId,
-        name: user?.name || user?.username || refreshedUser?.name || refreshedUser?.username,
-        username: user?.username || user?.name || refreshedUser?.username || refreshedUser?.name,
-        email: user?.email || user?.emailId || refreshedUser?.email || refreshedUser?.emailId,
-        emailId: user?.emailId || user?.email || refreshedUser?.emailId || refreshedUser?.email,
-        avatar: finalAvatar || null,
-      };
+    const res = await authService.uploadProfilePicture(pendingGalleryImage);
+    const responseData = (res as any)?.data ?? {};
+    const avatarUrl =
+      responseData.avatar ||
+      responseData.user?.avatar ||
+      responseData.url ||
+      responseData.profilePictureUrl;
 
-      await storage.setAuthUser(nextAuthUser as any);
-      setAvatar(finalAvatar || null);
-
-      Alert.alert('Profile Picture Saved', 'Your custom photo has been uploaded successfully.');
-    } catch (err: any) {
-      Alert.alert('Upload Failed', err.message || 'Failed to upload profile picture.');
-    } finally {
-      setIsUploadingAvatar(false);
+    if (!avatarUrl) {
+      throw new Error((res as any)?.message || 'Profile picture upload failed.');
     }
+
+    const refreshedUser = await refreshProfile?.();
+    const finalAvatar = refreshedUser?.avatar || avatarUrl;
+
+    await storage.setAuthUser({
+      ...(user || {}),
+      ...(refreshedUser || {}),
+      id: user?.id || refreshedUser?.id || (refreshedUser as any)?.userId || (user as any)?.userId,
+      name: user?.name || user?.username || refreshedUser?.name || refreshedUser?.username,
+      username: user?.username || user?.name || refreshedUser?.username || refreshedUser?.name,
+      email: user?.email || user?.emailId || refreshedUser?.email || refreshedUser?.emailId,
+      emailId: user?.emailId || user?.email || refreshedUser?.emailId || refreshedUser?.email,
+      avatar: finalAvatar,
+    } as any);
+
+    setAvatar(finalAvatar || null);
+    setPendingGalleryImage(null);
+    return finalAvatar;
   };
 
   const handleRemoveAvatar = async () => {
@@ -258,13 +269,20 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
 
     setIsSaving(true);
     try {
+      let avatarToSave = avatar;
+      if (pendingGalleryImage) {
+        setIsUploadingAvatar(true);
+        avatarToSave = await uploadPendingGalleryImage();
+        setIsUploadingAvatar(false);
+      }
+
       const res = await updateUser({
         name: name.trim(),
         username: name.trim(),
         upiId: upiId.trim(),
         phone: phone.trim(),
         dob: dob ? dob.trim() : null,
-        avatar: avatar || null,
+        avatar: avatarToSave || null,
         travelStyle,
       });
 
@@ -278,6 +296,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to update profile.');
     } finally {
+      setIsUploadingAvatar(false);
       setIsSaving(false);
     }
   };
@@ -493,63 +512,63 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
               <View style={styles.choiceSheet}>
                 <View style={styles.choiceHandle} />
                 <View style={styles.choiceHeaderRow}>
-                  <Text style={styles.choiceTitle}>Change Profile Picture</Text>
+                  <View style={styles.choiceHeaderTextWrap}>
+                    <Text style={styles.choiceTitle}>Profile picture</Text>
+                    <Text style={styles.choiceSubtitle}>Choose how you want to appear</Text>
+                  </View>
                   <TouchableOpacity
                     onPress={() => setIsAvatarChoiceModalOpen(false)}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={styles.choiceCloseBtn}
                   >
-                    <X size={20} color={colors.slate400} />
+                    <X size={18} color={colors.slate500} strokeWidth={2.2} />
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.choiceSubtitle}>Select an avatar option for your profile</Text>
 
                 <View style={styles.choiceOptionsList}>
-                  {/* Option 1: Choose Illustration (Current approach) */}
                   <TouchableOpacity
                     style={styles.choiceOptionCard}
-                    activeOpacity={0.7}
+                    activeOpacity={0.82}
                     onPress={() => {
                       setIsAvatarChoiceModalOpen(false);
                       setIsAvatarPickerOpen(true);
                     }}
                   >
                     <View style={[styles.choiceIconBadge, { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }]}>
-                      <Sparkles size={22} color="#059669" />
+                      <ImagePlus size={20} color="#059669" strokeWidth={2.2} />
                     </View>
                     <View style={styles.choiceOptionContent}>
-                      <Text style={styles.choiceOptionTitle}>Choose an Illustration</Text>
-                      <Text style={styles.choiceOptionDesc}>Pick from 10 curated Google-style traveler characters</Text>
+                      <Text style={styles.choiceOptionTitle}>Illustration library</Text>
+                      <Text style={styles.choiceOptionDesc}>Select from curated traveler avatars</Text>
                     </View>
                   </TouchableOpacity>
 
-                  {/* Option 2: Upload from Gallery (S3) */}
                   <TouchableOpacity
                     style={styles.choiceOptionCard}
-                    activeOpacity={0.7}
+                    activeOpacity={0.82}
                     onPress={handlePickFromGallery}
                   >
                     <View style={[styles.choiceIconBadge, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}>
-                      <ImageIcon size={22} color="#2563eb" />
+                      <Images size={20} color="#2563eb" strokeWidth={2.2} />
                     </View>
                     <View style={styles.choiceOptionContent}>
-                      <Text style={styles.choiceOptionTitle}>Upload from Gallery</Text>
-                      <Text style={styles.choiceOptionDesc}>Select a photo from your device & save to AWS S3</Text>
+                      <Text style={styles.choiceOptionTitle}>Upload from gallery</Text>
+                      <Text style={styles.choiceOptionDesc}>Use a photo from your device</Text>
                     </View>
                   </TouchableOpacity>
 
-                  {/* Option 3: Remove Current Picture (if set) */}
                   {avatar ? (
                     <TouchableOpacity
-                      style={[styles.choiceOptionCard, { borderColor: '#fee2e2' }]}
-                      activeOpacity={0.7}
+                      style={[styles.choiceOptionCard, styles.choiceOptionCardDanger]}
+                      activeOpacity={0.82}
                       onPress={handleRemoveAvatar}
                     >
                       <View style={[styles.choiceIconBadge, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
-                        <Trash2 size={20} color="#dc2626" />
+                        <UserRoundX size={18} color="#dc2626" strokeWidth={2.2} />
                       </View>
                       <View style={styles.choiceOptionContent}>
-                        <Text style={[styles.choiceOptionTitle, { color: '#dc2626' }]}>Remove Current Picture</Text>
-                        <Text style={styles.choiceOptionDesc}>Reset your profile picture to default initials</Text>
+                        <Text style={[styles.choiceOptionTitle, { color: '#b91c1c' }]}>Remove picture</Text>
+                        <Text style={styles.choiceOptionDesc}>Reset to your initials avatar</Text>
                       </View>
                     </TouchableOpacity>
                   ) : null}
@@ -802,19 +821,32 @@ const styles = StyleSheet.create({
   },
   choiceHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 18,
+  },
+  choiceHeaderTextWrap: {
+    flex: 1,
+    paddingRight: 12,
   },
   choiceTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.slate900,
+    letterSpacing: -0.2,
   },
   choiceSubtitle: {
     fontSize: 13,
     color: colors.slate500,
-    marginBottom: 16,
+    marginTop: 4,
+  },
+  choiceCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.slate100,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   choiceOptionsList: {
     gap: 12,
@@ -824,16 +856,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: colors.slate200,
     gap: 14,
   },
+  choiceOptionCardDanger: {
+    borderColor: '#fecaca',
+    backgroundColor: '#fff7f7',
+  },
   choiceIconBadge: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -846,14 +882,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.slate900,
     marginBottom: 2,
+    letterSpacing: -0.1,
   },
   choiceOptionDesc: {
     fontSize: 12.5,
     color: colors.slate500,
   },
   choiceCancelBtn: {
-    paddingVertical: 13,
-    borderRadius: radii.md,
+    paddingVertical: 14,
+    borderRadius: 14,
     backgroundColor: colors.slate100,
     alignItems: 'center',
     justifyContent: 'center',

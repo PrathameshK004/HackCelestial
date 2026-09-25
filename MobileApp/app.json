@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "Triptual",
-    "slug": "MobileApp",
-    "owner": "yog7284",
+    "slug": "triptual",
+    "owner": "triptual",
     "scheme": "triptual",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -66,7 +66,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "3ea65a77-f6ae-4667-b270-5d530fa14533"
+        "projectId": "fa3898bb-9e7b-4f28-a2c3-6bc16537cd47"
       }
     }
   }

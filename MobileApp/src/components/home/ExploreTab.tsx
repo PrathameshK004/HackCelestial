@@ -331,18 +331,21 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   const insets = useSafeAreaInsets();
   const { trips, refreshTrips } = useTrips();
   const [refreshing, setRefreshing] = useState(false);
-  const [exploreStays, setExploreStays] = useState<CuratedStay[]>(CURATED_STAYS);
+  const [exploreStays, setExploreStays] = useState<CuratedStay[]>([]);
   const [isLoadingStays, setIsLoadingStays] = useState<boolean>(true);
 
   const loadExplorePackages = async () => {
     try {
       const res: any = await apiRequest('/packages/explore');
       const pkgs = res?.data?.packages || res?.packages;
-      if (Array.isArray(pkgs) && pkgs.length > 0) {
+      if (Array.isArray(pkgs)) {
         setExploreStays(pkgs);
+      } else {
+        setExploreStays([]);
       }
     } catch (err) {
-      console.warn('Failed to load real tour packages from database:', err);
+      console.warn('Failed to load Redis-backed tour packages:', err);
+      setExploreStays([]);
     } finally {
       setIsLoadingStays(false);
     }
@@ -405,7 +408,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
     });
   }, [exploreStays, activeCategory, searchQuery]);
 
-  const featuredStay = filteredStays[0] || exploreStays[0];
+  const featuredStay = filteredStays[0] || null;
   const gridMatches = filteredStays.slice(1, 5);
 
   return (

@@ -4,6 +4,7 @@ const { pool } = require('../utils/db.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const { uploadSupportDocumentToS3 } = require('../utils/s3.util');
 const { sendTicketCreatedEmail } = require('../utils/mail.util');
+const { emitToTicket, emitToSupportAdmins } = require('../utils/socket.util');
 
 /**
  * Create a new support ticket
@@ -89,6 +90,8 @@ async function createTicket(req, res) {
                 attachment?.size || null
             ]
         ).catch((err) => console.warn('[Support Ticket Message Seed Warning]:', err.message));
+
+        emitToSupportAdmins('ticket:created', { ticket: createdTicket });
 
         // Send email to user saying "We will looking into Issue"
         let userEmail = req.user?.emailId;
@@ -198,21 +201,18 @@ async function updateTicketStatus(req, res) {
 
         // Insert system audit message in chat
         if (status === 'RESOLVED') {
-            await pool.query(
+            const systemMessage = await pool.query(
                 `INSERT INTO support_ticket_messages
                  (id, ticket_id, sender_id, sender_name, sender_role, message)
-                 VALUES ($1, $2, $3, 'System', 'SYSTEM', 'Ticket was marked as solved.')`,
+                 VALUES ($1, $2, $3, 'System', 'SYSTEM', 'Ticket was marked as solved.')
+                 RETURNING id, ticket_id AS "ticketId", sender_id AS "senderId", sender_name AS "senderName",
+                           sender_role AS "senderRole", message, created_at AS "createdAt"`,
                 [crypto.randomUUID(), ticket.id, req.userKey]
-            ).catch(() => {});
+            );
+            emitToTicket(ticketNumber, 'ticket:message', { message: systemMessage.rows[0] });
         }
 
-        try {
-            const { emitTicketStatus } = require('../utils/socket.util');
-            emitTicketStatus(ticketNumber, status);
-        } catch (socketErr) {
-            console.warn('[Socket Status Emit Note]:', socketErr.message);
-        }
-
+        emitToTicket(ticketNumber, 'ticket:status_change', { status });
         return sendSuccess(res, `Ticket marked as ${status.toLowerCase()}`, ticket);
     } catch (error) {
         console.error('Update ticket status error:', error.message);
@@ -343,16 +343,10 @@ async function sendTicketMessage(req, res) {
                 `UPDATE support_tickets SET status = 'OPEN' WHERE id = $1`,
                 [ticket.id]
             );
+            emitToTicket(ticketNumber, 'ticket:status_change', { status: 'OPEN' });
         }
 
-        try {
-            const { emitTicketMessage, emitTicketStatus } = require('../utils/socket.util');
-            emitTicketMessage(ticket.ticketNumber, newMsg);
-            if (ticket.status === 'RESOLVED') emitTicketStatus(ticket.ticketNumber, 'OPEN');
-        } catch (socketErr) {
-            console.warn('[Socket Message Emit Note]:', socketErr.message);
-        }
-
+        emitToTicket(ticketNumber, 'ticket:message', { message: newMsg });
         return sendSuccess(res, 'Message sent successfully', newMsg, 201);
     } catch (error) {
         console.error('Send ticket message error:', error.message);

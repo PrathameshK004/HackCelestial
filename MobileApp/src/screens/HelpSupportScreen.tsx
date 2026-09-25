@@ -6,6 +6,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { colors, radii, shadows } from '../theme/colors';
 import { backgrounds, borders, cardRadius, fontSize as themeFontSize, fontWeight as fw, screenHeader, spacing } from '../theme/theme';
 import { createSupportTicket, getTicketAttachmentUrl, getTicketMessages, listSupportTickets, sendTicketMessage, SupportAttachment, SupportTicketSummary, TicketMessage, updateSupportTicketStatus } from '../api/support.service';
+import { socketService } from '../services/socketService';
 
 const fs = { ...themeFontSize, modalTitle: themeFontSize.sectionTitle, modalSubtitle: themeFontSize.inputText };
 
@@ -60,6 +61,29 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
   const loadTickets = async () => { setLoading(true); setError(''); try { setTickets(await listSupportTickets()); } catch (err: any) { setError(err?.message || 'Could not load your support tickets.'); } finally { setLoading(false); } };
   useEffect(() => { loadTickets(); }, []);
 
+  useEffect(() => {
+    if (screen !== 'chat' || !selectedTicket) return;
+    const ticketNumber = selectedTicket.ticketNumber;
+    void socketService.connect();
+    socketService.joinTicket(ticketNumber);
+    const unsubscribe = socketService.on('ticket:message', (payload) => {
+      if (payload?.ticketNumber !== ticketNumber) return;
+      const incoming = payload.message as TicketMessage | undefined;
+      if (!incoming?.id) return;
+      setMessages((current) => current.some((item) => item.id === incoming.id) ? current : [...current, incoming]);
+    });
+    const unsubscribeStatus = socketService.on('ticket:status_change', (payload) => {
+      if (payload?.ticketNumber !== ticketNumber || !payload.status) return;
+      setSelectedTicket((current) => current?.ticketNumber === ticketNumber ? { ...current, status: payload.status } : current);
+      setTickets((current) => current.map((item) => item.ticketNumber === ticketNumber ? { ...item, status: payload.status } : item));
+    });
+    return () => {
+      unsubscribe();
+      unsubscribeStatus();
+      socketService.leaveTicket(ticketNumber);
+    };
+  }, [screen, selectedTicket?.ticketNumber]);
+
   const chooseAttachment = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -91,7 +115,7 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
       Alert.alert('Attachment error', err?.message || 'Unable to pick a file.');
     }
   };
-  const openTicket = async (ticket: SupportTicketSummary) => { setSelectedTicket(ticket); setScreen('chat'); setLoadingMessages(true); try { const result = await getTicketMessages(ticket.ticketNumber); setSelectedTicket(result.ticket || ticket); setMessages(result.messages || []); } catch (err: any) { Alert.alert('Unable to open ticket', err?.message || 'Please try again.'); } finally { setLoadingMessages(false); } };
+  const openTicket = async (ticket: SupportTicketSummary) => { setSelectedTicket(ticket); setMessages([]); setScreen('chat'); setLoadingMessages(true); try { const result = await getTicketMessages(ticket.ticketNumber); setSelectedTicket(result.ticket || ticket); setMessages((current) => { const byId = new Map((result.messages || []).map((message) => [message.id, message])); current.forEach((message) => byId.set(message.id, message)); return [...byId.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()); }); } catch (err: any) { Alert.alert('Unable to open ticket', err?.message || 'Please try again.'); } finally { setLoadingMessages(false); } };
   const submitTicket = async () => {
     if (!category || !subject.trim() || !description.trim()) { Alert.alert('Complete your ticket', 'Choose a category and add a subject and description.'); return; }
     setSubmitting(true);
@@ -100,7 +124,7 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
   const sendMessage = async () => {
     if (!selectedTicket || (!draft.trim() && !attachment)) return;
     setSending(true);
-    try { const message = await sendTicketMessage(selectedTicket.ticketNumber, draft, attachment); setMessages((current) => [...current, message]); setDraft(''); setAttachment(null); if (selectedTicket.status === 'RESOLVED') { const reopened = { ...selectedTicket, status: 'OPEN' }; setSelectedTicket(reopened); setTickets((current) => current.map((item) => item.ticketNumber === reopened.ticketNumber ? reopened : item)); } } catch (err: any) { Alert.alert('Message failed', err?.message || 'Please try again.'); } finally { setSending(false); }
+    try { const message = await sendTicketMessage(selectedTicket.ticketNumber, draft, attachment); setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]); setDraft(''); setAttachment(null); if (selectedTicket.status === 'RESOLVED') { const reopened = { ...selectedTicket, status: 'OPEN' }; setSelectedTicket(reopened); setTickets((current) => current.map((item) => item.ticketNumber === reopened.ticketNumber ? reopened : item)); } } catch (err: any) { Alert.alert('Message failed', err?.message || 'Please try again.'); } finally { setSending(false); }
   };
   const markResolved = async (ticket?: SupportTicketSummary) => {
     const activeTicket = ticket || selectedTicket;
@@ -109,9 +133,6 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
       const updated = await updateSupportTicketStatus(activeTicket.ticketNumber, 'RESOLVED');
       setSelectedTicket((current) => (current && current.ticketNumber === updated.ticketNumber ? updated : current));
       setTickets((current) => current.map((item) => item.ticketNumber === updated.ticketNumber ? { ...item, ...updated } : item));
-      if (selectedTicket && selectedTicket.ticketNumber === updated.ticketNumber) {
-        setMessages((current) => [...current, { id: `system-${Date.now()}`, ticketId: updated.id || '', senderId: 'system', senderName: 'System', senderRole: 'SYSTEM', message: 'Ticket was marked as solved.', createdAt: new Date().toISOString() }]);
-      }
     } catch (err: any) {
       Alert.alert('Unable to update ticket', err?.message || 'Please try again.');
     }
