@@ -35,6 +35,7 @@ import {
   SupportTicketSummary,
   TicketMessage
 } from '../services/support.service';
+import { joinSupportTicket, onSupportTicketMessage, onSupportTicketStatus } from '../services/supportSocket';
 
 interface HelpSupportPageProps {
   onBack: () => void;
@@ -148,28 +149,38 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     }
   }, [chatMessages, activeChatTicket]);
 
+  useEffect(() => {
+    if (!activeChatTicket) return;
+    const ticketNumber = activeChatTicket.ticketNumber;
+    const leaveRoom = joinSupportTicket(ticketNumber);
+    const unsubscribeMessage = onSupportTicketMessage((payload) => {
+      if (payload?.ticketNumber !== ticketNumber || !payload.message?.id) return;
+      setChatMessages((current) => current.some((message) => message.id === payload.message.id)
+        ? current
+        : [...current, payload.message]);
+    });
+    const unsubscribeStatus = onSupportTicketStatus((payload) => {
+      if (payload?.ticketNumber !== ticketNumber || !payload.status) return;
+      setActiveChatTicket((current) => current?.ticketNumber === ticketNumber ? { ...current, status: payload.status } : current);
+      setMyTickets((current) => current.map((ticket) => ticket.ticketNumber === ticketNumber ? { ...ticket, status: payload.status } : ticket));
+    });
+    return () => {
+      unsubscribeMessage();
+      unsubscribeStatus();
+      leaveRoom();
+    };
+  }, [activeChatTicket?.ticketNumber]);
+
   // Handle Mark Ticket as Solved
   const handleMarkAsSolved = async (ticketNumber: string) => {
     setUpdatingTicketNumber(ticketNumber);
     try {
-      const updated = await updateSupportTicketStatus(ticketNumber, 'RESOLVED');
+      await updateSupportTicketStatus(ticketNumber, 'RESOLVED');
       setMyTickets((prev) =>
         prev.map((t) => (t.ticketNumber === ticketNumber ? { ...t, status: 'RESOLVED' } : t))
       );
       if (activeChatTicket && activeChatTicket.ticketNumber === ticketNumber) {
         setActiveChatTicket((prev) => (prev ? { ...prev, status: 'RESOLVED' } : null));
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: `sys-${Date.now()}`,
-            ticketId: updated.id || '',
-            senderId: 'sys',
-            senderName: 'System',
-            senderRole: 'SYSTEM',
-            message: 'Ticket was marked as solved.',
-            createdAt: new Date().toISOString()
-          }
-        ]);
       }
     } catch (err: any) {
       alert(err.message || 'Could not mark ticket as solved. Please try again.');
@@ -185,7 +196,11 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     setChatMessages([]);
     try {
       const res = await getTicketMessages(ticket.ticketNumber);
-      setChatMessages(res.messages || []);
+      setChatMessages((current) => {
+        const byId = new Map((res.messages || []).map((message) => [message.id, message]));
+        current.forEach((message) => byId.set(message.id, message));
+        return [...byId.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      });
       if (res.ticket) {
         setActiveChatTicket(res.ticket);
       }
@@ -208,7 +223,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
 
     try {
       const newMsg = await sendTicketMessage(activeChatTicket.ticketNumber, pendingText, pendingFile);
-      setChatMessages((prev) => [...prev, newMsg]);
+      setChatMessages((prev) => prev.some((message) => message.id === newMsg.id) ? prev : [...prev, newMsg]);
       setChatDraftText('');
       setChatAttachment(null);
 
@@ -220,22 +235,6 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
         );
       }
 
-      // Concierge auto-acknowledgment after 1.2s
-      setTimeout(() => {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: `concierge-${Date.now()}`,
-            ticketId: activeChatTicket.id || '',
-            senderId: 'support-agent',
-            senderName: 'Triptual Concierge Desk',
-            senderRole: 'SUPPORT',
-            message:
-              'Thank you for your update. Our senior concierge engineers have received your message and attached documents. We will looking into Issue and get back to you shortly.',
-            createdAt: new Date().toISOString()
-          }
-        ]);
-      }, 1200);
     } catch (err: any) {
       alert(err.message || 'Failed to send message. Please try again.');
     } finally {

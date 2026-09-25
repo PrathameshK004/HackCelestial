@@ -4,14 +4,15 @@
  * and real-time notification events.
  */
 
-import { io, Socket } from 'socket.io-client';
-import { AppState, AppStateStatus } from 'react-native';
-import { SERVER_BASE, FALLBACK_SERVER_BASE } from '../api/apiClient';
-import { storage } from '../database/storage';
+import { io, Socket } from "socket.io-client";
+import { AppState, AppStateStatus } from "react-native";
+import { SERVER_BASE } from "../api/apiClient";
+import { storage } from "../database/storage";
 
 class SocketService {
   private socket: Socket | null = null;
   private listeners: Map<string, Array<(data: any) => void>> = new Map();
+  private joinedTicketNumbers = new Set<string>();
   private isConnecting: boolean = false;
   private currentServerBase: string = SERVER_BASE;
   private hasTriedFallback: boolean = false;
@@ -22,13 +23,18 @@ class SocketService {
 
   constructor() {
     // Reconnect socket when mobile app returns to foreground from background/lock
-    this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
+    this.appStateSubscription = AppState.addEventListener(
+      "change",
+      this.handleAppStateChange,
+    );
   }
 
   private handleAppStateChange = (nextAppState: AppStateStatus) => {
-    if (nextAppState === 'active') {
+    if (nextAppState === "active") {
       if (!this.socket || !this.socket.connected) {
-        console.log('📱 [Mobile Socket] App resumed to foreground -> Reconnecting Socket.IO');
+        console.log(
+          "📱 [Mobile Socket] App resumed to foreground -> Reconnecting Socket.IO",
+        );
         this.connect().catch(() => {});
       }
     }
@@ -66,11 +72,15 @@ class SocketService {
       this.currentServerBase = SERVER_BASE;
       this.hasTriedFallback = false;
 
-      this.initSocket(this.currentServerBase, this.activeToken, this.activeUserId);
+      this.initSocket(
+        this.currentServerBase,
+        this.activeToken,
+        this.activeUserId,
+      );
 
       return this.socket;
     } catch (err: any) {
-      console.warn('🔴 [Socket.io] Exception during connect:', err?.message);
+      console.warn("🔴 [Socket.io] Exception during connect:", err?.message);
       return null;
     } finally {
       this.isConnecting = false;
@@ -94,15 +104,23 @@ class SocketService {
     }
 
     if (this.socket && this.socket.connected && this.activeUserId) {
-      this.socket.emit('join:user', this.activeUserId);
+      this.socket.emit("join:user", this.activeUserId);
       return;
     }
 
     // Otherwise re-initialize connection
-    this.initSocket(this.currentServerBase, this.activeToken, this.activeUserId);
+    this.initSocket(
+      this.currentServerBase,
+      this.activeToken,
+      this.activeUserId,
+    );
   }
 
-  private initSocket(serverUrl: string, token: string | null, userId: string | null) {
+  private initSocket(
+    serverUrl: string,
+    token: string | null,
+    userId: string | null,
+  ) {
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.disconnect();
@@ -110,49 +128,49 @@ class SocketService {
 
     // Configure resilient Socket.io connection for React Native
     this.socket = io(serverUrl, {
-      auth: {
-        token: token || undefined,
-        userId: userId || undefined,
+      auth: (callback) => {
+        void Promise.all([storage.getAuthToken(), storage.getAuthUser()]).then(([storedToken, storedUser]) => {
+          this.activeToken = storedToken;
+          this.activeUserId = storedUser?.id || (storedUser as any)?.userId || userId;
+          callback({ token: storedToken || token || undefined, userId: this.activeUserId || undefined });
+        }).catch(() => callback({ token: token || undefined, userId: userId || undefined }));
       },
-      transports: ['websocket', 'polling'], // Prefer websocket transport in React Native
+      transports: ["websocket", "polling"], // Prefer websocket transport in React Native
       reconnection: true,
       reconnectionAttempts: 15,
       reconnectionDelay: 1000,
       timeout: 10000,
     });
 
-    this.socket.on('connect', () => {
-      console.log(`🟢 [Socket.io] Connected successfully to ${serverUrl}:`, this.socket?.id);
+    this.socket.on("connect", () => {
+      console.log(
+        `🟢 [Socket.io] Connected successfully to ${serverUrl}:`,
+        this.socket?.id,
+      );
       this.hasTriedFallback = false;
 
       // Immediately ensure user is joined to their room
       if (this.activeUserId) {
-        this.socket?.emit('join:user', this.activeUserId);
+        this.socket?.emit("join:user", this.activeUserId);
       }
+      this.joinedTicketNumbers.forEach((ticketNumber) => {
+        this.socket?.emit("join:ticket", ticketNumber);
+      });
     });
 
-    this.socket.on('connect_error', (err) => {
+    this.socket.on("connect_error", (err) => {
       const now = Date.now();
-      // Throttle logging to avoid console spam
       if (now - this.lastConnectErrorLogged > 8000) {
-        console.warn(`🔴 [Socket.io] Connection error (${serverUrl}):`, err?.message || 'websocket connection failed');
+        console.warn(
+          `🔴 [Socket.io] Connection error (${serverUrl}):`,
+          err?.message || "websocket connection failed",
+        );
         this.lastConnectErrorLogged = now;
       }
-
-      // Attempt fallback server only when the active server is the remote Render host.
-      // Local-device development should stay pinned to the local backend instead of bouncing to Render.
-      if (!this.hasTriedFallback && SERVER_BASE.includes('onrender.com') && FALLBACK_SERVER_BASE !== SERVER_BASE) {
-        this.hasTriedFallback = true;
-        console.log(`🔄 [Socket.io] Switching to fallback server: ${FALLBACK_SERVER_BASE}`);
-        this.currentServerBase = FALLBACK_SERVER_BASE;
-        setTimeout(() => {
-          this.initSocket(FALLBACK_SERVER_BASE, token, userId);
-        }, 1000);
-      }
     });
 
-    this.socket.on('disconnect', (reason) => {
-      console.log('⚠️ [Socket.io] Socket disconnected:', reason);
+    this.socket.on("disconnect", (reason) => {
+      console.log("⚠️ [Socket.io] Socket disconnected:", reason);
     });
 
     // Re-attach all registered event listeners to the new socket instance
@@ -171,10 +189,11 @@ class SocketService {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
-      console.log('🔌 [Socket.io] Socket disconnected on cleanup');
+      console.log("🔌 [Socket.io] Socket disconnected on cleanup");
     }
     this.activeToken = null;
     this.activeUserId = null;
+    this.joinedTicketNumbers.clear();
   }
 
   /**
@@ -188,7 +207,8 @@ class SocketService {
       if (!data) return;
       // Deduplicate rapid dual-emits by ID or title+timestamp
       const eventKey = String(
-        data.id || `${data.title || ''}-${data.createdAt || data.timestamp || Date.now()}`
+        data.id ||
+          `${data.title || ""}-${data.createdAt || data.timestamp || Date.now()}`,
       );
 
       if (seenEventKeys.has(eventKey)) {
@@ -206,14 +226,14 @@ class SocketService {
 
     // Subscribe to all standard, admin, and broadcast event channels
     const channels = [
-      'notification:new',
-      'notification',
-      'broadcast',
-      'broadcast_notification',
-      'admin:broadcast',
-      'admin:notification',
-      'notification:broadcast',
-      'system:alert',
+      "notification:new",
+      "notification",
+      "broadcast",
+      "broadcast_notification",
+      "admin:broadcast",
+      "admin:notification",
+      "notification:broadcast",
+      "system:alert",
     ];
 
     const unsubs = channels.map((channel) => this.on(channel, safeCallback));
@@ -240,7 +260,10 @@ class SocketService {
     // Return cleanup function
     return () => {
       const current = this.listeners.get(event) || [];
-      this.listeners.set(event, current.filter((cb) => cb !== callback));
+      this.listeners.set(
+        event,
+        current.filter((cb) => cb !== callback),
+      );
       if (this.socket) {
         this.socket.off(event, callback);
       }
@@ -252,7 +275,7 @@ class SocketService {
    */
   joinGroup(groupId: string) {
     if (this.socket && groupId) {
-      this.socket.emit('join:group', groupId);
+      this.socket.emit("join:group", groupId);
     }
   }
 
@@ -261,8 +284,22 @@ class SocketService {
    */
   leaveGroup(groupId: string) {
     if (this.socket && groupId) {
-      this.socket.emit('leave:group', groupId);
+      this.socket.emit("leave:group", groupId);
     }
+  }
+
+  joinTicket(ticketNumber: string) {
+    const cleanTicketNumber = String(ticketNumber || "").trim();
+    if (!cleanTicketNumber) return;
+    this.joinedTicketNumbers.add(cleanTicketNumber);
+    if (this.socket?.connected) this.socket.emit("join:ticket", cleanTicketNumber);
+  }
+
+  leaveTicket(ticketNumber: string) {
+    const cleanTicketNumber = String(ticketNumber || "").trim();
+    if (!cleanTicketNumber) return;
+    this.joinedTicketNumbers.delete(cleanTicketNumber);
+    this.socket?.emit("leave:ticket", cleanTicketNumber);
   }
 }
 

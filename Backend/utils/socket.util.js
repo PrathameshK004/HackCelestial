@@ -1,8 +1,30 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { verifyToken: verifyJWT } = require('./jwt.util');
+const { pool } = require('./db.util');
 
 let io = null;
+const ticketRoom = (ticketNumber) => `ticket:${String(ticketNumber).trim()}`;
+
+async function canAccessTicket(socket, ticketNumber) {
+  if (!socket.userId || !ticketNumber) return false;
+  const cleanTicketNumber = String(ticketNumber).trim();
+  const result = socket.actorRole === 'SUPPORT'
+    ? await pool.query('SELECT 1 FROM support_tickets WHERE ticket_number = $1 LIMIT 1', [cleanTicketNumber])
+    : await pool.query('SELECT 1 FROM support_tickets WHERE ticket_number = $1 AND user_id = $2 LIMIT 1', [cleanTicketNumber, socket.userId]);
+  return result.rowCount > 0;
+}
+
+async function emitTicketPresence(room, ticketNumber) {
+  if (!io) return;
+  const sockets = await io.in(room).fetchSockets();
+  const presence = sockets.reduce((result, socket) => {
+    if (socket.data.actorRole === 'SUPPORT') result.supportOnline = true;
+    if (socket.data.actorRole === 'USER') result.userOnline = true;
+    return result;
+  }, { supportOnline: false, userOnline: false });
+  io.to(room).emit('ticket:presence', { ticketNumber, ...presence });
+}
 
 /**
  * Initialize Socket.io Server attached to HTTP Server
@@ -22,59 +44,38 @@ function initSocketServer(httpServer) {
     pingInterval: 25000,
   });
 
-  // Socket Authentication & Room Assignment Middleware
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.auth?.token || 
-                    socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '') ||
-                    socket.handshake.query?.token;
-
-      let explicitUserId = socket.handshake.auth?.userId || socket.handshake.query?.userId;
-
-      if (!token && !explicitUserId) {
-        // Guest / anonymous socket connection allowed
+      const token = socket.handshake.auth?.token ||
+        socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '') ||
+        socket.handshake.query?.token;
+      if (!token) {
         socket.userId = null;
+        socket.actorRole = 'GUEST';
+        socket.data.actorRole = 'GUEST';
         return next();
       }
 
-      let resolvedUserId = explicitUserId ? String(explicitUserId).trim() : null;
-
-      if (token) {
-        try {
-          // 1. First attempt: standard verify with jwt.util
-          const decoded = verifyJWT(token);
-          if (decoded) {
-            resolvedUserId = decoded.key || decoded.id || decoded.userId || decoded.userKey || decoded.sub || resolvedUserId;
-          }
-        } catch (verifyErr) {
-          // 2. Second attempt: direct verify with secret fallbacks
-          try {
-            const secret = process.env.JWTSecret || process.env.JWT_SECRET || 'hackcelestial-super-secret-jwt-key';
-            const decoded = jwt.verify(token, secret);
-            if (decoded) {
-              resolvedUserId = decoded.key || decoded.id || decoded.userId || decoded.userKey || decoded.sub || resolvedUserId;
-            }
-          } catch (secErr) {
-            // 3. Third attempt: decode without verification if token is a valid JWT payload
-            try {
-              const decoded = jwt.decode(token);
-              if (decoded && (decoded.key || decoded.id || decoded.userId || decoded.userKey || decoded.sub)) {
-                resolvedUserId = decoded.key || decoded.id || decoded.userId || decoded.userKey || decoded.sub || resolvedUserId;
-              }
-            } catch (_) {}
-          }
-        }
+      try {
+        const decoded = verifyJWT(token);
+        if (!decoded?.key) return next(new Error('unauthorized'));
+        socket.userId = String(decoded.key);
+        socket.actorRole = 'USER';
+      } catch (userTokenError) {
+        const adminSecret = process.env.JWT_SECRET;
+        if (!adminSecret) return next(new Error('unauthorized'));
+        const decoded = jwt.verify(token, adminSecret);
+        if (decoded?.type !== 'access' || !decoded.sub) return next(new Error('unauthorized'));
+        const admin = await pool.query('SELECT id FROM triptual_admin_users WHERE id = $1 LIMIT 1', [decoded.sub]);
+        if (!admin.rowCount) return next(new Error('unauthorized'));
+        socket.userId = String(admin.rows[0].id);
+        socket.actorRole = 'SUPPORT';
       }
 
-      // If token is short (e.g. plain UUID or username), treat as direct ID fallback
-      if (!resolvedUserId && token && typeof token === 'string' && token.length < 50 && !token.includes('.')) {
-        resolvedUserId = token.trim();
-      }
-
-      socket.userId = resolvedUserId;
+      socket.data.actorRole = socket.actorRole;
       return next();
-    } catch (err) {
-      return next();
+    } catch (error) {
+      return next(new Error('unauthorized'));
     }
   });
 
@@ -91,13 +92,130 @@ function initSocketServer(httpServer) {
 
     // Explicit room registration from mobile/web client
     socket.on('join:user', (userKey) => {
-      if (userKey) {
-        const cleanKey = String(userKey).trim();
-        socket.userId = cleanKey;
+      if (socket.actorRole === 'USER' && userKey && String(userKey).trim() === socket.userId) {
+        const cleanKey = socket.userId;
         socket.join(`user:${cleanKey}`);
         socket.join(`user_${cleanKey}`);
         socket.join(cleanKey);
         console.log(`[Socket.io] Socket ${socket.id} explicitly joined user rooms for: ${cleanKey}`);
+      }
+    });
+
+    socket.on('admin:join', (ack) => {
+      if (socket.actorRole !== 'SUPPORT') {
+        if (typeof ack === 'function') ack({ ok: false, error: 'unauthorized' });
+        return;
+      }
+      socket.join('support:admins');
+      if (typeof ack === 'function') ack({ ok: true });
+    });
+
+    socket.on('join:ticket', async (ticketNumber, ack) => {
+      const cleanTicketNumber = String(ticketNumber || '').trim();
+      try {
+        if (!(await canAccessTicket(socket, cleanTicketNumber))) {
+          if (typeof ack === 'function') ack({ ok: false, error: 'forbidden' });
+          return;
+        }
+        const room = ticketRoom(cleanTicketNumber);
+        await socket.join(room);
+        if (typeof ack === 'function') ack({ ok: true, ticketNumber: cleanTicketNumber });
+        await emitTicketPresence(room, cleanTicketNumber);
+      } catch (error) {
+        console.error('[Socket.io] Ticket room join failed:', error.message);
+        if (typeof ack === 'function') ack({ ok: false, error: 'join_failed' });
+      }
+    });
+
+    socket.on('leave:ticket', async (ticketNumber) => {
+      const cleanTicketNumber = String(ticketNumber || '').trim();
+      const room = ticketRoom(cleanTicketNumber);
+      await socket.leave(room);
+      await emitTicketPresence(room, cleanTicketNumber).catch(() => {});
+    });
+
+    socket.on('ticket:typing', async (payload) => {
+      const cleanTicketNumber = String(payload?.ticketNumber || '').trim();
+      const room = ticketRoom(cleanTicketNumber);
+      if (!socket.rooms.has(room) || socket.actorRole === 'GUEST') return;
+      socket.to(room).emit('ticket:typing', {
+        ticketNumber: cleanTicketNumber,
+        isTyping: Boolean(payload?.isTyping),
+        senderRole: socket.actorRole,
+      });
+    });
+
+    socket.on('ticket:send_message', async (payload, ack) => {
+      const cleanTicketNumber = String(payload?.ticketNumber || '').trim();
+      if (socket.actorRole !== 'SUPPORT' || !payload?.id) {
+        if (typeof ack === 'function') ack({ ok: false, error: 'unauthorized' });
+        return;
+      }
+      try {
+        const result = await pool.query(
+          `SELECT m.id, m.ticket_id AS "ticketId", m.sender_id AS "senderId", m.sender_name AS "senderName",
+                  m.sender_role AS "senderRole", m.message, m.attachment_url AS "attachmentUrl",
+                  m.attachment_name AS "attachmentName", m.attachment_type AS "attachmentType",
+                  m.attachment_size AS "attachmentSize", m.created_at AS "createdAt"
+           FROM support_ticket_messages m
+           JOIN support_tickets t ON t.id = m.ticket_id
+           WHERE t.ticket_number = $1 AND m.id = $2 AND m.sender_role = 'SUPPORT'
+           LIMIT 1`,
+          [cleanTicketNumber, payload.id]
+        );
+        if (!result.rowCount) {
+          if (typeof ack === 'function') ack({ ok: false, error: 'message_not_found' });
+          return;
+        }
+        emitToTicket(cleanTicketNumber, 'ticket:message', { message: result.rows[0] });
+        if (typeof ack === 'function') ack({ ok: true });
+      } catch (error) {
+        console.error('[Socket.io] Support message relay failed:', error.message);
+        if (typeof ack === 'function') ack({ ok: false, error: 'relay_failed' });
+      }
+    });
+
+    socket.on('ticket:status_change', async (payload, ack) => {
+      const cleanTicketNumber = String(payload?.ticketNumber || '').trim();
+      if (socket.actorRole !== 'SUPPORT') {
+        if (typeof ack === 'function') ack({ ok: false, error: 'unauthorized' });
+        return;
+      }
+      try {
+        const result = await pool.query(
+          `SELECT t.status, (
+             SELECT json_build_object(
+               'id', m.id,
+               'ticketId', m.ticket_id,
+               'senderId', m.sender_id,
+               'senderName', m.sender_name,
+               'senderRole', m.sender_role,
+               'message', m.message,
+               'createdAt', m.created_at
+             )
+             FROM support_ticket_messages m
+             WHERE m.ticket_id = t.id AND m.sender_role = 'SYSTEM'
+             ORDER BY m.created_at DESC
+             LIMIT 1
+           ) AS "systemMessage"
+           FROM support_tickets t WHERE t.ticket_number = $1 LIMIT 1`,
+          [cleanTicketNumber]
+        );
+        if (!result.rowCount || result.rows[0].status !== payload.status) {
+          if (typeof ack === 'function') ack({ ok: false, error: 'status_mismatch' });
+          return;
+        }
+        emitToTicket(cleanTicketNumber, 'ticket:status_change', {
+          ticketNumber: cleanTicketNumber,
+          status: result.rows[0].status,
+        });
+        if (result.rows[0].systemMessage) {
+          emitToTicket(cleanTicketNumber, 'ticket:message', { message: result.rows[0].systemMessage });
+        }
+        if (typeof ack === 'function') ack({ ok: true });
+      } catch (error) {
+        console.error('[Socket.io] Ticket status relay failed:', error.message);
+        if (typeof ack === 'function') ack({ ok: false, error: 'relay_failed' });
       }
     });
 
@@ -155,6 +273,15 @@ function initSocketServer(httpServer) {
     // Health ping/pong
     socket.on('ping', () => {
       socket.emit('pong', { timestamp: Date.now() });
+    });
+
+    socket.on('disconnecting', () => {
+      const ticketRooms = [...socket.rooms].filter((room) => room.startsWith('ticket:'));
+      setImmediate(() => {
+        ticketRooms.forEach((room) => {
+          emitTicketPresence(room, room.slice('ticket:'.length)).catch(() => {});
+        });
+      });
     });
 
     socket.on('disconnect', (reason) => {
@@ -217,6 +344,22 @@ function emitToGroup(groupId, event, data) {
   return true;
 }
 
+function emitToTicket(ticketNumber, event, data) {
+  if (!io || !ticketNumber) return false;
+  const cleanTicketNumber = String(ticketNumber).trim();
+  io.to(ticketRoom(cleanTicketNumber)).emit(event, {
+    ticketNumber: cleanTicketNumber,
+    ...data,
+  });
+  return true;
+}
+
+function emitToSupportAdmins(event, data) {
+  if (!io) return false;
+  io.to('support:admins').emit(event, data);
+  return true;
+}
+
 /**
  * Global Broadcast Dispatcher (To All Connected Users)
  */
@@ -246,5 +389,7 @@ module.exports = {
   emitToUser,
   sendRealTimeNotification,
   emitToGroup,
+  emitToTicket,
+  emitToSupportAdmins,
   broadcastNotification
 };

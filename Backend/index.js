@@ -9,9 +9,9 @@ const indexRouter = require('./routes/index');
 const { initializeDatabase, pool } = require('./utils/db.util');
 const { sendError } = require('./utils/response.util');
 
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '20mb' }));
 app.use(cookieParser());
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({ extended: false, limit: '20mb' }));
 
 // CORS Configuration
 const allowedOrigins = [
@@ -21,8 +21,6 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
   'http://localhost:8081',
   'http://127.0.0.1:8081',
-  'https://hack-celestial-one.vercel.app',
-  'https://triptual-x.vercel.app'
 ];
 
 app.use(cors({
@@ -49,7 +47,7 @@ app.use(cors({
 const healthController = require('./controllers/health.controller');
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/health', healthController.checkHealth);

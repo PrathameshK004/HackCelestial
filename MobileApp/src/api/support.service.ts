@@ -20,7 +20,7 @@ export interface SupportTicketSummary {
 export interface TicketMessage {
   id: string;
   ticketId: string;
-  senderId: string;
+  senderId: string | null;
   senderName: string;
   senderRole: 'USER' | 'SUPPORT' | 'SYSTEM' | string;
   message?: string | null;

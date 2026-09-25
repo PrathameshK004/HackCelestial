@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor } from "@capacitor/core";
 
 /**
  * Production-Grade API Client with Silent Token Refresh & Request Queueing
@@ -6,38 +6,41 @@ import { Capacitor } from '@capacitor/core';
  */
 
 export const getApiBase = (): string => {
-  // 1. When running on native mobile app (Capacitor Android/iOS), connect to cloud backend
-  if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+  // 1. When running on native mobile app (Capacitor Android/iOS), connect to local backend
+  if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
     const envUrl = (import.meta as any).env?.VITE_API_URL;
-    if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
-      return envUrl.trim().replace(/\/+$/, '');
+    if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
+      return envUrl.trim().replace(/\/+$/, "");
     }
-    return 'https://triptual-api.onrender.com/api';
+    return "http://localhost:4000/api";
   }
 
   // 2. When running on web browser localhost / dev machine, route to local backend via /api proxy
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
-    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0';
+    const isLocalhost =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0";
     if (isLocalhost) {
-      return '/api';
+      return "/api";
     }
   }
 
-  // 3. Production or explicit custom API URL
+  // 3. Explicit custom API URL or local backend fallback
   const envUrl = (import.meta as any).env?.VITE_API_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
-    return envUrl.trim().replace(/\/+$/, '');
+  if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
+    return envUrl.trim().replace(/\/+$/, "");
   }
 
-  return 'https://triptual-api.onrender.com/api';
+  return "http://localhost:4000/api";
 };
 
 export const API_BASE = getApiBase();
 
-export const TOKEN_STORAGE_KEY = 'triptual_auth_token';
-export const REFRESH_TOKEN_KEY = 'triptual_refresh_token';
-export const USER_STORAGE_KEY = 'triptual_auth_user';
+export const TOKEN_STORAGE_KEY = "triptual_auth_token";
+export const REFRESH_TOKEN_KEY = "triptual_refresh_token";
+export const USER_STORAGE_KEY = "triptual_auth_user";
 
 export interface RequestOptions extends RequestInit {
   token?: string | null;
@@ -67,16 +70,16 @@ const processQueue = (error: any, token: string | null = null) => {
 async function refreshAccessToken(): Promise<string> {
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
   if (!refreshToken) {
-    throw new Error('No refresh token available');
+    throw new Error("No refresh token available");
   }
 
   const response = await fetch(`${API_BASE}/users/refresh`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
+      "Content-Type": "application/json",
+      Accept: "application/json",
     },
-    credentials: 'include',
+    credentials: "include",
     body: JSON.stringify({ refreshToken }),
   });
 
@@ -88,12 +91,13 @@ async function refreshAccessToken(): Promise<string> {
   }
 
   if (!response.ok || !data?.data?.accessToken) {
-    const errorMsg = data?.err?.message || data?.message || 'Failed to refresh token';
+    const errorMsg =
+      data?.err?.message || data?.message || "Failed to refresh token";
     // Clear invalid session
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_STORAGE_KEY);
-    window.dispatchEvent(new CustomEvent('auth:session-expired'));
+    window.dispatchEvent(new CustomEvent("auth:session-expired"));
     throw new Error(errorMsg);
   }
 
@@ -111,20 +115,31 @@ async function refreshAccessToken(): Promise<string> {
 /**
  * Main authenticated API request handler with automatic token rotation & replay
  */
-export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { token, headers = {}, skipAuthRefresh = false, ...restOptions } = options;
+export async function apiRequest<T>(
+  endpoint: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const {
+    token,
+    headers = {},
+    skipAuthRefresh = false,
+    ...restOptions
+  } = options;
 
   const getHeaders = (authToken?: string | null): Record<string, string> => {
-    const activeToken = authToken !== undefined ? authToken : (token || localStorage.getItem(TOKEN_STORAGE_KEY));
+    const activeToken =
+      authToken !== undefined
+        ? authToken
+        : token || localStorage.getItem(TOKEN_STORAGE_KEY);
     const h: Record<string, string> = {
-      Accept: 'application/json',
+      Accept: "application/json",
       ...(headers as Record<string, string>),
     };
-    if (!(restOptions.body instanceof FormData) && !h['Content-Type']) {
-      h['Content-Type'] = 'application/json';
+    if (!(restOptions.body instanceof FormData) && !h["Content-Type"]) {
+      h["Content-Type"] = "application/json";
     }
     if (activeToken) {
-      h['Authorization'] = `Bearer ${activeToken}`;
+      h["Authorization"] = `Bearer ${activeToken}`;
     }
     return h;
   };
@@ -134,17 +149,24 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     response = await fetch(`${API_BASE}${endpoint}`, {
       ...restOptions,
       headers: getHeaders(),
-      credentials: 'include',
+      credentials: "include",
     });
   } catch (netErr: any) {
-    console.error('API network error:', netErr);
-    const error = new Error('Cannot connect to backend server. Please verify port 4000.');
+    console.error("API network error:", netErr);
+    const error = new Error(
+      "Cannot connect to backend server. Please verify port 4000.",
+    );
     (error as any).status = 503;
     throw error;
   }
 
   // Handle Token Expiry (401 / 403 Access Denied) with Silent Refresh & Replay
-  if ((response.status === 401 || response.status === 403) && !skipAuthRefresh && !endpoint.includes('/users/login') && !endpoint.includes('/users/refresh')) {
+  if (
+    (response.status === 401 || response.status === 403) &&
+    !skipAuthRefresh &&
+    !endpoint.includes("/users/login") &&
+    !endpoint.includes("/users/refresh")
+  ) {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
 
     if (refreshToken) {
@@ -158,7 +180,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
           const retryRes = await fetch(`${API_BASE}${endpoint}`, {
             ...restOptions,
             headers: getHeaders(newToken),
-            credentials: 'include',
+            credentials: "include",
           });
           return parseResponse<T>(retryRes);
         } catch (err) {
@@ -176,7 +198,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
         const retryRes = await fetch(`${API_BASE}${endpoint}`, {
           ...restOptions,
           headers: getHeaders(newAccessToken),
-          credentials: 'include',
+          credentials: "include",
         });
         return parseResponse<T>(retryRes);
       } catch (refreshErr) {
@@ -193,12 +215,12 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
 
 async function parseResponse<T>(response: Response): Promise<T> {
   let data: any;
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
     try {
       data = await response.json();
     } catch {
-      data = { message: response.statusText || 'Failed to parse JSON' };
+      data = { message: response.statusText || "Failed to parse JSON" };
     }
   } else {
     const text = await response.text();
@@ -209,9 +231,11 @@ async function parseResponse<T>(response: Response): Promise<T> {
     const errorMessage =
       data?.err?.message ||
       data?.message ||
-      (Array.isArray(data?.errors) ? data.errors.join(', ') : null) ||
-      (Array.isArray(data?.data?.errors) ? data.data.errors.join(', ') : null) ||
-      (typeof data?.err === 'string' ? data.err : null) ||
+      (Array.isArray(data?.errors) ? data.errors.join(", ") : null) ||
+      (Array.isArray(data?.data?.errors)
+        ? data.data.errors.join(", ")
+        : null) ||
+      (typeof data?.err === "string" ? data.err : null) ||
       `Request failed with status ${response.status}`;
 
     const error = new Error(errorMessage);

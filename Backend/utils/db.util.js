@@ -373,6 +373,7 @@ const initializeDatabase = async () => {
         );
         CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id, created_at ASC);
     `);
+    await pool.query('ALTER TABLE support_ticket_messages ALTER COLUMN sender_id DROP NOT NULL');
 
     // Data Migration: Clean up legacy member status inconsistencies where invited members were erroneously set to ACCEPTED
     await pool.query(`
