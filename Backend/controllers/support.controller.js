@@ -192,6 +192,13 @@ async function updateTicketStatus(req, res) {
             ).catch(() => {});
         }
 
+        try {
+            const { emitTicketStatus } = require('../utils/socket.util');
+            emitTicketStatus(ticketNumber, status);
+        } catch (socketErr) {
+            console.warn('[Socket Status Emit Note]:', socketErr.message);
+        }
+
         return sendSuccess(res, `Ticket marked as ${status.toLowerCase()}`, ticket);
     } catch (error) {
         console.error('Update ticket status error:', error.message);
@@ -324,6 +331,14 @@ async function sendTicketMessage(req, res) {
             );
         }
 
+        try {
+            const { emitTicketMessage, emitTicketStatus } = require('../utils/socket.util');
+            emitTicketMessage(ticket.ticketNumber, newMsg);
+            if (ticket.status === 'RESOLVED') emitTicketStatus(ticket.ticketNumber, 'OPEN');
+        } catch (socketErr) {
+            console.warn('[Socket Message Emit Note]:', socketErr.message);
+        }
+
         return sendSuccess(res, 'Message sent successfully', newMsg, 201);
     } catch (error) {
         console.error('Send ticket message error:', error.message);
@@ -380,11 +395,261 @@ async function getTicketAttachment(req, res) {
     }
 }
 
+
+/**
+ * Admin: Get all tickets across all users with user metadata and message count
+ */
+async function getAllTicketsAdmin(req, res) {
+    try {
+        const { status, category, search } = req.query || {};
+        let query = `
+            SELECT t.id, t.ticket_number AS "ticketNumber", t.category, t.subject, t.message, t.status,
+                   t.attachment_name AS "attachmentName", t.attachment_type AS "attachmentType",
+                   t.attachment_size AS "attachmentSize", t.attachment_url AS "attachmentUrl",
+                   t.created_at AS "createdAt", t.user_id AS "userId",
+                   u.username AS "userName", u.email_id AS "userEmail", u.phone_number AS "userPhone",
+                   u.avatar_url AS "userAvatar",
+                   (SELECT COUNT(*)::int FROM support_ticket_messages m WHERE m.ticket_id = t.id) AS "messagesCount",
+                   (SELECT m2.message FROM support_ticket_messages m2 WHERE m2.ticket_id = t.id ORDER BY m2.created_at DESC LIMIT 1) AS "lastMessage"
+            FROM support_tickets t
+            LEFT JOIN users u ON t.user_id = u.id
+            WHERE 1=1
+        `;
+        const params = [];
+        let pIndex = 1;
+
+        if (status && status !== 'all' && status !== 'ALL') {
+            query += ` AND LOWER(t.status) = LOWER(${pIndex})`;
+            params.push(status);
+            pIndex++;
+        }
+
+        if (category && category !== 'all' && category !== 'ALL') {
+            query += ` AND LOWER(t.category) = LOWER(${pIndex})`;
+            params.push(category);
+            pIndex++;
+        }
+
+        if (search && search.trim()) {
+            query += ` AND (
+                t.ticket_number ILIKE ${pIndex} OR
+                t.subject ILIKE ${pIndex} OR
+                t.message ILIKE ${pIndex} OR
+                u.username ILIKE ${pIndex} OR
+                u.email_id ILIKE ${pIndex}
+            )`;
+            params.push(`%${search.trim()}%`);
+            pIndex++;
+        }
+
+        query += ` ORDER BY t.created_at DESC`;
+
+        const result = await pool.query(query, params);
+        return sendSuccess(res, 'Admin support tickets fetched successfully', result.rows);
+    } catch (error) {
+        console.error('Admin get tickets error:', error.message);
+        return sendError(res, 'Failed to fetch tickets for admin', error, 500);
+    }
+}
+
+/**
+ * Admin: Get ticket details and conversation thread
+ */
+async function getTicketAdminDetails(req, res) {
+    const { ticketNumber } = req.params;
+    if (!ticketNumber) {
+        return sendError(res, 'Ticket number is required', null, 400);
+    }
+
+    try {
+        const ticketRes = await pool.query(
+            `SELECT t.id, t.ticket_number AS "ticketNumber", t.category, t.subject, t.message, t.status,
+                    t.attachment_name AS "attachmentName", t.attachment_type AS "attachmentType",
+                    t.attachment_size AS "attachmentSize", t.attachment_url AS "attachmentUrl",
+                    t.created_at AS "createdAt", t.user_id AS "userId",
+                    u.username AS "userName", u.email_id AS "userEmail", u.phone_number AS "userPhone",
+                    u.avatar_url AS "userAvatar"
+             FROM support_tickets t
+             LEFT JOIN users u ON t.user_id = u.id
+             WHERE t.ticket_number = $1
+             LIMIT 1`,
+            [ticketNumber]
+        );
+
+        if (ticketRes.rows.length === 0) {
+            return sendError(res, 'Ticket not found', null, 404);
+        }
+
+        const ticket = ticketRes.rows[0];
+
+        const messagesRes = await pool.query(
+            `SELECT m.id, m.ticket_id AS "ticketId", m.sender_id AS "senderId", m.sender_name AS "senderName",
+                    m.sender_role AS "senderRole", m.message, m.attachment_url AS "attachmentUrl",
+                    m.attachment_name AS "attachmentName", m.attachment_type AS "attachmentType",
+                    m.attachment_size AS "attachmentSize", m.created_at AS "createdAt"
+             FROM support_ticket_messages m
+             WHERE m.ticket_id = $1
+             ORDER BY m.created_at ASC`,
+            [ticket.id]
+        );
+
+        return sendSuccess(res, 'Admin ticket details fetched successfully', {
+            ticket,
+            messages: messagesRes.rows
+        });
+    } catch (error) {
+        console.error('Admin get ticket details error:', error.message);
+        return sendError(res, 'Failed to fetch ticket details', error, 500);
+    }
+}
+
+/**
+ * Admin: Send message in ticket thread (Real-time dispatched to user)
+ */
+async function sendAdminTicketMessage(req, res) {
+    const { ticketNumber } = req.params;
+    const { message, senderName = 'Triptual Support' } = req.body || {};
+    const attachment = req.file || null;
+
+    if (!ticketNumber) {
+        return sendError(res, 'Ticket number is required', null, 400);
+    }
+
+    if ((!message || !String(message).trim()) && !attachment) {
+        return sendError(res, 'Message text or attachment is required', null, 400);
+    }
+
+    try {
+        const ticketRes = await pool.query(
+            `SELECT id, ticket_number AS "ticketNumber", status, user_id
+             FROM support_tickets
+             WHERE ticket_number = $1
+             LIMIT 1`,
+            [ticketNumber]
+        );
+
+        if (ticketRes.rows.length === 0) {
+            return sendError(res, 'Ticket not found', null, 404);
+        }
+
+        const ticket = ticketRes.rows[0];
+        let attachmentUrl = null;
+
+        if (attachment && attachment.buffer) {
+            try {
+                const uploadResult = await uploadSupportDocumentToS3({
+                    buffer: attachment.buffer,
+                    mimeType: attachment.mimetype,
+                    originalName: attachment.originalname,
+                    ticketNumber
+                });
+                attachmentUrl = uploadResult.url;
+            } catch (upErr) {
+                console.warn('[Admin S3 Upload Warning]:', upErr.message);
+            }
+        }
+
+        const msgId = crypto.randomUUID();
+        const insertRes = await pool.query(
+            `INSERT INTO support_ticket_messages
+             (id, ticket_id, sender_id, sender_name, sender_role, message, attachment_url, attachment_name, attachment_type, attachment_size)
+             VALUES ($1, $2, NULL, $3, 'SUPPORT', $4, $5, $6, $7, $8)
+             RETURNING id, ticket_id AS "ticketId", sender_id AS "senderId", sender_name AS "senderName",
+                       sender_role AS "senderRole", message, attachment_url AS "attachmentUrl",
+                       attachment_name AS "attachmentName", attachment_type AS "attachmentType",
+                       attachment_size AS "attachmentSize", created_at AS "createdAt"`,
+            [
+                msgId,
+                ticket.id,
+                String(senderName).trim(),
+                message ? String(message).trim() : null,
+                attachmentUrl,
+                attachment?.originalname || null,
+                attachment?.mimetype || null,
+                attachment?.size || null
+            ]
+        );
+
+        const newMsg = insertRes.rows[0];
+
+        // Broadcast real-time socket event to user
+        try {
+            const { emitTicketMessage } = require('../utils/socket.util');
+            emitTicketMessage(ticket.ticketNumber, newMsg);
+        } catch (sErr) {
+            console.warn('[Socket Message Emit Note]:', sErr.message);
+        }
+
+        return sendSuccess(res, 'Admin response sent successfully', newMsg, 201);
+    } catch (error) {
+        console.error('Send admin ticket message error:', error.message);
+        return sendError(res, 'Failed to send admin message', error, 500);
+    }
+}
+
+/**
+ * Admin: Update ticket status
+ */
+async function updateAdminTicketStatus(req, res) {
+    const { ticketNumber } = req.params;
+    let { status } = req.body || {};
+
+    if (!ticketNumber || !status) {
+        return sendError(res, 'Ticket number and status are required', null, 400);
+    }
+
+    status = String(status).toUpperCase().trim();
+    if (!['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].includes(status)) {
+        return sendError(res, 'Invalid ticket status', null, 400);
+    }
+
+    try {
+        const result = await pool.query(
+            `UPDATE support_tickets
+             SET status = $1
+             WHERE ticket_number = $2
+             RETURNING id, ticket_number AS "ticketNumber", status, category, subject`,
+            [status, ticketNumber]
+        );
+
+        if (result.rows.length === 0) {
+            return sendError(res, 'Ticket not found', null, 404);
+        }
+
+        const ticket = result.rows[0];
+
+        // Insert system audit message
+        await pool.query(
+            `INSERT INTO support_ticket_messages
+             (id, ticket_id, sender_id, sender_name, sender_role, message)
+             VALUES ($1, $2, NULL, 'System', 'SYSTEM', $3)`,
+            [crypto.randomUUID(), ticket.id, `Admin updated status to ${status}`]
+        ).catch(() => {});
+
+        // Broadcast real-time status change to user
+        try {
+            const { emitTicketStatus } = require('../utils/socket.util');
+            emitTicketStatus(ticket.ticketNumber, status);
+        } catch (sErr) {
+            console.warn('[Socket Status Emit Note]:', sErr.message);
+        }
+
+        return sendSuccess(res, `Ticket status updated to ${status}`, ticket);
+    } catch (error) {
+        console.error('Admin update ticket status error:', error.message);
+        return sendError(res, 'Failed to update ticket status', error, 500);
+    }
+}
+
 module.exports = {
     createTicket,
     getMyTickets,
     updateTicketStatus,
     getTicketMessages,
     sendTicketMessage,
-    getTicketAttachment
+    getTicketAttachment,
+    getAllTicketsAdmin,
+    getTicketAdminDetails,
+    sendAdminTicketMessage,
+    updateAdminTicketStatus
 };

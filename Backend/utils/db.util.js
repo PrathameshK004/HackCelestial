@@ -1,11 +1,15 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
-const connectionString = process.env.DATABASE_URL || process.env.CONNECTIONSTRING;
+const configuredConnectionString = process.env.DATABASE_URL || process.env.CONNECTIONSTRING;
 
-if (!connectionString) {
+if (!configuredConnectionString) {
     throw new Error('DATABASE_URL is required');
 }
+
+const connectionString = configuredConnectionString.includes('sslmode=require') && !configuredConnectionString.includes('uselibpqcompat')
+    ? `${configuredConnectionString}&uselibpqcompat=true`
+    : configuredConnectionString;
 
 const pool = new Pool({
     connectionString,
@@ -361,7 +365,7 @@ const initializeDatabase = async () => {
         CREATE TABLE IF NOT EXISTS support_ticket_messages (
             id UUID PRIMARY KEY,
             ticket_id UUID NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
-            sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
             sender_name VARCHAR(120),
             sender_role VARCHAR(32) NOT NULL DEFAULT 'USER',
             message TEXT,
@@ -372,6 +376,11 @@ const initializeDatabase = async () => {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id, created_at ASC);
+    `);
+
+    await pool.query(`
+        ALTER TABLE IF EXISTS support_ticket_messages
+        ALTER COLUMN sender_id DROP NOT NULL
     `);
 
     // Data Migration: Clean up legacy member status inconsistencies where invited members were erroneously set to ACCEPTED
