@@ -28,9 +28,10 @@ import {
 import {
   joinTicketRoom,
   joinTicketRooms,
-  leaveTicketRoom,
   subscribeTicketMessages,
-  subscribeTicketStatus
+  subscribeTicketStatus,
+  subscribeTicketCreated,
+  sendSocketTicketMessage
 } from '../services/socket.service';
 import {
   createSupportTicket,
@@ -121,6 +122,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
   const [chatDraftText, setChatDraftText] = useState('');
   const [chatAttachment, setChatAttachment] = useState<File | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const sendInFlightRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Document Viewer Lightbox State
@@ -138,9 +140,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
       const tickets = await listSupportTickets();
       setMyTickets(tickets);
       joinTicketRooms(
-        tickets
-          .filter((ticket) => !['RESOLVED', 'CLOSED'].includes(ticket.status))
-          .map((ticket) => ticket.ticketNumber)
+        tickets.map((ticket) => ticket.ticketNumber)
       );
     } catch (err) {
       console.warn('Could not load support tickets:', err);
@@ -153,6 +153,20 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     fetchTickets();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = subscribeTicketCreated((payload) => {
+      const rawUser = localStorage.getItem('triptual_auth_user');
+      let currentUserId = '';
+      try {
+        const user = rawUser ? JSON.parse(rawUser) : null;
+        currentUserId = String(user?.id || user?.key || user?.userId || '');
+      } catch (_) {}
+
+      if (payload?.userId && String(payload.userId) === currentUserId) fetchTickets();
+    });
+    return unsubscribe;
+  }, []);
+
   // Scroll to bottom when messages update
   useEffect(() => {
     if (activeChatTicket && messagesEndRef.current) {
@@ -162,9 +176,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
 
   // Real-time socket message & status listener for active ticket chat
   useEffect(() => {
-    if (!activeChatTicket) return;
-
-    joinTicketRoom(activeChatTicket.ticketNumber);
+    if (activeChatTicket) joinTicketRoom(activeChatTicket.ticketNumber);
 
     const unsubMsg = subscribeTicketMessages((payload) => {
       // Unpack message safely whether nested or top-level
@@ -177,16 +189,22 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
       if (!msg || !msg.id) return;
 
       const targetTicketNum = payload.ticketNumber || msg.ticketNumber;
-      if (targetTicketNum && targetTicketNum !== activeChatTicket.ticketNumber) return;
+      if (activeChatTicket && targetTicketNum === activeChatTicket.ticketNumber) {
+        setChatMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      }
 
-      setChatMessages((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        return [...prev, msg];
-      });
+      setMyTickets((prev) => prev.map((ticket) => (
+        ticket.ticketNumber === targetTicketNum
+          ? { ...ticket, message: msg.message || ticket.message }
+          : ticket
+      )));
     });
 
     const unsubStatus = subscribeTicketStatus((payload) => {
-      if (payload && payload.ticketNumber === activeChatTicket.ticketNumber) {
+      if (activeChatTicket && payload && payload.ticketNumber === activeChatTicket.ticketNumber) {
         const nextStatus = payload.status;
         setActiveChatTicket((prev) => (prev ? { ...prev, status: nextStatus } : null));
         setMyTickets((prev) =>
@@ -196,7 +214,6 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     });
 
     return () => {
-      leaveTicketRoom(activeChatTicket.ticketNumber);
       unsubMsg();
       unsubStatus();
     };
@@ -255,14 +272,17 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     e.preventDefault();
     if (!activeChatTicket) return;
     if (!chatDraftText.trim() && !chatAttachment) return;
+    if (sendInFlightRef.current) return;
 
+    sendInFlightRef.current = true;
     setIsSendingMessage(true);
     const pendingText = chatDraftText.trim();
     const pendingFile = chatAttachment;
 
     try {
       const newMsg = await sendTicketMessage(activeChatTicket.ticketNumber, pendingText, pendingFile);
-      setChatMessages((prev) => [...prev, newMsg]);
+      setChatMessages((prev) => prev.some((message) => message.id === newMsg.id) ? prev : [...prev, newMsg]);
+      sendSocketTicketMessage(activeChatTicket.ticketNumber, newMsg);
       setChatDraftText('');
       setChatAttachment(null);
 
@@ -278,6 +298,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     } catch (err: any) {
       alert(err.message || 'Failed to send message. Please try again.');
     } finally {
+      sendInFlightRef.current = false;
       setIsSendingMessage(false);
     }
   };

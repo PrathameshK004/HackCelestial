@@ -3,6 +3,18 @@ const jwt = require('jsonwebtoken');
 const { verifyToken: verifyJWT } = require('./jwt.util');
 
 let io = null;
+const recentTicketMessageIds = new Map();
+
+function shouldBroadcastTicketMessage(messageId) {
+  if (!messageId) return true;
+  const now = Date.now();
+  for (const [id, timestamp] of recentTicketMessageIds) {
+    if (now - timestamp > 60_000) recentTicketMessageIds.delete(id);
+  }
+  if (recentTicketMessageIds.has(String(messageId))) return false;
+  recentTicketMessageIds.set(String(messageId), now);
+  return true;
+}
 
 /**
  * Initialize Socket.io Server attached to HTTP Server
@@ -25,6 +37,7 @@ function initSocketServer(httpServer) {
   // Socket Authentication & Room Assignment Middleware
   io.use((socket, next) => {
     try {
+      socket.role = String(socket.handshake.auth?.role || socket.handshake.query?.role || 'USER').toUpperCase();
       const token = socket.handshake.auth?.token || 
                     socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '') ||
                     socket.handshake.query?.token;
@@ -72,7 +85,6 @@ function initSocketServer(httpServer) {
       }
 
       socket.userId = resolvedUserId;
-      socket.role = String(socket.handshake.auth?.role || socket.handshake.query?.role || 'USER').toUpperCase();
       return next();
     } catch (err) {
       return next();
@@ -81,13 +93,16 @@ function initSocketServer(httpServer) {
 
   io.on('connection', (socket) => {
     const userId = socket.userId;
+    if (socket.role === 'ADMIN' || socket.role === 'SUPPORT') {
+      socket.join('admin:support');
+    }
     if (userId) {
       socket.join(`user:${userId}`);
       socket.join(`user_${userId}`);
       socket.join(String(userId));
-      console.log(`⚡ [Socket.io] Client connected: ${socket.id} (User: ${userId}) -> Joined Rooms: user:${userId}, user_${userId}`);
+      console.log(`⚡ [Socket.io] Client connected: ${socket.id} (Role: ${socket.role}, User: ${userId}) -> Joined Rooms: user:${userId}, user_${userId}`);
     } else {
-      console.log(`⚡ [Socket.io] Guest/Anonymous Client connected (ID: ${socket.id})`);
+      console.log(`⚡ [Socket.io] Guest/Anonymous Client connected (ID: ${socket.id}, Role: ${socket.role})`);
     }
 
     // Explicit room registration from mobile/web client
@@ -99,6 +114,12 @@ function initSocketServer(httpServer) {
         socket.join(`user_${cleanKey}`);
         socket.join(cleanKey);
         console.log(`[Socket.io] Socket ${socket.id} explicitly joined user rooms for: ${cleanKey}`);
+      }
+    });
+
+    socket.on('admin:join', () => {
+      if (socket.role === 'ADMIN' || socket.role === 'SUPPORT') {
+        socket.join('admin:support');
       }
     });
 
@@ -182,6 +203,7 @@ function initSocketServer(httpServer) {
     // Handle real-time ticket message dispatched from Admin or Traveler
     socket.on('ticket:send_message', (data) => {
       if (data && data.ticketNumber) {
+        if (!shouldBroadcastTicketMessage(data.id)) return;
         const cleanTicket = String(data.ticketNumber).trim();
         console.log('[Socket.io] Message for ticket:' + cleanTicket + ' from ' + socket.id + ' (' + (data.senderRole || 'UNKNOWN') + ')');
 
@@ -201,7 +223,7 @@ function initSocketServer(httpServer) {
         };
 
         // Broadcast to ticket room (both user and admin listening)
-        io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:message', messagePayload);
+        io.to('ticket:' + cleanTicket).to(cleanTicket).to('admin:support').emit('ticket:message', messagePayload);
         io.emit('ticket:new_message', messagePayload);
       }
     });
@@ -320,11 +342,33 @@ function broadcastNotification(notificationData) {
  */
 function emitTicketMessage(ticketNumber, messageData) {
   if (!io || !ticketNumber) return false;
+  if (!shouldBroadcastTicketMessage(messageData?.id)) return false;
   const cleanTicket = String(ticketNumber).trim();
   const payload = Object.assign({ ticketNumber: cleanTicket }, messageData);
-  io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:message', payload);
+  const ticketRoom = io.sockets.adapter.rooms.get('ticket:' + cleanTicket) || new Set();
+  io.to('ticket:' + cleanTicket).to(cleanTicket).to('admin:support').emit('ticket:message', payload);
+  for (const connectedSocket of io.sockets.sockets.values()) {
+    if ((connectedSocket.role === 'ADMIN' || connectedSocket.role === 'SUPPORT') && !ticketRoom.has(connectedSocket.id)) {
+      connectedSocket.emit('ticket:message', payload);
+    }
+  }
   io.emit('ticket:new_message', payload);
   console.log('[Socket.io] Emitted "ticket:message" to ticket room: ' + cleanTicket);
+  return true;
+}
+
+function emitTicketCreated(ticketData) {
+  if (!io || !ticketData?.ticketNumber) return false;
+  const payload = { ...ticketData, timestamp: new Date().toISOString() };
+  for (const connectedSocket of io.sockets.sockets.values()) {
+    if (connectedSocket.role === 'ADMIN' || connectedSocket.role === 'SUPPORT') {
+      connectedSocket.emit('ticket:created', payload);
+    }
+  }
+  if (ticketData.userId) {
+    const cleanUserId = String(ticketData.userId).trim();
+    io.to(`user:${cleanUserId}`).to(`user_${cleanUserId}`).to(cleanUserId).emit('ticket:created', payload);
+  }
   return true;
 }
 
@@ -378,6 +422,7 @@ module.exports = {
   emitToGroup,
   broadcastNotification,
   emitTicketMessage,
+  emitTicketCreated,
   emitTicketPresence,
   emitTicketStatus
 };
