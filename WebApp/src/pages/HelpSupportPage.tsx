@@ -26,6 +26,14 @@ import {
   FileIcon
 } from 'lucide-react';
 import {
+  joinTicketRoom,
+  joinTicketRooms,
+  subscribeTicketMessages,
+  subscribeTicketStatus,
+  subscribeTicketCreated,
+  sendSocketTicketMessage
+} from '../services/socket.service';
+import {
   createSupportTicket,
   listSupportTickets,
   updateSupportTicketStatus,
@@ -115,6 +123,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
   const [chatDraftText, setChatDraftText] = useState('');
   const [chatAttachment, setChatAttachment] = useState<File | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const sendInFlightRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Document Viewer Lightbox State
@@ -131,6 +140,9 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     try {
       const tickets = await listSupportTickets();
       setMyTickets(tickets);
+      joinTicketRooms(
+        tickets.map((ticket) => ticket.ticketNumber)
+      );
     } catch (err) {
       console.warn('Could not load support tickets:', err);
     } finally {
@@ -140,6 +152,20 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
 
   useEffect(() => {
     fetchTickets();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTicketCreated((payload) => {
+      const rawUser = localStorage.getItem('triptual_auth_user');
+      let currentUserId = '';
+      try {
+        const user = rawUser ? JSON.parse(rawUser) : null;
+        currentUserId = String(user?.id || user?.key || user?.userId || '');
+      } catch (_) {}
+
+      if (payload?.userId && String(payload.userId) === currentUserId) fetchTickets();
+    });
+    return unsubscribe;
   }, []);
 
   // Scroll to bottom when messages update
@@ -216,7 +242,9 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     e.preventDefault();
     if (!activeChatTicket) return;
     if (!chatDraftText.trim() && !chatAttachment) return;
+    if (sendInFlightRef.current) return;
 
+    sendInFlightRef.current = true;
     setIsSendingMessage(true);
     const pendingText = chatDraftText.trim();
     const pendingFile = chatAttachment;
@@ -238,6 +266,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     } catch (err: any) {
       alert(err.message || 'Failed to send message. Please try again.');
     } finally {
+      sendInFlightRef.current = false;
       setIsSendingMessage(false);
     }
   };
@@ -330,7 +359,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
   return (
     <div className="profile-page-root animate-fade-in" style={{ paddingBottom: '90px', minHeight: '100vh', background: 'var(--bg-app)' }}>
       <div className="profile-page-container" style={{ maxWidth: '720px', padding: '14px 16px 50px' }}>
-        
+
         {/* Top Header Bar */}
         <div
           style={{
@@ -384,7 +413,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
         <div className="support-hero-header">
           <div className="support-hero-badge">
             <Sparkles size={13} />
-            <span>VIP Concierge Desk</span>
+            <span>Concierge Desk</span>
           </div>
           <h2
             style={{
@@ -479,7 +508,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
               <MessageCircle size={18} />
             </div>
             <div>
-              <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>WhatsApp Live</div>
+              <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)' }}>Chat Support Live</div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Instant reply &lt; 2 min</div>
             </div>
           </div>
@@ -823,7 +852,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                                 {ticket.attachmentName || 'Uploaded Document'}
                               </div>
                               <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>
-                                Saved securely in AWS S3
+                                Saved securely.
                               </div>
                             </div>
                           </div>
@@ -979,7 +1008,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                   "We will looking into Issue"
                 </p>
                 <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: '0 0 18px 0', lineHeight: 1.45 }}>
-                  A confirmation email has been dispatched to your email address. All uploaded documents are stored in AWS S3.
+                  A confirmation email has been dispatched to your email address. All documents uploaded..
                 </p>
 
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -1137,7 +1166,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                           Click or drag file to attach
                         </p>
                         <p style={{ margin: 0, fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                          Saved in AWS S3 rather than SQL
+                          PNG, JPG, PDF upto 10MB
                         </p>
                       </div>
                     )}
@@ -1202,7 +1231,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                   }}
                 >
                   <Send size={15} />
-                  <span>{isSubmitting ? 'Uploading to S3 & Creating Ticket...' : 'Submit Support Ticket'}</span>
+                  <span>{isSubmitting ? 'Creating Ticket...' : 'Submit Support Ticket'}</span>
                 </button>
               </form>
             )}
@@ -1548,7 +1577,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                           {msg.attachmentUrl && (
                             <div>
                               {/\.(jpe?g|png|webp|gif)$/i.test(msg.attachmentName || '') ||
-                              msg.attachmentType?.includes('image') ? (
+                                msg.attachmentType?.includes('image') ? (
                                 <img
                                   src={msg.attachmentUrl}
                                   alt={msg.attachmentName || 'Attached image'}
@@ -1567,19 +1596,19 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                                   style={
                                     !isUser
                                       ? {
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                          background: 'var(--bg-surface-warm)',
-                                          border: '1px solid var(--border-card)',
-                                          padding: '5px 10px',
-                                          borderRadius: 'var(--radius-xs)',
-                                          fontSize: '0.72rem',
-                                          marginTop: '6px',
-                                          color: 'var(--accent-olive)',
-                                          cursor: 'pointer',
-                                          fontWeight: 600
-                                        }
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        background: 'var(--bg-surface-warm)',
+                                        border: '1px solid var(--border-card)',
+                                        padding: '5px 10px',
+                                        borderRadius: 'var(--radius-xs)',
+                                        fontSize: '0.72rem',
+                                        marginTop: '6px',
+                                        color: 'var(--accent-olive)',
+                                        cursor: 'pointer',
+                                        fontWeight: 600
+                                      }
                                       : { cursor: 'pointer' }
                                   }
                                   onClick={() =>
@@ -1651,7 +1680,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                   {/* Attach file button */}
                   <label
                     htmlFor="chat-file-input"
-                    title="Upload document or image to AWS S3"
+                    title="Upload document or image"
                     style={{
                       cursor: 'pointer',
                       color: 'var(--accent-olive)',
@@ -1754,7 +1783,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
               >
                 <div>
                   <div style={{ fontSize: '0.7rem', color: 'var(--accent-olive)', fontWeight: 700 }}>
-                    {previewDoc.ticketNumber} • Cloud Storage Preview (AWS S3)
+                    {previewDoc.ticketNumber}
                   </div>
                   <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                     {previewDoc.name}
@@ -1849,7 +1878,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                       {previewDoc.name}
                     </h4>
                     <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', margin: '0 0 16px 0' }}>
-                      Document file stored securely in AWS S3 cloud storage.
+                      Document file stored securely.
                     </p>
                     <a
                       href={previewDoc.url}

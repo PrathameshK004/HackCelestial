@@ -325,6 +325,8 @@ export const groupService = {
     utr?: string;
     vendorUpi?: string;
     vendorName?: string;
+    verificationStatus?: 'AUTO_VERIFIED' | 'PENDING_APPROVAL';
+    rawSmsProof?: string;
   }): Promise<{ message: string; data: any }> {
     const res = await request<{ message: string; data: any }>('/payments/verify-status', {
       method: 'POST',

@@ -9,6 +9,7 @@ export interface User {
   travelStyle?: string;
   currency?: string;
   dob?: string | null;
+  twoFactorEnabled?: boolean;
 }
 
 export interface PasswordChangePayload {
@@ -42,6 +43,14 @@ export interface AuthResponse {
     userKey?: string;
     avatar?: string;
     user?: User;
+    twoFactorRequired?: boolean;
+    twoFactorEnabled?: boolean;
+    phone?: string | null;
+    upiId?: string | null;
+    travelStyle?: string;
+    currency?: string;
+    dob?: string | null;
+    expiresIn?: number;
   };
 }
 

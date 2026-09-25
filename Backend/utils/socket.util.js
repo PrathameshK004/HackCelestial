@@ -81,13 +81,16 @@ function initSocketServer(httpServer) {
 
   io.on('connection', (socket) => {
     const userId = socket.userId;
+    if (socket.role === 'ADMIN' || socket.role === 'SUPPORT') {
+      socket.join('admin:support');
+    }
     if (userId) {
       socket.join(`user:${userId}`);
       socket.join(`user_${userId}`);
       socket.join(String(userId));
-      console.log(`⚡ [Socket.io] Client connected: ${socket.id} (User: ${userId}) -> Joined Rooms: user:${userId}, user_${userId}`);
+      console.log(`⚡ [Socket.io] Client connected: ${socket.id} (Role: ${socket.role}, User: ${userId}) -> Joined Rooms: user:${userId}, user_${userId}`);
     } else {
-      console.log(`⚡ [Socket.io] Guest/Anonymous Client connected (ID: ${socket.id})`);
+      console.log(`⚡ [Socket.io] Guest/Anonymous Client connected (ID: ${socket.id}, Role: ${socket.role})`);
     }
 
     // Explicit room registration from mobile/web client
@@ -270,6 +273,77 @@ function initSocketServer(httpServer) {
       }
     });
 
+    // ==========================================
+    // Real-Time Support Ticket & Concierge Chat
+    // ==========================================
+
+    // Join specific support ticket room (traveler or admin)
+    socket.on('join:ticket', (ticketNumber) => {
+      if (ticketNumber) {
+        const cleanTicket = String(ticketNumber).trim();
+        socket.join('ticket:' + cleanTicket);
+        socket.join(cleanTicket);
+        emitTicketPresence(cleanTicket);
+        console.log('[Socket.io] Socket ' + socket.id + ' joined room ticket:' + cleanTicket);
+      }
+    });
+
+    // Leave support ticket room
+    socket.on('leave:ticket', (ticketNumber) => {
+      if (ticketNumber) {
+        const cleanTicket = String(ticketNumber).trim();
+        socket.leave('ticket:' + cleanTicket);
+        socket.leave(cleanTicket);
+        emitTicketPresence(cleanTicket);
+        console.log('[Socket.io] Socket ' + socket.id + ' left room ticket:' + cleanTicket);
+      }
+    });
+
+    // Handle real-time ticket message dispatched from Admin or Traveler
+    socket.on('ticket:send_message', (data) => {
+      if (data && data.ticketNumber) {
+        if (!shouldBroadcastTicketMessage(data.id)) return;
+        const cleanTicket = String(data.ticketNumber).trim();
+        console.log('[Socket.io] Message for ticket:' + cleanTicket + ' from ' + socket.id + ' (' + (data.senderRole || 'UNKNOWN') + ')');
+
+        const messagePayload = {
+          id: data.id || require('crypto').randomUUID(),
+          ticketId: data.ticketId,
+          ticketNumber: cleanTicket,
+          senderId: data.senderId || null,
+          senderName: data.senderName || 'Support Desk',
+          senderRole: data.senderRole || 'SUPPORT',
+          message: typeof data.message === 'string' ? data.message : (data.text || ''),
+          attachmentUrl: data.attachmentUrl || null,
+          attachmentName: data.attachmentName || null,
+          attachmentType: data.attachmentType || null,
+          attachmentSize: data.attachmentSize || null,
+          createdAt: data.createdAt || new Date().toISOString()
+        };
+
+        // Broadcast to ticket room (both user and admin listening)
+        io.to('ticket:' + cleanTicket).to(cleanTicket).to('admin:support').emit('ticket:message', messagePayload);
+        io.emit('ticket:new_message', messagePayload);
+      }
+    });
+
+    // Handle user/admin typing indicator
+    socket.on('ticket:typing', (data) => {
+      if (data && data.ticketNumber) {
+        const cleanTicket = String(data.ticketNumber).trim();
+        socket.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:typing', data);
+      }
+    });
+
+    // Handle ticket status change broadcast
+    socket.on('ticket:status_change', (data) => {
+      if (data && data.ticketNumber) {
+        const cleanTicket = String(data.ticketNumber).trim();
+        io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:status_change', data);
+        io.emit('ticket:status_change', data);
+      }
+    });
+
     // Health ping/pong
     socket.on('ping', () => {
       socket.emit('pong', { timestamp: Date.now() });
@@ -285,6 +359,9 @@ function initSocketServer(httpServer) {
     });
 
     socket.on('disconnect', (reason) => {
+      for (const room of socket.rooms) {
+        if (room.startsWith('ticket:')) emitTicketPresence(room.slice('ticket:'.length));
+      }
       console.log(`❌ [Socket.io] Client disconnected (ID: ${socket.id}) Reason: ${reason}`);
     });
   });
@@ -380,6 +457,84 @@ function broadcastNotification(notificationData) {
   io.emit('notification:broadcast', payload);
   io.to('broadcast').to('all').to('global').emit('notification', payload);
   console.log(`⚡ [Socket.io] Broadcasted notification to ALL connected clients: "${payload.title || 'Broadcast'}"`);
+  return true;
+}
+
+
+/**
+ * Real-time Ticket Message Dispatcher
+ */
+function emitTicketMessage(ticketNumber, messageData) {
+  if (!io || !ticketNumber) return false;
+  if (!shouldBroadcastTicketMessage(messageData?.id)) return false;
+  const cleanTicket = String(ticketNumber).trim();
+  const payload = Object.assign({ ticketNumber: cleanTicket }, messageData);
+  const ticketRoom = io.sockets.adapter.rooms.get('ticket:' + cleanTicket) || new Set();
+  io.to('ticket:' + cleanTicket).to(cleanTicket).to('admin:support').emit('ticket:message', payload);
+  for (const connectedSocket of io.sockets.sockets.values()) {
+    if ((connectedSocket.role === 'ADMIN' || connectedSocket.role === 'SUPPORT') && !ticketRoom.has(connectedSocket.id)) {
+      connectedSocket.emit('ticket:message', payload);
+    }
+  }
+  io.emit('ticket:new_message', payload);
+  console.log('[Socket.io] Emitted "ticket:message" to ticket room: ' + cleanTicket);
+  return true;
+}
+
+function emitTicketCreated(ticketData) {
+  if (!io || !ticketData?.ticketNumber) return false;
+  const payload = { ...ticketData, timestamp: new Date().toISOString() };
+  for (const connectedSocket of io.sockets.sockets.values()) {
+    if (connectedSocket.role === 'ADMIN' || connectedSocket.role === 'SUPPORT') {
+      connectedSocket.emit('ticket:created', payload);
+    }
+  }
+  if (ticketData.userId) {
+    const cleanUserId = String(ticketData.userId).trim();
+    io.to(`user:${cleanUserId}`).to(`user_${cleanUserId}`).to(cleanUserId).emit('ticket:created', payload);
+  }
+  return true;
+}
+
+/**
+ * Publish which sides of a ticket chat currently have a connected socket.
+ */
+function emitTicketPresence(ticketNumber) {
+  if (!io || !ticketNumber) return false;
+  const cleanTicket = String(ticketNumber).trim();
+  const room = io.sockets.adapter.rooms.get('ticket:' + cleanTicket) || new Set();
+  let userOnline = false;
+  let adminOnline = false;
+
+  for (const socketId of room) {
+    const member = io.sockets.sockets.get(socketId);
+    if (!member) continue;
+    if (member.role === 'ADMIN' || member.role === 'SUPPORT') adminOnline = true;
+    else if (member.userId) userOnline = true;
+  }
+
+  const payload = {
+    ticketNumber: cleanTicket,
+    userOnline,
+    clientOnline: userOnline,
+    adminOnline,
+    timestamp: new Date().toISOString()
+  };
+  io.to('ticket:' + cleanTicket).emit('ticket:presence', payload);
+  io.emit('ticket:presence', payload);
+  return true;
+}
+
+/**
+ * Real-time Ticket Status Dispatcher
+ */
+function emitTicketStatus(ticketNumber, status) {
+  if (!io || !ticketNumber) return false;
+  const cleanTicket = String(ticketNumber).trim();
+  const payload = { ticketNumber: cleanTicket, status: status };
+  io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:status_change', payload);
+  io.emit('ticket:status_change', payload);
+  console.log('[Socket.io] Emitted "ticket:status_change" for ' + cleanTicket + ' to ' + status);
   return true;
 }
 

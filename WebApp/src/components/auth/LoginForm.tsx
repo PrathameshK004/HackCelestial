@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Phone, ArrowLeft } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Phone, ArrowLeft, KeyRound } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface LoginFormProps {
@@ -13,7 +13,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   onForgotPassword,
   onSuccessRedirect 
 }) => {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, verifyTwoFactorLogin, loginWithGoogle } = useAuth();
 
   const [emailId, setEmailId] = useState('');
   const [password, setPassword] = useState('');
@@ -23,6 +23,15 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isTwoFactorChallenge, setIsTwoFactorChallenge] = useState(false);
+  const [twoFactorEmail, setTwoFactorEmail] = useState('');
+  const [twoFactorDigits, setTwoFactorDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const twoFactorInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  const completeLogin = (message = 'Welcome back! Loading trip workspace...') => {
+    setSuccessMessage(message);
+    setTimeout(() => onSuccessRedirect?.(), 500);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,13 +56,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         password,
       });
 
+      if (res.twoFactorRequired) {
+        setIsTwoFactorChallenge(true);
+        setTwoFactorEmail(res.emailId || emailId.trim().toLowerCase());
+        setTwoFactorDigits(['', '', '', '', '', '']);
+        setSuccessMessage(`Enter the 6-digit verification code sent to ${res.emailId || emailId.trim().toLowerCase()}`);
+        setTimeout(() => twoFactorInputRefs.current[0]?.focus(), 100);
+        return;
+      }
+
       if (res.success) {
-        setSuccessMessage('Welcome back! Loading trip workspace...');
-        setTimeout(() => {
-          if (onSuccessRedirect) {
-            onSuccessRedirect();
-          }
-        }, 500);
+        completeLogin();
       } else {
         setErrorMessage(res.message || 'Invalid email or password');
       }
@@ -62,6 +75,60 @@ export const LoginForm: React.FC<LoginFormProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const submitTwoFactorCode = async (code: string) => {
+    if (isLoading || code.length !== 6) return;
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setIsLoading(true);
+    try {
+      const result = await verifyTwoFactorLogin({ emailId: twoFactorEmail, code });
+      if (result.success) {
+        completeLogin('Two-step verification complete. Loading trip workspace...');
+      } else {
+        setErrorMessage(result.message || 'Incorrect verification code. Please try again.');
+        setTwoFactorDigits(['', '', '', '', '', '']);
+        setTimeout(() => twoFactorInputRefs.current[0]?.focus(), 100);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Two-step verification failed. Please try again.');
+      setTwoFactorDigits(['', '', '', '', '', '']);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTwoFactorDigitChange = (index: number, value: string) => {
+    const digits = value.replace(/\D/g, '');
+    if (!digits) {
+      const next = [...twoFactorDigits];
+      next[index] = '';
+      setTwoFactorDigits(next);
+      return;
+    }
+
+    const next = [...twoFactorDigits];
+    digits.slice(0, 6 - index).split('').forEach((digit, offset) => {
+      next[index + offset] = digit;
+    });
+    setTwoFactorDigits(next);
+    const nextIndex = Math.min(index + digits.length, 5);
+    twoFactorInputRefs.current[nextIndex]?.focus();
+    if (next.every(Boolean)) submitTwoFactorCode(next.join(''));
+  };
+
+  const handleTwoFactorKeyDown = (index: number, event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Backspace' && !twoFactorDigits[index] && index > 0) {
+      twoFactorInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const cancelTwoFactorChallenge = () => {
+    setIsTwoFactorChallenge(false);
+    setTwoFactorDigits(['', '', '', '', '', '']);
+    setErrorMessage(null);
+    setSuccessMessage(null);
   };
 
   const handleGoogleLogin = () => {
@@ -156,9 +223,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 
       {/* Main Title & Subtitle */}
       <div className="auth-modern-header">
-        <h1 className="auth-modern-title">Log In</h1>
+        <h1 className="auth-modern-title">{isTwoFactorChallenge ? 'Two-Step Verification' : 'Log In'}</h1>
         <p className="auth-modern-subtitle">
-          Welcome back to get started with TripMate.
+          {isTwoFactorChallenge
+            ? `Enter the 6-digit code sent to ${twoFactorEmail}`
+            : 'Welcome back to get started with TripMate.'}
         </p>
       </div>
 
@@ -176,6 +245,48 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         </div>
       )}
 
+      {isTwoFactorChallenge ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitTwoFactorCode(twoFactorDigits.join(''));
+          }}
+          className="auth-modern-form"
+          noValidate
+        >
+          <div className="auth-otp-badge">
+            <KeyRound size={15} />
+            <span className="auth-otp-email-text">{twoFactorEmail}</span>
+            <button type="button" className="auth-otp-edit-btn" onClick={cancelTwoFactorChallenge}>Back</button>
+          </div>
+          <div className="auth-otp-grid auth-otp-grid-4" style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))' }}>
+            {twoFactorDigits.map((digit, index) => (
+              <input
+                key={index}
+                ref={(element) => { twoFactorInputRefs.current[index] = element; }}
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={index === 0 ? 6 : 1}
+                className={`auth-otp-box ${digit ? 'filled' : ''}`}
+                value={digit}
+                onChange={(event) => handleTwoFactorDigitChange(index, event.target.value)}
+                onKeyDown={(event) => handleTwoFactorKeyDown(index, event)}
+                disabled={isLoading}
+                aria-label={`Verification digit ${index + 1}`}
+              />
+            ))}
+          </div>
+          <button type="submit" className="auth-blue-pill-btn" disabled={isLoading || twoFactorDigits.join('').length !== 6}>
+            {isLoading ? <><Loader2 size={18} className="spin-animation" /><span>Verifying...</span></> : <span>Verify &amp; Log In</span>}
+          </button>
+          <div className="auth-bottom-switch-row">
+            <button type="button" className="auth-bold-link" onClick={cancelTwoFactorChallenge}>
+              Cancel and return to login
+            </button>
+          </div>
+        </form>
+      ) : (
       <form onSubmit={handleSubmit} className="auth-modern-form" noValidate>
         {/* Email Address Pill Input */}
         <div className="auth-field-group">
@@ -304,6 +415,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 };

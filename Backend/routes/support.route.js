@@ -27,4 +27,11 @@ router.get('/tickets/:ticketNumber/attachment', verifyToken, supportController.g
 router.get('/tickets/:ticketNumber/messages', verifyToken, supportController.getTicketMessages);
 router.post('/tickets/:ticketNumber/messages', verifyToken, upload.single('attachment'), supportController.sendTicketMessage);
 
+
+// Admin operations (Accessible to Admin console)
+router.get('/admin/tickets', supportController.getAllTicketsAdmin);
+router.get('/admin/tickets/:ticketNumber', supportController.getTicketAdminDetails);
+router.post('/admin/tickets/:ticketNumber/messages', upload.single('attachment'), supportController.sendAdminTicketMessage);
+router.patch('/admin/tickets/:ticketNumber/status', supportController.updateAdminTicketStatus);
+
 module.exports = router;
