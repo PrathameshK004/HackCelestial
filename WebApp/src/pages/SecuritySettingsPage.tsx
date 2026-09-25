@@ -7,6 +7,8 @@ import {
   Check,
   AlertTriangle,
   LogOut,
+  ShieldCheck,
+  ShieldAlert,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authService } from '../services/auth.service';
@@ -16,7 +18,7 @@ interface SecuritySettingsPageProps {
 }
 
 export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBack }) => {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
 
   // Reset Password State
   const [newPassword, setNewPassword] = useState('');
@@ -27,6 +29,11 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
 
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpSentMessage, setOtpSentMessage] = useState<string | null>(null);
+
+  const [isTwoFactorEnabled, setIsTwoFactorEnabled] = useState(Boolean(user?.twoFactorEnabled));
+  const [pendingTwoFactorValue, setPendingTwoFactorValue] = useState<boolean | null>(null);
+  const [isUpdatingTwoFactor, setIsUpdatingTwoFactor] = useState(false);
+  const [twoFactorStatus, setTwoFactorStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Active Sessions State
   const [revokedOthers, setRevokedOthers] = useState(false);
@@ -42,6 +49,35 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
   };
 
   const strength = getStrength(newPassword);
+
+  React.useEffect(() => {
+    if (user?.twoFactorEnabled !== undefined) {
+      setIsTwoFactorEnabled(Boolean(user.twoFactorEnabled));
+    }
+  }, [user?.twoFactorEnabled]);
+
+  const handleConfirmTwoFactor = async () => {
+    if (pendingTwoFactorValue === null) return;
+    setIsUpdatingTwoFactor(true);
+    setTwoFactorStatus(null);
+    try {
+      const response = await authService.toggleTwoFactor(pendingTwoFactorValue);
+      if (response.data?.twoFactorEnabled !== pendingTwoFactorValue) {
+        throw new Error(response.message || 'Could not update two-step verification.');
+      }
+      setIsTwoFactorEnabled(pendingTwoFactorValue);
+      setPendingTwoFactorValue(null);
+      setTwoFactorStatus({
+        type: 'success',
+        text: pendingTwoFactorValue ? 'Two-step verification is on.' : 'Two-step verification is off.'
+      });
+      await refreshProfile();
+    } catch (err: any) {
+      setTwoFactorStatus({ type: 'error', text: err.message || 'Failed to update two-step verification.' });
+    } finally {
+      setIsUpdatingTwoFactor(false);
+    }
+  };
 
   // Handle Reset Password Submit
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -291,7 +327,70 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
             </div>
           </div>
 
-          {/* Card 2: Active Sessions */}
+          {/* Two-Factor Authentication */}
+          <div
+            className="clean-section-card"
+            style={{
+              padding: '18px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              width: '100%',
+              boxSizing: 'border-box',
+              background: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-xl)',
+              border: '1px solid var(--border-light)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                {isTwoFactorEnabled ? <ShieldCheck size={20} color="#059669" /> : <ShieldAlert size={20} color="var(--text-muted)" />}
+                <div>
+                  <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', color: 'var(--text-primary)', margin: 0 }}>
+                    Two-Step Verification
+                  </h2>
+                  <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
+                    Require a 6-digit email code when you log in.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isTwoFactorEnabled}
+                aria-label="Enable two-step verification"
+                onClick={() => setPendingTwoFactorValue(!isTwoFactorEnabled)}
+                style={{
+                  width: '48px',
+                  height: '28px',
+                  flex: '0 0 48px',
+                  padding: '3px',
+                  border: 0,
+                  borderRadius: '999px',
+                  background: isTwoFactorEnabled ? '#059669' : '#CBD5E1',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: isTwoFactorEnabled ? 'flex-end' : 'flex-start'
+                }}
+              >
+                <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(15, 23, 42, .25)' }} />
+              </button>
+            </div>
+
+            <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: '8px', background: isTwoFactorEnabled ? '#ECFDF5' : 'var(--bg-surface-warm)', color: isTwoFactorEnabled ? '#047857' : 'var(--text-secondary)', border: `1px solid ${isTwoFactorEnabled ? '#A7F3D0' : 'var(--border-light)'}`, borderRadius: 'var(--radius-md)', fontSize: '0.74rem' }}>
+              <ShieldCheck size={16} />
+              <span>{isTwoFactorEnabled ? `Enabled for ${user?.emailId || 'your account'}` : 'Off · sign-ins use your password only'}</span>
+            </div>
+
+            {twoFactorStatus && (
+              <div role="status" style={{ color: twoFactorStatus.type === 'success' ? '#047857' : '#B91C1C', fontSize: '0.76rem' }}>
+                {twoFactorStatus.text}
+              </div>
+            )}
+          </div>
+
+          {/* Active Sessions */}
           <div
             className="clean-section-card"
             style={{
@@ -375,6 +474,38 @@ export const SecuritySettingsPage: React.FC<SecuritySettingsPageProps> = ({ onBa
           </div>
         </div>
       </div>
+
+      {pendingTwoFactorValue !== null && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isUpdatingTwoFactor) setPendingTwoFactorValue(null);
+          }}
+          style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'grid', placeItems: 'center', padding: '20px', background: 'rgba(15, 23, 42, 0.48)' }}
+        >
+          <section role="dialog" aria-modal="true" aria-labelledby="two-factor-confirm-title" style={{ width: 'min(100%, 420px)', padding: '24px', borderRadius: '16px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', boxShadow: '0 24px 64px rgba(15, 23, 42, .25)' }}>
+            <div style={{ width: '56px', height: '56px', display: 'grid', placeItems: 'center', borderRadius: '50%', background: pendingTwoFactorValue ? '#ECFDF5' : '#FEF2F2', marginBottom: '14px' }}>
+              {pendingTwoFactorValue ? <ShieldCheck size={28} color="#059669" /> : <ShieldAlert size={28} color="#DC2626" />}
+            </div>
+            <h2 id="two-factor-confirm-title" style={{ margin: '0 0 8px', color: 'var(--text-primary)', fontSize: '1.1rem' }}>
+              {pendingTwoFactorValue ? 'Enable Two-Step Verification?' : 'Disable Two-Step Verification?'}
+            </h2>
+            <p style={{ margin: '0 0 20px', color: 'var(--text-secondary)', fontSize: '0.82rem', lineHeight: 1.5 }}>
+              {pendingTwoFactorValue
+                ? `The next login will require a 6-digit code sent to ${user?.emailId || 'your registered email'}.`
+                : 'Turning this off removes the email verification step from future logins.'}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" className="btn-secondary-luxury" onClick={() => setPendingTwoFactorValue(null)} disabled={isUpdatingTwoFactor}>
+                Cancel
+              </button>
+              <button type="button" className="btn-primary-luxury" onClick={handleConfirmTwoFactor} disabled={isUpdatingTwoFactor}>
+                {isUpdatingTwoFactor ? 'Updating...' : pendingTwoFactorValue ? 'Enable 2-Step' : 'Disable 2-Step'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 };

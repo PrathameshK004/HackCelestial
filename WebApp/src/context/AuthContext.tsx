@@ -14,7 +14,8 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (credentials: LoginPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
+  login: (credentials: LoginPayload) => Promise<{ success: boolean; message?: string; user?: User; twoFactorRequired?: boolean; emailId?: string }>;
+  verifyTwoFactorLogin: (payload: { emailId: string; code: string }) => Promise<{ success: boolean; message?: string; user?: User }>;
   register: (data: { username: string; emailId: string; password: string }) => Promise<{ success: boolean; message?: string; user?: User }>;
   registerTemp: (data: RegisterTempPayload) => Promise<{ success: boolean; message?: string; otp?: string | number; data?: any }>;
   verifyAndRegister: (data: RegisterUserPayload) => Promise<{ success: boolean; message?: string; user?: User }>;
@@ -64,7 +65,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   avatar: serverUser.avatar || null,
                   travelStyle: serverUser.travelStyle || 'Boutique',
                   currency: serverUser.currency || 'INR',
-                  dob: serverUser.dob || null
+                  dob: serverUser.dob || null,
+                  twoFactorEnabled: Boolean(serverUser.twoFactorEnabled)
                 };
                 setUser(freshUser);
                 localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(freshUser));
@@ -151,7 +153,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (credentials: LoginPayload) => {
     try {
       const response = await authService.login(credentials);
-      if (response.data) {
+      if (response.data?.twoFactorRequired) {
+        return {
+          success: false,
+          twoFactorRequired: true,
+          emailId: response.data.emailId || credentials.emailId,
+          message: response.message
+        };
+      }
+      if (response.data?.accessToken) {
         const loggedUser: User = {
           userId: response.data.userId,
           id: response.data.userId,
@@ -161,7 +171,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           upiId: (response.data as any).upiId || null,
           avatar: (response.data as any).avatar || null,
           travelStyle: (response.data as any).travelStyle || 'Boutique',
-          currency: (response.data as any).currency || 'INR'
+          currency: (response.data as any).currency || 'INR',
+          twoFactorEnabled: Boolean(response.data.twoFactorEnabled)
         };
 
         saveAuthSession(loggedUser, response.data.accessToken, response.data.refreshToken);
@@ -174,6 +185,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: response.message || 'Login failed' };
     } catch (err: any) {
       return { success: false, message: err.message || 'Invalid email or password' };
+    }
+  };
+
+  const verifyTwoFactorLogin = async (payload: { emailId: string; code: string }) => {
+    try {
+      const response = await authService.verifyTwoFactorLogin(payload);
+      const data = response.data;
+      if (!data?.accessToken) {
+        return { success: false, message: response.message || 'Could not verify the security code.' };
+      }
+
+      const loggedUser: User = {
+        userId: data.userId,
+        id: data.userId,
+        username: data.username,
+        emailId: data.emailId || payload.emailId,
+        phone: data.phone || undefined,
+        upiId: data.upiId || undefined,
+        avatar: data.avatar || undefined,
+        travelStyle: data.travelStyle || 'Boutique',
+        currency: data.currency || 'INR',
+        dob: data.dob || null,
+        twoFactorEnabled: true
+      };
+
+      saveAuthSession(loggedUser, data.accessToken, data.refreshToken);
+      return { success: true, message: response.message || 'Two-step verification successful.', user: loggedUser };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Invalid verification code. Please try again.' };
     }
   };
 
@@ -337,6 +377,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           travelStyle: serverUser.travelStyle || user?.travelStyle || 'Boutique',
           currency: serverUser.currency || user?.currency || 'INR',
           dob: serverUser.dob !== undefined ? serverUser.dob : (user?.dob || null),
+          twoFactorEnabled: serverUser.twoFactorEnabled !== undefined
+            ? Boolean(serverUser.twoFactorEnabled)
+            : Boolean(user?.twoFactorEnabled),
         };
         saveAuthSession(freshUser);
         return freshUser;
@@ -492,6 +535,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!user,
         isLoading,
         login,
+        verifyTwoFactorLogin,
         register,
         registerTemp,
         verifyAndRegister,
