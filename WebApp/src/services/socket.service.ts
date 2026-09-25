@@ -2,6 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import { API_BASE } from './apiClient';
 
 let socket: Socket | null = null;
+const joinedTicketRooms = new Set<string>();
 
 export function getSocketUrl(): string {
   // 1. If custom environment variable is set
@@ -45,7 +46,7 @@ export function getSocket(): Socket {
 
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
-      auth: { token, userId },
+      auth: { token, userId, role: 'USER' },
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
@@ -56,6 +57,7 @@ export function getSocket(): Socket {
       if (userId) {
         socket?.emit('join:user', userId);
       }
+      joinedTicketRooms.forEach((ticketNumber) => socket?.emit('join:ticket', ticketNumber));
     });
 
     socket.on('disconnect', (reason) => {
@@ -73,9 +75,19 @@ export function joinTicketRoom(ticketNumber: string) {
   const s = getSocket();
   if (ticketNumber) {
     const clean = String(ticketNumber).trim();
+    joinedTicketRooms.add(clean);
     s.emit('join:ticket', clean);
     console.log('⚡ [Socket.io] Joined room for ticket:', clean);
   }
+}
+
+export function joinTicketRooms(ticketNumbers: string[]) {
+  const s = getSocket();
+  ticketNumbers.filter(Boolean).forEach((ticketNumber) => {
+    const clean = String(ticketNumber).trim();
+    joinedTicketRooms.add(clean);
+    s.emit('join:ticket', clean);
+  });
 }
 
 /**
@@ -85,6 +97,7 @@ export function leaveTicketRoom(ticketNumber: string) {
   const s = getSocket();
   if (ticketNumber) {
     const clean = String(ticketNumber).trim();
+    joinedTicketRooms.delete(clean);
     s.emit('leave:ticket', clean);
     console.log('⚡ [Socket.io] Left room for ticket:', clean);
   }

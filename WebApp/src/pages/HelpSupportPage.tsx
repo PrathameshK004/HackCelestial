@@ -26,6 +26,13 @@ import {
   FileIcon
 } from 'lucide-react';
 import {
+  joinTicketRoom,
+  joinTicketRooms,
+  leaveTicketRoom,
+  subscribeTicketMessages,
+  subscribeTicketStatus
+} from '../services/socket.service';
+import {
   createSupportTicket,
   listSupportTickets,
   updateSupportTicketStatus,
@@ -130,6 +137,11 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     try {
       const tickets = await listSupportTickets();
       setMyTickets(tickets);
+      joinTicketRooms(
+        tickets
+          .filter((ticket) => !['RESOLVED', 'CLOSED'].includes(ticket.status))
+          .map((ticket) => ticket.ticketNumber)
+      );
     } catch (err) {
       console.warn('Could not load support tickets:', err);
     } finally {
@@ -147,6 +159,48 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages, activeChatTicket]);
+
+  // Real-time socket message & status listener for active ticket chat
+  useEffect(() => {
+    if (!activeChatTicket) return;
+
+    joinTicketRoom(activeChatTicket.ticketNumber);
+
+    const unsubMsg = subscribeTicketMessages((payload) => {
+      // Unpack message safely whether nested or top-level
+      const msg = (payload && typeof payload.message === 'object' && payload.message !== null && payload.message.id)
+        ? payload.message
+        : (payload && typeof payload === 'object' && payload.id)
+        ? payload
+        : null;
+
+      if (!msg || !msg.id) return;
+
+      const targetTicketNum = payload.ticketNumber || msg.ticketNumber;
+      if (targetTicketNum && targetTicketNum !== activeChatTicket.ticketNumber) return;
+
+      setChatMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+    });
+
+    const unsubStatus = subscribeTicketStatus((payload) => {
+      if (payload && payload.ticketNumber === activeChatTicket.ticketNumber) {
+        const nextStatus = payload.status;
+        setActiveChatTicket((prev) => (prev ? { ...prev, status: nextStatus } : null));
+        setMyTickets((prev) =>
+          prev.map((t) => (t.ticketNumber === payload.ticketNumber ? { ...t, status: nextStatus } : t))
+        );
+      }
+    });
+
+    return () => {
+      leaveTicketRoom(activeChatTicket.ticketNumber);
+      unsubMsg();
+      unsubStatus();
+    };
+  }, [activeChatTicket?.ticketNumber]);
 
   // Handle Mark Ticket as Solved
   const handleMarkAsSolved = async (ticketNumber: string) => {
@@ -220,22 +274,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
         );
       }
 
-      // Concierge auto-acknowledgment after 1.2s
-      setTimeout(() => {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: `concierge-${Date.now()}`,
-            ticketId: activeChatTicket.id || '',
-            senderId: 'support-agent',
-            senderName: 'Triptual Concierge Desk',
-            senderRole: 'SUPPORT',
-            message:
-              'Thank you for your update. Our senior concierge engineers have received your message and attached documents. We will looking into Issue and get back to you shortly.',
-            createdAt: new Date().toISOString()
-          }
-        ]);
-      }, 1200);
+      // Real-time live socket chat active with Admin Console
     } catch (err: any) {
       alert(err.message || 'Failed to send message. Please try again.');
     } finally {

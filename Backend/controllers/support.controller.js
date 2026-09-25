@@ -192,6 +192,13 @@ async function updateTicketStatus(req, res) {
             ).catch(() => {});
         }
 
+        try {
+            const { emitTicketStatus } = require('../utils/socket.util');
+            emitTicketStatus(ticketNumber, status);
+        } catch (socketErr) {
+            console.warn('[Socket Status Emit Note]:', socketErr.message);
+        }
+
         return sendSuccess(res, `Ticket marked as ${status.toLowerCase()}`, ticket);
     } catch (error) {
         console.error('Update ticket status error:', error.message);
@@ -322,6 +329,14 @@ async function sendTicketMessage(req, res) {
                 `UPDATE support_tickets SET status = 'OPEN' WHERE id = $1`,
                 [ticket.id]
             );
+        }
+
+        try {
+            const { emitTicketMessage, emitTicketStatus } = require('../utils/socket.util');
+            emitTicketMessage(ticket.ticketNumber, newMsg);
+            if (ticket.status === 'RESOLVED') emitTicketStatus(ticket.ticketNumber, 'OPEN');
+        } catch (socketErr) {
+            console.warn('[Socket Message Emit Note]:', socketErr.message);
         }
 
         return sendSuccess(res, 'Message sent successfully', newMsg, 201);
@@ -632,5 +647,9 @@ module.exports = {
     updateTicketStatus,
     getTicketMessages,
     sendTicketMessage,
-    getTicketAttachment
+    getTicketAttachment,
+    getAllTicketsAdmin,
+    getTicketAdminDetails,
+    sendAdminTicketMessage,
+    updateAdminTicketStatus
 };
