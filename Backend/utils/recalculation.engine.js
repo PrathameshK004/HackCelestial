@@ -25,18 +25,43 @@ function round2(num) {
  * @param {Array<object>} participants - Array of { memberId, userId, shareType, shareValue, isOptedIn }
  * @returns {Array<object>} Computed splits array
  */
+function normalizeParticipant(participant = {}) {
+    const memberId = participant.memberId ?? participant.member_id ?? participant.id ?? participant.participantId ?? participant.participant_id;
+    const userId = participant.userId ?? participant.user_id ?? participant.user ?? null;
+    const shareType = participant.shareType ?? participant.share_type ?? 'EQUAL_UNIT';
+    const shareValue = participant.shareValue ?? participant.share_value ?? participant.shareAmount ?? participant.share_amount ?? participant.computedAmount ?? participant.amount ?? 1;
+    const isOptedIn = participant.isOptedIn ?? participant.is_opted_in ?? true;
+
+    return {
+        ...participant,
+        memberId: memberId !== undefined && memberId !== null ? String(memberId) : undefined,
+        userId: userId !== undefined && userId !== null ? String(userId) : null,
+        shareType,
+        shareValue: Number(shareValue) || 0,
+        isOptedIn: Boolean(isOptedIn)
+    };
+}
+
 function calculateExpenseSplits(totalAmount, splitModel = 'EQUAL', participants = []) {
     const total = round2(Number(totalAmount));
     if (total <= 0 || !Array.isArray(participants) || participants.length === 0) {
         return [];
     }
 
-    const count = participants.length;
+    const normalizedParticipants = participants
+        .map(normalizeParticipant)
+        .filter(p => p.memberId !== undefined && p.memberId !== null && p.memberId !== '');
 
-    switch (splitModel.toUpperCase()) {
+    if (normalizedParticipants.length === 0) {
+        return [];
+    }
+
+    const count = normalizedParticipants.length;
+
+    switch ((splitModel || 'EQUAL').toString().toUpperCase()) {
         case 'ORGANIZER_PAID': {
             // Organizer / Sponsor pays; participants have 0 liability
-            return participants.map(p => ({
+            return normalizedParticipants.map(p => ({
                 memberId: p.memberId,
                 userId: p.userId || null,
                 shareType: 'ORGANIZER_PAID',
@@ -47,18 +72,18 @@ function calculateExpenseSplits(totalAmount, splitModel = 'EQUAL', participants 
 
         case 'ACTIVITY_BASED': {
             // Only opted-in participants share the cost
-            const activeDivers = participants.filter(p => p.isOptedIn !== false && (p.shareValue === undefined || Number(p.shareValue) > 0));
+            const activeDivers = normalizedParticipants.filter(p => p.isOptedIn !== false && (p.shareValue === undefined || Number(p.shareValue) > 0));
             const activeCount = activeDivers.length;
 
             if (activeCount === 0) {
                 // Fallback to equal split if no explicit opt-ins provided
-                return calculateExpenseSplits(total, 'EQUAL', participants);
+                return calculateExpenseSplits(total, 'EQUAL', normalizedParticipants);
             }
 
             const baseShare = Math.floor((total * 100) / activeCount) / 100;
             let remainderCents = Math.round((total - baseShare * activeCount) * 100);
 
-            return participants.map(p => {
+            return normalizedParticipants.map(p => {
                 const isOptedIn = activeDivers.some(a => a.memberId === p.memberId);
                 if (!isOptedIn) {
                     return {
@@ -88,10 +113,10 @@ function calculateExpenseSplits(totalAmount, splitModel = 'EQUAL', participants 
 
         case 'ROOM_SHARE': {
             // Divided by room occupancy units (e.g. 1 unit, 0.5 unit, 2 units)
-            const totalUnits = participants.reduce((sum, p) => sum + (Number(p.shareValue) > 0 ? Number(p.shareValue) : 1), 0);
+            const totalUnits = normalizedParticipants.reduce((sum, p) => sum + (Number(p.shareValue) > 0 ? Number(p.shareValue) : 1), 0);
             let distributedSum = 0;
 
-            const splits = participants.map((p, idx) => {
+            const splits = normalizedParticipants.map((p, idx) => {
                 const units = Number(p.shareValue) > 0 ? Number(p.shareValue) : 1;
                 let computed = 0;
                 if (idx === count - 1) {
@@ -116,10 +141,10 @@ function calculateExpenseSplits(totalAmount, splitModel = 'EQUAL', participants 
 
         case 'PARTICIPANT_BASED': {
             // Fixed amount or percentage per participant
-            const isPercentage = participants.some(p => p.shareType === 'PERCENTAGE');
+            const isPercentage = normalizedParticipants.some(p => p.shareType === 'PERCENTAGE');
             if (isPercentage) {
                 let distributedSum = 0;
-                return participants.map((p, idx) => {
+                return normalizedParticipants.map((p, idx) => {
                     const pct = Number(p.shareValue) || 0;
                     let computed = 0;
                     if (idx === count - 1) {
@@ -138,7 +163,7 @@ function calculateExpenseSplits(totalAmount, splitModel = 'EQUAL', participants 
                 });
             } else {
                 // Fixed amounts
-                return participants.map(p => ({
+                return normalizedParticipants.map(p => ({
                     memberId: p.memberId,
                     userId: p.userId || null,
                     shareType: 'FIXED_AMOUNT',
@@ -154,11 +179,10 @@ function calculateExpenseSplits(totalAmount, splitModel = 'EQUAL', participants 
             const baseShare = Math.floor((total * 100) / count) / 100;
             let remainderCents = Math.round((total - baseShare * count) * 100);
 
-            return participants.map(p => {
+            return normalizedParticipants.map((p, index) => {
                 let share = baseShare;
-                if (remainderCents > 0) {
+                if (index >= normalizedParticipants.length - remainderCents) {
                     share = round2(share + 0.01);
-                    remainderCents--;
                 }
                 return {
                     memberId: p.memberId,
@@ -219,7 +243,12 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
 
         const expAmount = Number(exp.amount) || 0;
         totalSpend = round2(totalSpend + expAmount);
-        const payerId = String(exp.paid_by_member_id || exp.paidByMemberId);
+        const payerId = String(
+            exp.paid_by_member_id ||
+            exp.paidByMemberId ||
+            exp.paidBy?.id ||
+            ''
+        );
 
         // Payer gets credit
         if (balances[payerId] !== undefined) {
@@ -279,21 +308,196 @@ function calculateNetBalances(members = [], expenses = [], settlements = []) {
 }
 
 /**
- * 3. Min-Cash-Flow Debt Simplification Algorithm (Graph-based greedy solver)
- * Solves the classical N-body debt simplification problem.
- * Reduces complex web of debts into minimum direct transactions.
+ * 3. Min-Cash-Flow Debt Simplification Algorithm
  *
- * @param {object} balances - Map of memberId -> netBalance
- * @param {object} memberLookup - Map of memberId -> member details
- * @param {string} currency - Group currency code (e.g. 'INR')
- * @returns {Array<object>} Minimal transfers list
+ * This engine first validates that the group balances reconcile to zero, then reduces
+ * the remaining obligations using a deterministic graph-based simplification. The
+ * greedy matching below is a low-complexity heuristic for typical expense groups and
+ * is intentionally deterministic for consistent UI output.
  */
-function calculateOptimalSettlements(balances = {}, memberLookup = {}, currency = 'INR') {
+function normalizeBalanceMap(balances = {}) {
+    if (!balances || typeof balances !== 'object' || Array.isArray(balances)) {
+        throw new Error('Balance map must be a plain object keyed by member id.');
+    }
+
+    const normalized = {};
+    for (const [memberId, rawValue] of Object.entries(balances)) {
+        const amount = Number(rawValue);
+        if (!Number.isFinite(amount)) {
+            throw new Error(`Invalid balance for ${memberId}: ${rawValue}`);
+        }
+        normalized[String(memberId)] = round2(amount);
+    }
+    return normalized;
+}
+
+function validateBalanceConsistency(balances = {}) {
+    const normalized = normalizeBalanceMap(balances);
+    const total = Object.values(normalized).reduce((sum, value) => round2(sum + Number(value || 0)), 0);
+
+    if (Math.abs(total) > 0.01) {
+        throw new Error(`Balance inconsistency: net balances do not sum to zero (${total}).`);
+    }
+
+    return normalized;
+}
+
+function canonicalEdgeKey(from, to) {
+    return `${String(from)}::${String(to)}`;
+}
+
+function parseEdgeKey(key) {
+    const [from, to] = String(key).split('::');
+    return { from, to };
+}
+
+function simplifyDebtGraph(edges = []) {
+    const validEdges = Array.isArray(edges) ? edges.filter(Boolean) : [];
+    const aggregated = new Map();
+
+    for (const edge of validEdges) {
+        const from = String(edge.from);
+        const to = String(edge.to);
+        if (!from || !to || from === to) continue;
+
+        const amount = round2(Number(edge.amount) || 0);
+        if (amount <= 0.01) continue;
+
+        const key = canonicalEdgeKey(from, to);
+        aggregated.set(key, round2((aggregated.get(key) || 0) + amount));
+    }
+
+    const reverseNet = new Map(Array.from(aggregated.entries()));
+    let changed = true;
+
+    while (changed) {
+        changed = false;
+        const keys = Array.from(reverseNet.keys());
+
+        for (const key of keys) {
+            const { from, to } = parseEdgeKey(key);
+            const reverseKey = canonicalEdgeKey(to, from);
+            if (!reverseNet.has(reverseKey)) continue;
+
+            const net = round2((reverseNet.get(key) || 0) - (reverseNet.get(reverseKey) || 0));
+            reverseNet.delete(key);
+            reverseNet.delete(reverseKey);
+
+            if (net > 0.01) {
+                reverseNet.set(canonicalEdgeKey(from, to), round2(net));
+            } else if (net < -0.01) {
+                reverseNet.set(canonicalEdgeKey(to, from), round2(Math.abs(net)));
+            }
+
+            changed = true;
+            break;
+        }
+    }
+
+    const adjacency = new Map();
+    for (const [key, amount] of reverseNet.entries()) {
+        const { from, to } = parseEdgeKey(key);
+        if (!adjacency.has(from)) adjacency.set(from, []);
+        adjacency.get(from).push({ from, to, amount: round2(amount) });
+    }
+
+    for (const node of adjacency.keys()) {
+        const list = adjacency.get(node) || [];
+        list.sort((a, b) => a.to.localeCompare(b.to));
+    }
+
+    const finalEdges = new Map();
+    for (const [from, list] of adjacency.entries()) {
+        for (const edge of list) {
+            finalEdges.set(canonicalEdgeKey(edge.from, edge.to), round2(edge.amount));
+        }
+    }
+
+    let cycleCancelled = true;
+    while (cycleCancelled) {
+        cycleCancelled = false;
+        const nodes = Array.from(new Set(Array.from(finalEdges.keys()).flatMap(k => {
+            const { from, to } = parseEdgeKey(k);
+            return [from, to];
+        }))).sort();
+
+        for (const startNode of nodes) {
+            const path = [];
+            const visited = new Set();
+            const stack = [startNode];
+
+            function dfs(node) {
+                if (visited.has(node)) return null;
+                visited.add(node);
+                path.push(node);
+
+                const outgoing = Array.from(finalEdges.entries())
+                    .filter(([key]) => parseEdgeKey(key).from === node)
+                    .map(([key, amount]) => ({ ...parseEdgeKey(key), amount }));
+
+                outgoing.sort((a, b) => a.to.localeCompare(b.to));
+
+                for (const edge of outgoing) {
+                    if (edge.to === startNode && path.length > 1) {
+                        return path.slice();
+                    }
+                    if (!visited.has(edge.to)) {
+                        const cycle = dfs(edge.to);
+                        if (cycle) return cycle;
+                    }
+                }
+
+                path.pop();
+                return null;
+            }
+
+            const cycle = dfs(startNode);
+            if (!cycle || cycle.length < 2) continue;
+
+            const cycleSet = new Set(cycle);
+            const cycleEdges = [];
+            for (const [key, amount] of finalEdges.entries()) {
+                const { from, to } = parseEdgeKey(key);
+                if (cycleSet.has(from) && cycleSet.has(to) && from !== to) {
+                    cycleEdges.push({ key, from, to, amount: round2(amount) });
+                }
+            }
+
+            if (cycleEdges.length === 0) continue;
+
+            const minAmount = round2(Math.min(...cycleEdges.map(edge => edge.amount)));
+            if (minAmount <= 0.01) continue;
+
+            for (const edge of cycleEdges) {
+                const remaining = round2(edge.amount - minAmount);
+                finalEdges.delete(edge.key);
+                if (remaining > 0.01) {
+                    finalEdges.set(canonicalEdgeKey(edge.from, edge.to), remaining);
+                }
+            }
+
+            cycleCancelled = true;
+            break;
+        }
+
+        if (!cycleCancelled) break;
+    }
+
+    return Array.from(finalEdges.entries())
+        .map(([key, amount]) => {
+            const { from, to } = parseEdgeKey(key);
+            return { from, to, amount: round2(amount) };
+        })
+        .filter(edge => edge.amount > 0.01)
+        .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+}
+
+function calculateSettlementPlan(balances = {}, memberLookup = {}, currency = 'INR') {
+    const normalizedBalances = validateBalanceConsistency(balances);
     const debtors = [];
     const creditors = [];
 
-    // Separate into debtors (negative balance) and creditors (positive balance)
-    for (const [id, net] of Object.entries(balances)) {
+    for (const [id, net] of Object.entries(normalizedBalances)) {
         const balance = round2(net);
         if (balance < -0.01) {
             debtors.push({ id, amount: Math.abs(balance) });
@@ -302,9 +506,8 @@ function calculateOptimalSettlements(balances = {}, memberLookup = {}, currency 
         }
     }
 
-    // Sort: largest debtor first, largest creditor first
-    debtors.sort((a, b) => b.amount - a.amount);
-    creditors.sort((a, b) => b.amount - a.amount);
+    debtors.sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id));
+    creditors.sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id));
 
     const transfers = [];
     let dIdx = 0;
@@ -313,7 +516,6 @@ function calculateOptimalSettlements(balances = {}, memberLookup = {}, currency 
     while (dIdx < debtors.length && cIdx < creditors.length) {
         const debtor = debtors[dIdx];
         const creditor = creditors[cIdx];
-
         const settlementAmount = round2(Math.min(debtor.amount, creditor.amount));
 
         if (settlementAmount > 0.01) {
@@ -352,8 +554,14 @@ function calculateOptimalSettlements(balances = {}, memberLookup = {}, currency 
     return transfers;
 }
 
+function calculateOptimalSettlements(balances = {}, memberLookup = {}, currency = 'INR') {
+    return calculateSettlementPlan(balances, memberLookup, currency);
+}
+
 module.exports = {
     round2,
+    simplifyDebtGraph,
+    calculateSettlementPlan,
     calculateExpenseSplits,
     calculateNetBalances,
     calculateOptimalSettlements

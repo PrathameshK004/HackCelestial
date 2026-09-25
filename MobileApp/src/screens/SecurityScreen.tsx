@@ -41,7 +41,7 @@ import {
   Laptop,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
-import { backgrounds, borders, cardRadius, fontSize as fs, fontWeight as fw, spacing } from '../theme/theme';
+import { backgrounds, borders, cardRadius, fontSize as fs, fontWeight as fw, screenHeader, spacing } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
 import { authService } from '../api/auth.service';
 
@@ -774,6 +774,7 @@ const styles = StyleSheet.create({
     backgroundColor: backgrounds.screen,
   },
   header: {
+    minHeight: screenHeader.height,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

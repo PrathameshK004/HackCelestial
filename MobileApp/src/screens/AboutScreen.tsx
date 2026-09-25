@@ -43,6 +43,7 @@ import {
   cardRadius,
   fontSize as fs,
   fontWeight as fw,
+  screenHeader,
   spacing,
 } from '../theme/theme';
 
@@ -469,6 +470,7 @@ const styles = StyleSheet.create({
     backgroundColor: backgrounds.screen,
   },
   header: {
+    minHeight: screenHeader.height,
     backgroundColor: backgrounds.card,
     borderBottomWidth: 1,
     borderBottomColor: borders.card,

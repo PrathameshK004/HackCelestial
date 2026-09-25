@@ -189,14 +189,38 @@ export const groupService = {
     }
   },
 
-  async createRazorpayOrder(payload: { amount: number; currency?: string; receipt?: string; notes?: any }): Promise<{ message: string; data: any }> {
+  async createRazorpayOrder(payload: {
+    amount: number;
+    currency?: string;
+    receipt?: string;
+    notes?: any;
+    groupId?: string | null;
+    groupName?: string;
+    memberCount?: number;
+    paymentType?: string;
+  }): Promise<{ message: string; data: any }> {
     return apiRequest<{ message: string; data: any }>('/payments/razorpay/create-order', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
 
-  async verifyRazorpayPayment(payload: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature?: string }): Promise<{ message: string; data: any }> {
+  async verifyRazorpayPayment(payload: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature?: string;
+    amount?: number;
+    currency?: string;
+    groupId?: string | null;
+    groupName?: string;
+    memberCount?: number;
+    paymentType?: string;
+    method?: string;
+    upiApp?: string;
+    bank?: string;
+    note?: string;
+    metadata?: any;
+  }): Promise<{ message: string; data: any }> {
     return apiRequest<{ message: string; data: any }>('/payments/razorpay/verify-payment', {
       method: 'POST',
       body: JSON.stringify(payload),

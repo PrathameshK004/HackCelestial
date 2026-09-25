@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 import { Camera as CameraIcon } from 'lucide-react-native';
 import { getIllustrationById, getIllustrationAsset } from '../../constants/illustrations';
 import { colors } from '../../theme/colors';
-import { SERVER_BASE } from '../../api/apiClient';
+import { getProfilePictureUri, SERVER_BASE } from '../../api/apiClient';
 
 interface IllustrationAvatarProps {
   avatar?: string | null;
@@ -34,17 +34,26 @@ export const IllustrationAvatar: React.FC<IllustrationAvatarProps> = ({
   textStyle,
   backgroundColor,
 }) => {
-  const isIllustration = Boolean(avatar && avatar.startsWith('ill_'));
-  const isHttpImage = Boolean(
-    avatar &&
-      (avatar.startsWith('http://') ||
-        avatar.startsWith('https://') ||
-        avatar.startsWith('data:image') ||
-        avatar.startsWith('/illustrations/'))
-  );
-  const isEmoji = Boolean(avatar && !isIllustration && !isHttpImage && avatar.length <= 4);
+  const normalizedAvatar = typeof avatar === 'string' ? avatar.trim() : '';
+  const [imageFailed, setImageFailed] = useState(false);
 
-  const illustrationAsset = isIllustration ? getIllustrationAsset(avatar) : null;
+  React.useEffect(() => {
+    setImageFailed(false);
+  }, [normalizedAvatar]);
+
+  const isIllustration = Boolean(normalizedAvatar && normalizedAvatar.startsWith('ill_'));
+  const isHttpImage = Boolean(
+    normalizedAvatar &&
+      (/^(https?:\/\/|data:image\/)/i.test(normalizedAvatar) ||
+        normalizedAvatar.startsWith('/illustrations/') ||
+        normalizedAvatar.startsWith('/uploads/') ||
+        normalizedAvatar.startsWith('/profile-pictures/') ||
+        normalizedAvatar.startsWith('profile-pictures/') ||
+        normalizedAvatar.startsWith('/'))
+  );
+  const isEmoji = Boolean(normalizedAvatar && !isIllustration && !isHttpImage && normalizedAvatar.length <= 4);
+
+  const illustrationAsset = isIllustration ? getIllustrationAsset(normalizedAvatar) : null;
   const initial = name?.trim() ? name.trim().charAt(0).toUpperCase() : '?';
 
   const radius = size / 2;
@@ -74,16 +83,24 @@ export const IllustrationAvatar: React.FC<IllustrationAvatarProps> = ({
     }
 
     // 2. HTTP / Data URL / Server Image
-    if (isHttpImage && avatar) {
-      const uri = avatar.startsWith('/illustrations/') || avatar.startsWith('/')
-        ? `${SERVER_BASE}${avatar}`
-        : avatar;
+    if (isHttpImage && normalizedAvatar && !imageFailed) {
+      let uri = getProfilePictureUri(normalizedAvatar);
+
+      if (
+        normalizedAvatar.startsWith('/illustrations/') ||
+        normalizedAvatar.startsWith('/uploads/') ||
+        normalizedAvatar.startsWith('/profile-pictures/') ||
+        normalizedAvatar.startsWith('/')
+      ) {
+        uri = `${SERVER_BASE}${normalizedAvatar.startsWith('/') ? normalizedAvatar : `/${normalizedAvatar}`}`;
+      }
 
       return (
         <Image
           source={{ uri }}
           style={{ width: size, height: size, borderRadius: radius }}
           resizeMode="cover"
+          onError={() => setImageFailed(true)}
         />
       );
     }

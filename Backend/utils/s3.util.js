@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const path = require('path');
 const fs = require('fs');
 
@@ -132,6 +132,22 @@ async function deleteS3Object(s3UrlOrKey) {
 }
 
 /**
+ * Read a profile picture through the API when the S3 bucket is private.
+ * Only profile-picture keys are allowed by this helper.
+ */
+async function getProfilePictureFromS3(key) {
+    if (!key || !key.startsWith('profile-pictures/') || !isS3Configured()) {
+        return null;
+    }
+
+    const s3Client = getS3Client();
+    return s3Client.send(new GetObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+    }));
+}
+
+/**
  * Upload support ticket document or chat attachment to AWS S3
  * @param {Object} params
  * @param {Buffer} params.buffer - In-memory file buffer
@@ -192,6 +208,7 @@ module.exports = {
     uploadProfilePictureToS3,
     uploadSupportDocumentToS3,
     deleteS3Object,
+    getProfilePictureFromS3,
     ALLOWED_MIME_TYPES,
 };
 

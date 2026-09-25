@@ -3,7 +3,9 @@
  * 
  * KEY FEATURE: 60% Group Member Consensus Approval Banner
  * - For every PENDING_APPROVAL expense, group companions see an Approve / Dispute prompt
- * - Listens to Socket.IO 'EXPENSE_APPROVAL_UPDATED' for live auto-dismiss when 60% threshold is reached
+      <View style={styles.metricsTabsCard}>
+        <View style={styles.metricsGrid}>
+          <View style={styles.metricCard}>
  * - AUTO_VERIFIED expenses (bank SMS detected) skip the approval flow entirely
  */
 
@@ -16,7 +18,6 @@ import {
   TouchableOpacity,
   Linking,
   Alert,
-  RefreshControl,
   Platform,
   NativeModules,
   ActivityIndicator,
@@ -37,6 +38,7 @@ import {
   ThumbsDown,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
+import { cardRadius } from '../../theme/theme';
 import { useTrips } from '../../context/TripContext';
 import { useAuth } from '../../context/AuthContext';
 import { ledgerEngine } from '../../sync/ledgerEngine';
@@ -61,28 +63,15 @@ interface ApprovalState {
   };
 }
 
-export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, searchQuery = '', onRefresh }) => {
+export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, searchQuery = '' }) => {
   const { trips, recordSettlement, refreshTrips } = useTrips();
   const { user } = useAuth();
-  const [refreshing, setRefreshing] = useState(false);
-  const [subTab, setSubTab] = useState<'optimizer' | 'expenses'>('optimizer');
+  const [subTab, setSubTab] = useState<'expenses' | 'approvals'>('expenses');
 
   // Track approval UI state per-expense
   const [approvalState, setApprovalState] = useState<ApprovalState>({});
 
   const q = searchQuery.trim().toLowerCase();
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await refreshTrips();
-      if (onRefresh) await onRefresh();
-    } catch (err) {
-      console.warn('Refresh error in ExpensesTab:', err);
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   // Build a flat list of all expenses (across trips) with trip context
   const { totalSpent, youOwe, youAreOwed, allExpenses, allMembers } = useMemo(() => {
@@ -313,7 +302,6 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
       if (exp.verificationStatus !== 'PENDING_APPROVAL') return false;
       const state = approvalState[exp.id];
       if (state?.isFinalized || state?.verificationStatus === 'VERIFIED') return false;
-      if (state?.voted) return false;
       return true;
     });
   }, [allExpenses, approvalState]);
@@ -339,7 +327,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
         {/* Header row */}
         <View style={styles.approvalHeader}>
           <View style={styles.approvalHeaderLeft}>
-            <AlertTriangle size={16} color="#D97706" />
+            <AlertTriangle size={16} color={colors.slate600} />
             <Text style={styles.approvalHeaderLabel}>APPROVAL NEEDED</Text>
           </View>
           <View style={styles.approvalBadge}>
@@ -389,7 +377,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
               activeOpacity={0.85}
               onPress={() => handleCastVote(exp, 'DISPUTE')}
             >
-              <ThumbsDown size={14} color="#DC2626" />
+              <ThumbsDown size={14} color={colors.slate700} />
               <Text style={styles.disputeBtnText}>Dispute</Text>
             </TouchableOpacity>
           </View>
@@ -399,70 +387,41 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          colors={['#464B29', '#059669']}
-          tintColor="#464B29"
-        />
-      }
-    >
-      {/* ── 60% Approval Banners (top priority) ─────────────────────────── */}
-      {pendingApprovalExpenses.length > 0 && (
-        <View style={styles.approvalSection}>
-          <Text style={styles.approvalSectionHeader}>
-            ⚠️ Expenses Awaiting Your Approval
-          </Text>
-          {pendingApprovalExpenses.map((exp: any) => renderApprovalBanner(exp))}
-        </View>
-      )}
-
+    <View style={[styles.container, styles.content]}>
       {/* ── 3-Card Financial Overview ────────────────────────────────────── */}
-      <View style={styles.metricsGrid}>
-        <View style={styles.metricCard}>
+      <View style={styles.metricsTabsCard}>
+        <View style={styles.metricsGrid}>
+          <View style={styles.metricCard}>
           <Text style={styles.metricLabel}>Total Spent</Text>
           <Text style={styles.metricValue}>₹{totalSpent.toLocaleString()}</Text>
           <Text style={styles.metricFoot}>Across {trips.length} trips</Text>
-        </View>
-
-        <View style={[styles.metricCard, styles.metricCardOwed]}>
-          <View style={styles.metricTitleRow}>
-            <Text style={styles.metricLabel}>You Are Owed</Text>
-            <TrendingUp size={12} color={colors.primary600} />
           </View>
-          <Text style={[styles.metricValue, { color: colors.primary700 }]}>
-            ₹{youAreOwed.toLocaleString()}
-          </Text>
-          <Text style={styles.metricFoot}>Group owes you</Text>
-        </View>
 
-        <View style={[styles.metricCard, styles.metricCardOwes]}>
-          <View style={styles.metricTitleRow}>
-            <Text style={styles.metricLabel}>You Owe</Text>
-            <TrendingDown size={12} color="#D97706" />
+          <View style={[styles.metricCard, styles.metricCardOwed]}>
+            <View style={styles.metricTitleRow}>
+              <Text style={styles.metricLabel}>You Are Owed</Text>
+              <TrendingUp size={12} color={colors.primary600} />
+            </View>
+            <Text style={[styles.metricValue, { color: colors.primary700 }]}> 
+              ₹{youAreOwed.toLocaleString()}
+            </Text>
+            <Text style={styles.metricFoot}>Group owes you</Text>
           </View>
-          <Text style={[styles.metricValue, { color: '#B45309' }]}>
-            ₹{youOwe.toLocaleString()}
-          </Text>
-          <Text style={styles.metricFoot}>Pay your share</Text>
-        </View>
-      </View>
 
-      {/* ── Sub-Tab Toggle ───────────────────────────────────────────────── */}
-      <View style={styles.subTabRow}>
-        <TouchableOpacity
-          style={[styles.subTabBtn, subTab === 'optimizer' && styles.subTabBtnActive]}
-          onPress={() => setSubTab('optimizer')}
-        >
-          <Zap size={13} color={subTab === 'optimizer' ? colors.primary700 : colors.slate400} />
-          <Text style={[styles.subTabText, subTab === 'optimizer' && styles.subTabTextActive]}>
-            Smart Settle
-          </Text>
-        </TouchableOpacity>
+          <View style={[styles.metricCard, styles.metricCardOwes]}>
+            <View style={styles.metricTitleRow}>
+              <Text style={styles.metricLabel}>You Owe</Text>
+              <TrendingDown size={12} color="#D97706" />
+            </View>
+            <Text style={[styles.metricValue, { color: '#B45309' }]}> 
+              ₹{youOwe.toLocaleString()}
+            </Text>
+            <Text style={styles.metricFoot}>Pay your share</Text>
+          </View>
+        </View>
+
+        {/* ── Standard underlined tab menu ──────────────────────────────────── */}
+        <View style={styles.subTabRow}>
         <TouchableOpacity
           style={[styles.subTabBtn, subTab === 'expenses' && styles.subTabBtnActive]}
           onPress={() => setSubTab('expenses')}
@@ -472,58 +431,33 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
             All Expenses
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.subTabBtn, subTab === 'approvals' && styles.subTabBtnActive]}
+          onPress={() => setSubTab('approvals')}
+        >
+          <ShieldCheck size={13} color={subTab === 'approvals' ? colors.primary700 : colors.slate400} />
+          <Text style={[styles.subTabText, subTab === 'approvals' && styles.subTabTextActive]}>
+            Approvals{pendingApprovalExpenses.length > 0 ? ` (${pendingApprovalExpenses.length})` : ''}
+          </Text>
+        </TouchableOpacity>
+        </View>
       </View>
 
-      {/* ── 1. Smart Settlement Optimizer ───────────────────────────────── */}
-      {subTab === 'optimizer' && (
+      <ScrollView
+        style={styles.listScroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+      >
+      {/* ── Approval validation ───────────────────────────────────────────── */}
+      {subTab === 'approvals' && (
         <View>
-          {(!optimalResult || optimalResult.transfers.length === 0) ? (
+          {pendingApprovalExpenses.length === 0 ? (
             <View style={styles.emptyWrap}>
               <CheckCircle2 size={32} color={colors.primary500} />
-              <Text style={styles.emptyText}>All balances settled!</Text>
+              <Text style={styles.emptyText}>No expenses awaiting approval</Text>
             </View>
           ) : (
-            optimalResult.transfers.map((t: SettlementTransfer) => (
-              <View key={t.id} style={styles.transferCard}>
-                <View style={styles.transferRow}>
-                  <View style={[styles.avatar, { backgroundColor: t.fromAvatarBg || '#7C3AED' }]}>
-                    <Text style={styles.avatarText}>{(t.fromMemberName || 'U')[0]}</Text>
-                  </View>
-                  <View style={styles.transferMid}>
-                    <Text style={styles.transferName}>{t.fromMemberName}</Text>
-                    <Text style={styles.transferSubLine}>→ owes →</Text>
-                    <Text style={styles.transferName}>{t.toMemberName}</Text>
-                  </View>
-                  <View style={[styles.avatar, { backgroundColor: t.toAvatarBg || '#059669' }]}>
-                    <Text style={styles.avatarText}>{(t.toMemberName || 'U')[0]}</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.transferAmount}>
-                  {t.currencySymbol}{t.amount.toLocaleString()}
-                </Text>
-
-                <View style={styles.transferActions}>
-                  <TouchableOpacity
-                    style={styles.payUpiBtn}
-                    onPress={() => onOpenSettleModal ? onOpenSettleModal(t) : handlePayUPI(t)}
-                    activeOpacity={0.85}
-                  >
-                    <Smartphone size={13} color="#FFFFFF" />
-                    <Text style={styles.payUpiBtnText}>Pay via UPI</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.settleBtn}
-                    onPress={() => handleMarkSettled(t)}
-                    activeOpacity={0.8}
-                  >
-                    <CheckCircle2 size={13} color={colors.primary700} />
-                    <Text style={styles.settleBtnText}>Mark Settled</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
+            pendingApprovalExpenses.map((exp: any) => renderApprovalBanner(exp))
           )}
         </View>
       )}
@@ -602,7 +536,8 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
       )}
 
       <View style={{ height: 100 }} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
@@ -610,10 +545,16 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.warmCream || colors.bgApp,
+    backgroundColor: colors.warmCream,
   },
   content: {
     padding: 16,
+  },
+  listScroll: {
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: 16,
   },
 
   // ── Approval Banners ──────────────────────────────────────────────────────
@@ -623,16 +564,16 @@ const styles = StyleSheet.create({
   approvalSectionHeader: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#92400E',
+    color: colors.slate700,
     marginBottom: 10,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
   approvalCard: {
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1.5,
-    borderColor: '#FCD34D',
-    borderRadius: 16,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: cardRadius.card,
     padding: 14,
     marginBottom: 10,
     ...shadows.sm,
@@ -651,19 +592,19 @@ const styles = StyleSheet.create({
   approvalHeaderLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#D97706',
+    color: colors.slate600,
     letterSpacing: 0.4,
   },
   approvalBadge: {
-    backgroundColor: '#FDE68A',
+    backgroundColor: colors.slate100,
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 20,
+    borderRadius: cardRadius.pill,
   },
   approvalBadgeText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#92400E',
+    color: colors.slate700,
   },
   approvalExpenseTitle: {
     fontSize: 15,
@@ -698,13 +639,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginTop: 6,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: colors.slate50,
     padding: 8,
-    borderRadius: 8,
+    borderRadius: cardRadius.inner,
   },
   payerNoteText: {
     fontSize: 12,
-    color: '#059669',
+    color: colors.slate600,
     fontWeight: '600',
     flex: 1,
   },
@@ -720,7 +661,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#059669',
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: cardRadius.inner,
     gap: 6,
   },
   approveBtnText: {
@@ -733,41 +674,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.bgCard,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: colors.borderSubtle,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: cardRadius.inner,
     gap: 6,
   },
   disputeBtnText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#DC2626',
+    color: colors.slate700,
   },
 
   // ── Metrics Grid ──────────────────────────────────────────────────────────
+  metricsTabsCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: cardRadius.card,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    overflow: 'hidden',
+    marginBottom: 16,
+    marginHorizontal: -16,
+    marginTop: -16,
+    ...shadows.sm,
+  },
   metricsGrid: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 16,
+    padding: 12,
   },
   metricCard: {
     flex: 1,
-    backgroundColor: colors.warmSurface || colors.bgCard,
+    backgroundColor: colors.bgCard,
     padding: 12,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.borderWarmLight || colors.borderSubtle,
-    ...shadows.sm,
+    borderRadius: 0,
   },
   metricCardOwed: {
-    backgroundColor: colors.accentOliveSubtle || colors.primary50,
-    borderColor: 'rgba(70, 75, 41, 0.2)',
+    backgroundColor: colors.bgCard,
   },
   metricCardOwes: {
-    backgroundColor: colors.accentAmberLight || '#FFF7ED',
-    borderColor: '#fde68a',
+    backgroundColor: colors.bgCard,
   },
   metricTitleRow: {
     flexDirection: 'row',
@@ -795,24 +742,22 @@ const styles = StyleSheet.create({
   // ── Sub-Tab Toggle ────────────────────────────────────────────────────────
   subTabRow: {
     flexDirection: 'row',
-    backgroundColor: colors.warmSurfaceMuted || colors.slate100,
-    padding: 4,
-    borderRadius: radii.md,
-    marginBottom: 16,
-    gap: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+    paddingHorizontal: 2,
   },
   subTabBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: radii.sm,
+    paddingVertical: 11,
+    borderBottomWidth: 2.5,
+    borderBottomColor: 'transparent',
     gap: 6,
   },
   subTabBtnActive: {
-    backgroundColor: '#ffffff',
-    ...shadows.sm,
+    borderBottomColor: colors.primary600,
   },
   subTabText: {
     fontSize: 11.5,
@@ -834,7 +779,7 @@ const styles = StyleSheet.create({
 
   // ── Settlement Transfer Cards ─────────────────────────────────────────────
   transferCard: {
-    backgroundColor: colors.warmSurface || colors.bgCard,
+    backgroundColor: colors.bgCard,
     borderRadius: radii.md,
     padding: 14,
     marginBottom: 10,
@@ -921,7 +866,7 @@ const styles = StyleSheet.create({
   expenseRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.warmSurface || colors.bgCard,
+    backgroundColor: colors.bgCard,
     borderRadius: radii.sm,
     padding: 12,
     marginBottom: 8,

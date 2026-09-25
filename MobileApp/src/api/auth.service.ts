@@ -173,12 +173,28 @@ export const authService = {
    * Upload profile picture directly to AWS S3 via backend
    */
   async uploadProfilePicture(file: { uri: string; name?: string; type?: string }): Promise<AuthResponse> {
+    const fileName = file.name || `photo_${Date.now()}.jpg`;
+    const extension = fileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const mimeTypeFromName: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      heic: 'image/heic',
+      heif: 'image/heif',
+    };
+    const resolvedMime = (file.type && file.type.startsWith('image/')) ? file.type : (mimeTypeFromName[extension] || 'image/jpeg');
+
     const formData = new FormData();
-    formData.append('picture', {
-      uri: file.uri,
-      name: file.name || `photo_${Date.now()}.jpg`,
-      type: file.type || 'image/jpeg',
-    } as any);
+    const fileResponse = await fetch(file.uri);
+    const fileBlob = await fileResponse.blob();
+    const safeBlob = fileBlob && fileBlob.size > 0
+      ? fileBlob.slice(0, fileBlob.size, resolvedMime)
+      : new Blob([await fileResponse.arrayBuffer()], { type: resolvedMime });
+
+    formData.append('picture', safeBlob, fileName);
+
     return apiRequest<AuthResponse>('/users/profile/picture', {
       method: 'POST',
       body: formData,

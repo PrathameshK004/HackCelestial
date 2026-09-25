@@ -59,8 +59,11 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   onConfirmSettlement,
 }) => {
   const isOnline = true;
-  const [fromId, setFromId] = useState(initialPayerId || members[1]?.id || members[0]?.id || 'user-2');
-  const [toId, setToId] = useState(initialReceiverId || members[0]?.id || 'user-1');
+  const defaultPayerId = initialPayerId || members.find((member) => member.balance < -0.01)?.id || members[0]?.id || 'user-2';
+  const [fromId] = useState(defaultPayerId);
+  const [toId, setToId] = useState(
+    initialReceiverId || members.find((member) => member.id !== defaultPayerId && member.balance > 0.01)?.id || members.find((member) => member.id !== defaultPayerId)?.id || 'user-1'
+  );
   const [amount, setAmount] = useState(initialAmount ? String(initialAmount) : '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -193,30 +196,13 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
               </View>
             </View>
 
-            {/* Who Is Paying */}
-            <Text style={styles.sectionLabel}>Who Is Paying?</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-              {members.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[styles.memberChip, fromId === m.id && styles.memberChipActive]}
-                  onPress={() => setFromId(m.id)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.chipAvatar, { backgroundColor: m.avatarBg }]}>
-                    <Text style={styles.chipAvatarText}>{m.name.charAt(0)}</Text>
-                  </View>
-                  <Text style={[styles.chipText, fromId === m.id && styles.chipTextActive]}>
-                    {m.name.split(' ')[0]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {/* The authenticated debtor is the only permitted payer. */}
+            <Text style={styles.sectionLabel}>You Are Paying</Text>
 
             {/* Paying To */}
             <Text style={styles.sectionLabel}>Paying To</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-              {members.map((m) => (
+              {members.filter((m) => m.id !== fromId && m.balance > 0.01).map((m) => (
                 <TouchableOpacity
                   key={m.id}
                   style={[styles.memberChip, toId === m.id && styles.memberChipActive]}

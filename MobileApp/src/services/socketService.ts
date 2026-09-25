@@ -139,8 +139,9 @@ class SocketService {
         this.lastConnectErrorLogged = now;
       }
 
-      // Attempt fallback server if primary fails and fallback server is different
-      if (!this.hasTriedFallback && SERVER_BASE !== FALLBACK_SERVER_BASE) {
+      // Attempt fallback server only when the active server is the remote Render host.
+      // Local-device development should stay pinned to the local backend instead of bouncing to Render.
+      if (!this.hasTriedFallback && SERVER_BASE.includes('onrender.com') && FALLBACK_SERVER_BASE !== SERVER_BASE) {
         this.hasTriedFallback = true;
         console.log(`🔄 [Socket.io] Switching to fallback server: ${FALLBACK_SERVER_BASE}`);
         this.currentServerBase = FALLBACK_SERVER_BASE;

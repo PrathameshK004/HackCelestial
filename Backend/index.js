@@ -82,6 +82,7 @@ const { startKafkaConsumer, stopKafkaConsumer } = require('./utils/kafkaConsumer
 
 // Start Server
 const PORT = process.env.PORT || 4000;
+const HOST = process.env.HOST || '0.0.0.0';
 const server = http.createServer(app);
 
 // Initialize Socket.io Server
@@ -90,8 +91,8 @@ initSocketServer(server);
 initializeDatabase()
   .then(() => {
     console.log('PostgreSQL connected and users table is ready');
-    server.listen(PORT, async () => {
-      console.log(`Server is running on port ${PORT}`);
+    server.listen(PORT, HOST, async () => {
+      console.log(`Server is running on http://${HOST}:${PORT}`);
 
       // Asynchronously initialize Kafka Event-Driven Notification Services
       initKafkaProducer().catch((e) => console.warn('[Kafka] Producer startup note:', e.message));

@@ -10,7 +10,7 @@ const { createToken, createRefreshToken, verifyRefreshToken } = require('../util
 const { verifyPassword } = require('../utils/verify.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const { saveUserPushToken, removeUserPushToken } = require('../utils/notification.util');
-const { uploadProfilePictureToS3, deleteS3Object, isS3Configured } = require('../utils/s3.util');
+const { uploadProfilePictureToS3, deleteS3Object, getProfilePictureFromS3, isS3Configured } = require('../utils/s3.util');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -40,7 +40,8 @@ module.exports = {
     verifyTwoFactorLogin,
     revokeAllSessions,
     uploadProfilePicture,
-    removeProfilePicture
+    removeProfilePicture,
+    getProfilePicture
 };
 
 /**
@@ -1280,6 +1281,35 @@ async function removeProfilePicture(req, res) {
     } catch (err) {
         console.error("Remove profile picture error:", err);
         return sendError(res, "Failed to remove profile picture", err, 500);
+    }
+}
+
+/**
+ * Stream a stored profile picture without requiring the S3 object to be public.
+ */
+async function getProfilePicture(req, res) {
+    const key = String(req.query.key || '');
+
+    if (!key.startsWith('profile-pictures/')) {
+        return sendError(res, 'Invalid profile picture key', null, 400);
+    }
+
+    try {
+        const object = await getProfilePictureFromS3(key);
+        if (!object || !object.Body) {
+            return sendError(res, 'Profile picture is unavailable', null, 404);
+        }
+
+        res.set('Cache-Control', 'public, max-age=31536000, immutable');
+        if (object.ContentType) res.type(object.ContentType);
+        if (object.ContentLength) res.set('Content-Length', String(object.ContentLength));
+        return object.Body.pipe(res);
+    } catch (err) {
+        if (err.name === 'NoSuchKey' || err.name === 'NotFound') {
+            return sendError(res, 'Profile picture is unavailable', null, 404);
+        }
+        console.error('Profile picture read error:', err);
+        return sendError(res, 'Failed to load profile picture', null, 502);
     }
 }
 

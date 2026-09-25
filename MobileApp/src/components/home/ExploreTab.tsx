@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Building,
   Home,
@@ -327,6 +328,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   onCreateTrip,
   onRefresh,
 }) => {
+  const insets = useSafeAreaInsets();
   const { trips, refreshTrips } = useTrips();
   const [refreshing, setRefreshing] = useState(false);
   const [exploreStays, setExploreStays] = useState<CuratedStay[]>(CURATED_STAYS);
@@ -745,8 +747,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
           </View>
         )}
 
-        {/* Extra spacing for floating bottom dock */}
-        <View style={{ height: 110 }} />
+        <View style={{ height: 64 + insets.bottom }} />
       </ScrollView>
 
       {/* =========================================================================

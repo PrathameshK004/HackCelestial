@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Search, Inbox } from 'lucide-react-native';
 import { colors, radii } from '../../theme/colors';
+import { screenHeader } from '../../theme/theme';
 import { useAuth } from '../../context/AuthContext';
 import { IllustrationAvatar } from './IllustrationAvatar';
 
@@ -97,7 +98,7 @@ export const Header: React.FC<HeaderProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: 64,
+    height: screenHeader.height,
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',

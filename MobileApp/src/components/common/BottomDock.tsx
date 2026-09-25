@@ -9,7 +9,8 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Compass, Split, CreditCard, Plus } from 'lucide-react-native';
 import { RoundtableGroupsIcon } from './RoundtableGroupsIcon';
 import { colors, radii, shadows } from '../../theme/colors';
@@ -27,11 +28,12 @@ export const BottomDock: React.FC<BottomDockProps> = ({
   onTabChange,
   onCreatePress,
 }) => {
+  const insets = useSafeAreaInsets();
   const activeColor = '#059669'; // Green active color
   const inactiveColor = '#8E8E93'; // Muted tab text and icon
 
   return (
-    <View style={styles.dockContainer}>
+    <View style={[styles.dockContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
       <View style={styles.dockInner}>
         {/* Tab 1: Explore */}
         <TouchableOpacity
@@ -150,7 +152,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(0, 0, 0, 0.08)',
     paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 26 : 12,
     zIndex: 100,
     ...shadows.lg,
   },
@@ -173,7 +174,7 @@ const styles = StyleSheet.create({
   topIndicator: {
     position: 'absolute',
     top: -8,
-    width: 32,
+    width: 40,
     height: 3.5,
     borderBottomLeftRadius: 3,
     borderBottomRightRadius: 3,

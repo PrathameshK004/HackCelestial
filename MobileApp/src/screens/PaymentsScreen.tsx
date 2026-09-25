@@ -24,9 +24,7 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  SafeAreaView,
   StatusBar,
-  Platform,
   ActivityIndicator,
   Alert,
   Share,
@@ -60,6 +58,7 @@ import { apiRequest } from '../api/apiClient';
 import { UpiPaymentModal } from '../components/payment/UpiPaymentModal';
 import { QrCameraScannerModal } from '../components/payment/QrCameraScannerModal';
 import { ParsedUpiData } from '../utils/upi.util';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type FilterDirection = 'all' | 'paid' | 'received';
@@ -153,6 +152,7 @@ interface PaymentsScreenProps {
 
 // ══════════════════════════════════════════════════════════════════════════════
 export const PaymentsScreen: React.FC<PaymentsScreenProps> = ({ onBack }) => {
+  const insets = useSafeAreaInsets();
   const { trips, refreshTrips } = useTrips();
   const { token } = useAuth();
 
@@ -442,7 +442,7 @@ export const PaymentsScreen: React.FC<PaymentsScreenProps> = ({ onBack }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* ── Top Navigation ── */}
-      <View style={styles.topNav}>
+      <View style={[styles.topNav, { paddingTop: insets.top + 8 }]}>
         <View style={styles.navLeft}>
           {onBack && (
             <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
@@ -821,7 +821,7 @@ export const PaymentsScreen: React.FC<PaymentsScreenProps> = ({ onBack }) => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.bgApp,
   },
 
   /* ── Top Nav ── */
@@ -829,7 +829,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 12,
     paddingBottom: 10,
     paddingHorizontal: 16,
     backgroundColor: '#FFFFFF',
@@ -844,10 +843,6 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 34,
     height: 34,
-    borderRadius: 17,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -885,7 +880,7 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',

@@ -5,7 +5,7 @@
 
 export const colors = {
   // App Backgrounds
-  bgApp: '#f8fafc',
+  bgApp: '#fdfefe',
   bgCard: '#ffffff',
   bgCardMuted: '#f1f5f9',
   bgCardHover: '#f8fafc',

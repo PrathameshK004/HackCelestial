@@ -29,28 +29,68 @@ export const getApiBase = (): string => {
     process.env.REACT_APP_API_URL ||
     process.env.VITE_API_URL;
 
+  const localBase = getLocalDevUrl();
+
   if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
     const trimmed = envUrl.trim().replace(/\/+$/, '');
-    if (__DEV__ && (trimmed === 'https://triptual-api.onrender.com/api' || trimmed.includes('localhost') || trimmed.includes('127.0.0.1'))) {
-      return getLocalDevUrl();
+    const isRenderUrl = /onrender\.com|render\.com/i.test(trimmed);
+    const isLocalUrl = trimmed.includes('localhost') || trimmed.includes('127.0.0.1') || trimmed.includes('10.0.2.2');
+
+    if (isRenderUrl || (__DEV__ && isLocalUrl)) {
+      return localBase;
     }
+
+    if (isLocalUrl) {
+      return trimmed;
+    }
+
     return trimmed;
   }
 
   if (__DEV__) {
-    return getLocalDevUrl();
+    return localBase;
   }
 
-  return 'https://triptual-api.onrender.com/api';
+  return localBase;
 };
 
 export const API_BASE = getApiBase();
-export const FALLBACK_API_BASE = API_BASE.includes('onrender.com')
-  ? getLocalDevUrl()
-  : 'https://triptual-api.onrender.com/api';
+export const FALLBACK_API_BASE = API_BASE.includes('onrender.com') ? getLocalDevUrl() : API_BASE;
 
 export const SERVER_BASE = API_BASE.replace(/\/api\/?$/, '');
 export const FALLBACK_SERVER_BASE = FALLBACK_API_BASE.replace(/\/api\/?$/, '');
+
+export const getProfilePictureUri = (avatar: string): string => {
+  const normalized = String(avatar || '').trim();
+  if (!normalized) return '';
+
+  if (normalized.startsWith('data:image/')) return normalized;
+
+  const hasProfilePicturesKey = normalized.includes('profile-pictures/');
+  if (hasProfilePicturesKey) {
+    try {
+      const url = new URL(normalized);
+      const key = decodeURIComponent(url.pathname.replace(/^\//, ''));
+      if (key.startsWith('profile-pictures/')) {
+        return `${API_BASE}/users/profile/picture?key=${encodeURIComponent(key)}`;
+      }
+    } catch {
+      const key = normalized.split('profile-pictures/')[1] || normalized.replace(/^\/+/, '');
+      return `${API_BASE}/users/profile/picture?key=${encodeURIComponent(`profile-pictures/${key}`)}`;
+    }
+  }
+
+  if (normalized.startsWith('profile-pictures/') || normalized.startsWith('/profile-pictures/')) {
+    const key = normalized.replace(/^\/+/, '');
+    return `${API_BASE}/users/profile/picture?key=${encodeURIComponent(key)}`;
+  }
+
+  if (normalized.startsWith('/uploads/') || normalized.startsWith('/illustrations/') || normalized.startsWith('/')) {
+    return `${SERVER_BASE}${normalized.startsWith('/') ? normalized : `/${normalized}`}`;
+  }
+
+  return normalized;
+};
 
 export interface RequestOptions extends RequestInit {
   token?: string | null;
@@ -133,20 +173,30 @@ async function fetchWithTimeout(url: string, options: RequestOptions = {}): Prom
     });
 
     if (!res.ok && res.status >= 400 && res.status !== 401 && res.status !== 403 && url.startsWith(API_BASE) && API_BASE !== FALLBACK_API_BASE) {
-      const fallbackUrl = url.replace(API_BASE, FALLBACK_API_BASE);
       try {
-        const fallbackController = new AbortController();
-        const fallbackTimeout = setTimeout(() => fallbackController.abort(), timeoutMs);
-        const fallbackRes = await fetch(fallbackUrl, {
-          ...fetchOptions,
-          signal: fallbackController.signal,
-        });
-        clearTimeout(fallbackTimeout);
-        if (fallbackRes.ok) {
-          return fallbackRes;
+        const responseText = await res.clone().text();
+        const isSuspended = /Service Suspended|This service has been suspended|502|Bad Gateway/i.test(responseText);
+        if (isSuspended) {
+          const fallbackUrl = url.replace(API_BASE, FALLBACK_API_BASE);
+          const fallbackController = new AbortController();
+          const fallbackTimeout = setTimeout(() => fallbackController.abort(), timeoutMs);
+          try {
+            const fallbackRes = await fetch(fallbackUrl, {
+              ...fetchOptions,
+              signal: fallbackController.signal,
+            });
+            clearTimeout(fallbackTimeout);
+            if (fallbackRes.ok) {
+              return fallbackRes;
+            }
+          } catch (fallbackErr) {
+            // Fall back to original response if fallback request fails
+          } finally {
+            clearTimeout(fallbackTimeout);
+          }
         }
-      } catch (fallbackErr) {
-        // Fall back to original response if fallback request fails
+      } catch (_) {
+        // Ignore clone/text read issues and continue with the original response.
       }
     }
 

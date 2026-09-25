@@ -115,16 +115,43 @@ async function addExpense(req, res) {
             resolvedPayerMemberId = userMember ? userMember.id : acceptedMembers[0].id;
         }
 
-        const payer = acceptedMembers.find(m => String(m.id) === String(resolvedPayerMemberId)) || acceptedMembers[0];
+        const payer = acceptedMembers.find(m => String(m.id) === String(resolvedPayerMemberId));
+        if (!payer) {
+            client.release();
+            return sendError(res, "Payer must be a confirmed member of this group", null, 400);
+        }
 
         // Prepare participants list - ONLY accepted members can be allocated splits
         let participantItems = [];
         if (Array.isArray(participants) && participants.length > 0) {
+            const normalizedParticipants = participants.map(p => {
+                const raw = typeof p === 'string' ? { memberId: p } : p || {};
+                const memberId = raw.memberId ?? raw.member_id ?? raw.id ?? raw.participantId ?? raw.participant_id;
+                const found = acceptedMembers.find(m => String(m.id) === String(memberId));
+                return {
+                    ...raw,
+                    memberId: memberId !== undefined && memberId !== null ? String(memberId) : undefined,
+                    userId: raw.userId ?? raw.user_id ?? (found ? found.user_id : null),
+                    shareType: raw.shareType ?? raw.share_type ?? 'EQUAL_UNIT',
+                    shareValue: raw.shareValue ?? raw.share_value ?? raw.shareAmount ?? raw.share_amount ?? raw.computedAmount ?? raw.amount ?? 1.0,
+                    isOptedIn: raw.isOptedIn ?? raw.is_opted_in ?? true
+                };
+            }).filter(p => p.memberId !== undefined && p.memberId !== null && p.memberId !== '');
+
+            const participantIds = normalizedParticipants.map(p => String(p.memberId));
+            if (new Set(participantIds).size !== participantIds.length) {
+                client.release();
+                return sendError(res, "Participants must be unique", null, 400);
+            }
+
             // Check if user requested someone who hasn't accepted yet
-            const validParticipants = participants.filter(p => {
-                const pId = typeof p === 'string' ? String(p) : String(p.memberId || p.id);
-                return acceptedMemberIdSet.has(pId);
-            });
+            const invalidParticipants = normalizedParticipants.filter(p => !acceptedMemberIdSet.has(String(p.memberId)));
+            if (invalidParticipants.length > 0) {
+                client.release();
+                return sendError(res, "All participants must be confirmed members of this group", null, 400);
+            }
+
+            const validParticipants = normalizedParticipants;
 
             if (validParticipants.length === 0) {
                 client.release();
@@ -132,19 +159,9 @@ async function addExpense(req, res) {
             }
 
             participantItems = validParticipants.map(p => {
-                if (typeof p === 'string') {
-                    const found = acceptedMembers.find(m => String(m.id) === String(p));
-                    return {
-                        memberId: p,
-                        userId: found ? found.user_id : null,
-                        shareType: 'EQUAL_UNIT',
-                        shareValue: 1.0,
-                        isOptedIn: true
-                    };
-                }
-                const found = acceptedMembers.find(m => String(m.id) === String(p.memberId || p.id));
+                const found = acceptedMembers.find(m => String(m.id) === String(p.memberId));
                 return {
-                    memberId: p.memberId || p.id,
+                    memberId: p.memberId,
                     userId: found ? found.user_id : (p.userId || null),
                     shareType: p.shareType || 'EQUAL_UNIT',
                     shareValue: p.shareValue !== undefined ? Number(p.shareValue) : 1.0,
@@ -160,6 +177,21 @@ async function addExpense(req, res) {
                 shareValue: 1.0,
                 isOptedIn: true
             }));
+        }
+
+        const computedSplits = calculateExpenseSplits(
+            numAmount,
+            effectiveSplitModel,
+            participantItems
+        );
+
+        const splitTotalCents = computedSplits.reduce(
+            (sum, split) => sum + Math.round(Number(split.computedAmount || 0) * 100),
+            0
+        );
+        if (computedSplits.length === 0 || splitTotalCents !== Math.round(numAmount * 100)) {
+            client.release();
+            return sendError(res, "Expense splits must add up exactly to the total amount", null, 400);
         }
 
         // Anti-duplicate / Idempotency check:
@@ -224,16 +256,12 @@ async function addExpense(req, res) {
 
         // Calculate 60% approval threshold for group companions
         const otherMembers = allMembers.filter(m => String(m.id) !== String(payer.id));
-        
+
         let verificationStatus = rawVerificationStatus;
         if (!verificationStatus) {
-            // Normal expense added to group:
-            // If group has other companions, 60% validation is strictly required before it becomes official.
-            // If solo trip without companions, auto-verify immediately.
-            verificationStatus = otherMembers.length > 0 ? 'PENDING_APPROVAL' : 'VERIFIED';
-        } else if (verificationStatus === 'VERIFIED' && otherMembers.length > 0 && !rawSmsProof) {
-            // Normal manual expense cannot bypass companion validation without bank SMS proof
-            verificationStatus = 'PENDING_APPROVAL';
+            // A recorded expense is authoritative financial data. Approval remains
+            // available when a caller explicitly requests PENDING_APPROVAL.
+            verificationStatus = 'VERIFIED';
         }
 
         const requiredApprovals = verificationStatus === 'PENDING_APPROVAL'
@@ -547,7 +575,7 @@ async function deleteExpense(req, res) {
             description: exp.description,
             amount: Number(exp.amount),
             currency: exp.currency || access.group?.currency
-        }).catch(() => {});
+        }).catch(() => { });
 
         return sendSuccess(res, "Expense deleted and ledger updated successfully", { expenseId });
 
@@ -669,6 +697,7 @@ async function getGroupSettlement(req, res) {
                 verificationStatus: e.verification_status || 'VERIFIED',
                 verification_status: e.verification_status || 'VERIFIED',
                 createdAt: e.created_at,
+                paidByMemberId: e.paid_by_member_id,
                 paidBy: {
                     id: payer.id,
                     name: payer.name,
@@ -704,6 +733,23 @@ async function getGroupSettlement(req, res) {
             fromAvatarBg: t.from?.avatarBg || netResult.memberLookup[t.fromMemberId]?.avatarBg || '#dc2626',
             toAvatarBg: t.to?.avatarBg || netResult.memberLookup[t.toMemberId]?.avatarBg || '#059669',
         }));
+        const balances = netResult.memberSummaries.map(member => ({
+            memberId: member.id,
+            userId: member.userId,
+            name: member.name,
+            totalPaid: member.totalPaid,
+            totalShare: member.totalOwed,
+            netBalance: member.netBalance,
+            currency: group.currency
+        }));
+        const debts = simplifiedTransfers.map(transfer => ({
+            fromUserId: transfer.fromMemberId,
+            toUserId: transfer.toMemberId,
+            fromName: transfer.fromMemberName,
+            toName: transfer.toMemberName,
+            amount: transfer.amount,
+            currency: transfer.currency
+        }));
 
         return sendSuccess(res, "Settlement calculated successfully", {
             groupId: group.id,
@@ -716,6 +762,17 @@ async function getGroupSettlement(req, res) {
             optimizedTxCount: simplifiedTransfers.length,
             members: netResult.memberSummaries,
             transfers: simplifiedTransfers,
+            balances,
+            debts,
+            graph: {
+                nodes: members.map(member => ({ id: member.id, name: member.name })),
+                edges: debts.map(debt => ({
+                    from: debt.fromUserId,
+                    to: debt.toUserId,
+                    amount: debt.amount,
+                    currency: debt.currency
+                }))
+            },
             // settlementPlan wrapper for backward compatibility
             settlementPlan: {
                 transfers: simplifiedTransfers,
@@ -800,6 +857,16 @@ async function recordSettlement(req, res) {
             resolvedFromId = userMember ? userMember.id : null;
         }
 
+        const authenticatedMember = members.find(m => String(m.user_id) === String(userId));
+        if (!authenticatedMember) {
+            client.release();
+            return sendError(res, "Authenticated user is not a member of this group", null, 403);
+        }
+        if (String(resolvedFromId) !== String(authenticatedMember.id)) {
+            client.release();
+            return sendError(res, "Only the authenticated debtor can record a settlement", null, 403);
+        }
+
         const fromMember = members.find(m => String(m.id) === String(resolvedFromId));
         const toMember = members.find(m => String(m.id) === String(toMemberId));
 
@@ -858,7 +925,7 @@ async function recordSettlement(req, res) {
             amount: numAmount,
             currency,
             paymentMethod
-        }).catch(() => {});
+        }).catch(() => { });
 
         return sendSuccess(res, "Settlement recorded successfully", {
             ...insertRes.rows[0],
@@ -932,7 +999,7 @@ async function settleGroup(req, res) {
             groupName: updateRes.rows[0].name,
             organizerName: actorName,
             organizerUserId: userId
-        }).catch(() => {});
+        }).catch(() => { });
 
         return sendSuccess(res, "Group trip marked as settled successfully", updateRes.rows[0]);
 

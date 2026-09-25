@@ -17,7 +17,7 @@ import {
   RefreshControl,
   Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path, Defs, Marker, Text as SvgText, G } from 'react-native-svg';
 import {
   ArrowLeft,
@@ -209,6 +209,7 @@ interface GroupMenuScreenProps {
 }
 
 export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack }) => {
+  const insets = useSafeAreaInsets();
   const { trips, addExpense, deleteExpense, addMember, recordSettlement, refreshTrips } = useTrips();
   const { user } = useAuth();
   const [votingExpenseId, setVotingExpenseId] = useState<string | null>(null);
@@ -241,6 +242,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const [settleAmount, setSettleAmount] = useState<number | undefined>(undefined);
 
   const trip = trips.find((t) => t.id === tripId) || trips[0];
+  const financialDataError = Boolean(trip?.settlementError);
   const members = trip?.members || [];
   const rawExpenses = trip?.expenses || [];
   const expenses = useMemo(() => {
@@ -316,7 +318,11 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   }, [trip, members]);
 
   // Personal user balance calculation
-  const userMember = members.find((m) => m.isUser);
+  const userMember = members.find((m) =>
+    m.isUser ||
+    (user && m.userId && String(m.userId) === String(user.id)) ||
+    (user && m.email && String(m.email).toLowerCase() === String(user.email || user.emailId || '').toLowerCase())
+  );
   const userBalance = userMember?.balance ?? trip?.userBalance ?? 0;
   const isUserOwed = userBalance > 0.01;
   const doesUserOwe = userBalance < -0.01;
@@ -417,7 +423,10 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   }, [isAddExpenseOpen, isSettleUpOpen, isMembersModalOpen, expandedExpenseId, activeTab, onBack]);
 
   return (
-    <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      style={[styles.safeContainer, { paddingTop: insets.top }]}
+      edges={['left', 'right']}
+    >
       <View style={styles.container}>
       {/* Top Navigation Bar */}
       <View style={styles.navBar}>
@@ -489,14 +498,18 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                   doesUserOwe && styles.balanceValueOwes,
                 ]}
               >
-                {isUserOwed
+                {financialDataError
+                  ? 'Unable to load balances'
+                  : isUserOwed
                   ? `+₹${Math.abs(userBalance).toLocaleString()}`
                   : doesUserOwe
                   ? `-₹${Math.abs(userBalance).toLocaleString()}`
                   : '₹0.00'}
               </Text>
               <Text style={styles.balanceStatusNote}>
-                {isUserOwed
+                {financialDataError
+                  ? 'Unable to calculate settlement. Please try again.'
+                  : isUserOwed
                   ? 'You are owed by group travelers'
                   : doesUserOwe
                   ? 'You owe other group travelers'
@@ -504,18 +517,20 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.calloutSettleBtn}
-              onPress={() => {
-                setSettlePayerId(undefined);
-                setSettleReceiverId(undefined);
-                setSettleAmount(undefined);
-                setIsSettleUpOpen(true);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.calloutSettleText}>Settle Up</Text>
-            </TouchableOpacity>
+            {doesUserOwe && !financialDataError && (
+              <TouchableOpacity
+                style={styles.calloutSettleBtn}
+                onPress={() => {
+                  setSettlePayerId(userMember?.id);
+                  setSettleReceiverId(undefined);
+                  setSettleAmount(undefined);
+                  setIsSettleUpOpen(true);
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.calloutSettleText}>Settle Up</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Bottom: Standard Underlined Tabular Menu */}
@@ -553,16 +568,6 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.underlinedTabItem, activeTab === 'transactions' && styles.underlinedTabItemActive]}
-              onPress={() => setActiveTab('transactions')}
-              activeOpacity={0.7}
-            >
-              <History size={14} color={activeTab === 'transactions' ? colors.primary600 : colors.slate500} />
-              <Text style={[styles.underlinedTabText, activeTab === 'transactions' && styles.underlinedTabTextActive]}>
-                Audit
-              </Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -737,12 +742,20 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         )}
 
         {/* TAB 2: DEBTS (Smart Settlement Optimizer + Graph) */}
-        {activeTab === 'debts' && optimalResult && (
+        {activeTab === 'debts' && financialDataError && (
+          <View style={styles.emptyWrap}>
+            <AlertTriangle size={40} color={colors.accentRose} />
+            <Text style={styles.emptyTitle}>Unable to load balances</Text>
+            <Text style={styles.emptySubtitle}>Settlement data could not be calculated. Pull to refresh and try again.</Text>
+          </View>
+        )}
+
+        {activeTab === 'debts' && !financialDataError && optimalResult && (
           <View>
             {/* Optimizer Stats Header */}
             <View style={styles.optimizerHeaderBox}>
               <View style={styles.optHeaderRow}>
-                <TrendingUp size={16} color="#ffffff" />
+                <TrendingUp size={16} color={colors.primary600} />
                 <Text style={styles.optTitle}>Smart Debt Minimization</Text>
               </View>
               {optimalResult.transfers.length > 0 ? (
@@ -875,7 +888,8 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                       )}
 
                       {/* Action Button */}
-                      <View style={styles.debtActions}>
+                      {isUserDebtor && (
+                        <View style={styles.debtActions}>
                         <TouchableOpacity
                           style={styles.debtUpiBtn}
                           onPress={() => handleOpenSettleTransfer(t)}
@@ -884,7 +898,8 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                           <Smartphone size={13} color="#ffffff" />
                           <Text style={styles.debtUpiBtnText}>Pay / Settle via UPI</Text>
                         </TouchableOpacity>
-                      </View>
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -894,7 +909,15 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         )}
 
         {/* TAB 3: BALANCES TABLE */}
-        {activeTab === 'balances' && (
+        {activeTab === 'balances' && financialDataError && (
+          <View style={styles.emptyWrap}>
+            <AlertTriangle size={40} color={colors.accentRose} />
+            <Text style={styles.emptyTitle}>Unable to load balances</Text>
+            <Text style={styles.emptySubtitle}>Settlement data could not be calculated. Pull to refresh and try again.</Text>
+          </View>
+        )}
+
+        {activeTab === 'balances' && !financialDataError && (
           <View style={styles.balancesCard}>
             <View style={styles.balancesCardHeader}>
               <Text style={styles.balancesCardTitle}>Member Balance Breakdown</Text>
@@ -977,11 +1000,11 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         )}
         </View>
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 54 + insets.bottom }} />
       </ScrollView>
 
       {/* Floating Bottom Action Bar */}
-      <View style={styles.floatingActionBar}>
+      <View style={[styles.floatingActionBar, { paddingBottom: insets.bottom }]}>
         <TouchableOpacity
           style={[styles.primaryAddExpenseBtn, isExpenseLocked && { backgroundColor: '#475569' }]}
           onPress={handleAttemptAddExpense}
@@ -997,14 +1020,21 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.secondarySettleBtn}
-          onPress={() => setIsSettleUpOpen(true)}
-          activeOpacity={0.85}
-        >
-          <IndianRupee size={17} color={colors.primary700} strokeWidth={2.4} />
-          <Text style={styles.secondarySettleText}>Settle Up</Text>
-        </TouchableOpacity>
+        {doesUserOwe && !financialDataError && (
+          <TouchableOpacity
+            style={styles.secondarySettleBtn}
+            onPress={() => {
+              setSettlePayerId(userMember?.id);
+              setSettleReceiverId(undefined);
+              setSettleAmount(undefined);
+              setIsSettleUpOpen(true);
+            }}
+            activeOpacity={0.85}
+          >
+            <IndianRupee size={17} color={colors.primary700} strokeWidth={2.4} />
+            <Text style={styles.secondarySettleText}>Settle Up</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Modals */}
@@ -1058,10 +1088,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgApp,
   },
   navBar: {
-    height: 56,
+    height: 64,
     backgroundColor: colors.bgCard,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSubtle,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
@@ -1117,7 +1149,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 14,
   },
@@ -1163,7 +1195,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
     backgroundColor: colors.bgCard,
-    paddingHorizontal: 8,
+    paddingHorizontal: 20,
   },
   underlinedTabItem: {
     flex: 1,
@@ -1386,10 +1418,13 @@ const styles = StyleSheet.create({
     color: colors.slate700,
   },
   optimizerHeaderBox: {
-    backgroundColor: colors.slate900,
+    backgroundColor: colors.bgCard,
     borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
     padding: 16,
     marginBottom: 14,
+    ...shadows.sm,
   },
   optHeaderRow: {
     flexDirection: 'row',
@@ -1400,11 +1435,11 @@ const styles = StyleSheet.create({
   optTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#ffffff',
+    color: colors.slate900,
   },
   optSubtitle: {
     fontSize: 11.5,
-    color: colors.slate300,
+    color: colors.slate500,
     marginTop: 3,
     marginBottom: 10,
   },
@@ -1415,7 +1450,7 @@ const styles = StyleSheet.create({
   },
   optStatChip: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.slate100,
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 4,
@@ -1424,12 +1459,12 @@ const styles = StyleSheet.create({
   optStatValue: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#ffffff',
+    color: colors.primary700,
   },
   optStatLabel: {
     fontSize: 9,
     fontWeight: '600',
-    color: colors.slate400,
+    color: colors.slate500,
     textTransform: 'uppercase',
     marginTop: 2,
   },
@@ -1472,11 +1507,11 @@ const styles = StyleSheet.create({
   },
   debtCardUserOwes: {
     borderColor: '#fca5a5',
-    backgroundColor: '#fff9f9',
+    backgroundColor: '#ffffff',
   },
   debtCardUserOwed: {
     borderColor: '#6ee7b7',
-    backgroundColor: '#f0fdf9',
+    backgroundColor: '#ffffff',
   },
   debtIndexBadge: {
     position: 'absolute',

@@ -38,6 +38,7 @@ import {
   Clock,
 } from 'lucide-react-native';
 import { colors } from '../theme/colors';
+import { screenHeader } from '../theme/theme';
 import { InboxNotification, PendingInvitation } from '../types';
 import { socketService } from '../services/socketService';
 import { storage } from '../database/storage';
@@ -829,7 +830,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
     paddingHorizontal: 8,
-    height: 52,
+    height: screenHeader.height,
   },
   backBtn: {
     padding: 8,

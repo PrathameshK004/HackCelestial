@@ -101,6 +101,48 @@ const initializeDatabase = async () => {
         ALTER TABLE groups ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
     `);
 
+    // 4. Payment Transactions / Real-time gateway simulation records
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS payment_transactions (
+            id UUID PRIMARY KEY,
+            user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            group_id UUID REFERENCES groups(id) ON DELETE SET NULL,
+            order_id VARCHAR(255) NOT NULL UNIQUE,
+            payment_id VARCHAR(255),
+            amount NUMERIC(12, 2) NOT NULL,
+            currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+            status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+            payment_method VARCHAR(50) NOT NULL DEFAULT 'RAZORPAY',
+            payment_gateway VARCHAR(50) NOT NULL DEFAULT 'RAZORPAY',
+            receipt VARCHAR(255),
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            captured_at TIMESTAMPTZ,
+            expires_at TIMESTAMPTZ
+        )
+    `);
+
+    await pool.query(`
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES groups(id) ON DELETE SET NULL;
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS order_id VARCHAR(255);
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS payment_id VARCHAR(255);
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS amount NUMERIC(12, 2) DEFAULT 0;
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'INR';
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'PENDING';
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50) DEFAULT 'RAZORPAY';
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS payment_gateway VARCHAR(50) DEFAULT 'RAZORPAY';
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS receipt VARCHAR(255);
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ;
+        ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_transactions_order ON payment_transactions(order_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_transactions_payment_id ON payment_transactions(payment_id) WHERE payment_id IS NOT NULL;
+    `);
+
     // 4. Group Members Table
     await pool.query(`
         CREATE TABLE IF NOT EXISTS group_members (
@@ -152,7 +194,6 @@ const initializeDatabase = async () => {
         ALTER TABLE groups ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE';
         ALTER TABLE group_members ADD COLUMN IF NOT EXISTS upi_id VARCHAR(255);
         ALTER TABLE group_members ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
-        ALTER TABLE settlements ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
     `);
 
     // 6. Expenses Table
@@ -188,8 +229,6 @@ const initializeDatabase = async () => {
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS required_approvals INT DEFAULT 1;
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS raw_sms_proof TEXT;
         ALTER TABLE expenses ALTER COLUMN paid_by DROP NOT NULL;
-        ALTER TABLE expenses ALTER COLUMN shares DROP NOT NULL;
-        ALTER TABLE expenses ALTER COLUMN shares SET DEFAULT '[]'::jsonb;
     `);
 
     // 7. Expense Splits Table (Participants & exact calculated shares)
@@ -224,6 +263,9 @@ const initializeDatabase = async () => {
             status VARCHAR(50) NOT NULL DEFAULT 'COMPLETED',
             settled_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+    `);
+    await pool.query(`
+        ALTER TABLE settlements ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
     `);
 
     // 9. Immutable Ledger Audit Log Table

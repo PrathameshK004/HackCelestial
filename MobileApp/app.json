@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.yog7284.MobileApp",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow Triptual to access your camera to scan merchant UPI QR codes at counters.",
-        "NSPhotoLibraryUsageDescription": "Allow Triptual to access your photos to select a profile picture."
+        "NSPhotoLibraryUsageDescription": "Allow Triptual to access your photos to select a profile picture and support attachments.",
+        "NSPhotoLibraryAddUsageDescription": "Allow Triptual to save selected images for profile and support uploads."
       }
     },
     "androidStatusBar": {
@@ -50,7 +51,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Triptual to access your photos to select a profile picture."
+          "photosPermission": "Allow Triptual to access your photos to select a profile picture and support attachments.",
+          "cameraPermission": "Allow Triptual to access your camera to take a profile photo."
         }
       ],
       "expo-web-browser",

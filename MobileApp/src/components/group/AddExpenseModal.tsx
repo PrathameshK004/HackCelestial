@@ -31,6 +31,12 @@ interface AddExpenseModalProps {
     paidById: string;
     paidByName: string;
     splitModel: CostSharingModel;
+    participants?: Array<{
+      memberId: string;
+      shareType?: string;
+      shareValue?: number;
+      isOptedIn?: boolean;
+    }>;
     paymentMethod: 'CASH' | 'UPI';
     paymentReference?: string;
     verificationStatus?: string;
@@ -124,7 +130,15 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
         Alert.alert('Action Required', 'At least one traveler must have accepted the invitation to record expenses.');
         return;
       }
-      const otherMembersCount = acceptedMembers.filter((m) => String(m.id) !== String(payer.id)).length;
+      const participantPayload = splitModel === 'ORGANIZER_PAID'
+        ? []
+        : selectedMemberIds.map((memberId) => ({
+            memberId,
+            shareType: 'EQUAL_UNIT',
+            shareValue: 1,
+            isOptedIn: true,
+          }));
+
       await onSubmit({
         title: title.trim(),
         amount: numAmount,
@@ -132,9 +146,10 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
         paidById: payer.id,
         paidByName: payer.name || 'Member',
         splitModel,
+        participants: participantPayload,
         paymentMethod,
         paymentReference: paymentMethod === 'UPI' ? 'UPI-' + Date.now().toString().substring(7) : undefined,
-        verificationStatus: otherMembersCount > 0 ? 'PENDING_APPROVAL' : 'VERIFIED',
+        verificationStatus: 'VERIFIED',
       });
 
       // Reset form

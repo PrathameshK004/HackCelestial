@@ -194,7 +194,7 @@ export const TripsTab: React.FC<TripsTabProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAF8F5',
+    backgroundColor: colors.warmCream,
   },
   content: {
     padding: 16,

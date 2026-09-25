@@ -7,6 +7,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Trip, Expense, Participant, SettlementTransfer, ExpenseParticipantSplit, CostSharingModel } from '../types';
 import { groupService } from '../api/group.service';
+import { useAuth } from './AuthContext';
 
 interface TripContextType {
   trips: Trip[];
@@ -25,6 +26,12 @@ interface TripContextType {
       paidById: string;
       paidByName: string;
       splitModel: CostSharingModel;
+      participants?: Array<{
+        memberId: string;
+        shareType?: string;
+        shareValue?: number;
+        isOptedIn?: boolean;
+      }>;
       splits?: ExpenseParticipantSplit[];
       paymentMethod: 'CASH' | 'UPI';
       paymentReference?: string;
@@ -52,6 +59,7 @@ interface TripContextType {
 const TripContext = createContext<TripContextType | undefined>(undefined);
 
 export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -78,14 +86,21 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const [detailRes, expRes, settleRes] = await Promise.all([
             groupService.getGroupById(tripId).catch(() => null),
             groupService.getExpenses(tripId).catch(() => null),
-            groupService.getSettlement(tripId).catch(() => null),
+            groupService.getSettlement(tripId).catch(() => ({ data: null, settlementError: true })),
           ]);
 
           const detail = detailRes?.data || {};
           const expData = expRes?.data || [];
           const settleData = settleRes?.data || {};
 
-          return mapServerGroupToTrip(g, detail, expData, settleData);
+          return mapServerGroupToTrip(
+            g,
+            detail,
+            expData,
+            settleData,
+            user,
+            Boolean(settleRes && 'settlementError' in settleRes && settleRes.settlementError)
+          );
         })
       );
 
@@ -96,7 +111,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     loadTrips();
@@ -125,6 +140,12 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       paidById: string;
       paidByName: string;
       splitModel: CostSharingModel;
+      participants?: Array<{
+        memberId: string;
+        shareType?: string;
+        shareValue?: number;
+        isOptedIn?: boolean;
+      }>;
       splits?: ExpenseParticipantSplit[];
       paymentMethod: 'CASH' | 'UPI';
       paymentReference?: string;
@@ -132,6 +153,15 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       rawSmsProof?: string;
     }
   ): Promise<void> => {
+    const payloadParticipants = Array.isArray(expenseData.participants) && expenseData.participants.length > 0
+      ? expenseData.participants
+      : (Array.isArray(expenseData.splits) ? expenseData.splits.map((split) => ({
+          memberId: split.participantId,
+          shareType: split.shareType || 'EQUAL_UNIT',
+          shareValue: split.shareValue ?? 1,
+          isOptedIn: split.isOptedIn !== false,
+        })) : []);
+
     await groupService.addExpense(tripId, {
       description: expenseData.title,
       amount: expenseData.amount,
@@ -140,7 +170,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       paidByMemberId: expenseData.paidById,
       paymentMethod: expenseData.paymentMethod,
       paymentReference: expenseData.paymentReference,
-      participants: expenseData.splits || [],
+      participants: payloadParticipants,
       verificationStatus: expenseData.verificationStatus,
       rawSmsProof: expenseData.rawSmsProof,
     });
@@ -239,7 +269,7 @@ export const useTrips = (): TripContextType => {
   return context;
 };
 
-function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: any): Trip {
+function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: any, currentUser: any, settlementError = false): Trip {
   const tripId = String(g.id || g.group_id);
 
   // Build a netBalance lookup from server settlement data (members array)
@@ -254,6 +284,11 @@ function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: a
 
   const members: Participant[] = (detail?.members || g.travelers || g.members || []).map((m: any) => {
     const mKey = String(m.id || m.memberId || m.email);
+    const isUser = Boolean(
+      m.isUser ||
+      (currentUser && String(m.userId || m.user_id || '') === String(currentUser.id || '')) ||
+      (currentUser && m.email && String(m.email).toLowerCase() === String(currentUser.email || currentUser.emailId || '').toLowerCase())
+    );
     const sm = settleMemberMap.get(mKey);
     // Prefer server-computed netBalance; fall back to group-level balance
     const balance = sm?.netBalance !== undefined
@@ -267,7 +302,7 @@ function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: a
       email: m.email || '',
       role: m.role === 'Organizer' ? 'Organizer' : 'Traveler',
       avatarBg: m.avatarBg || m.avatar_bg || '#059669',
-      isUser: Boolean(m.isUser),
+      isUser,
       balance,
       status: (m.status || (m.role === 'Organizer' ? 'ACCEPTED' : 'PENDING')) as any,
       inviteCode: m.inviteCode || null,
@@ -360,5 +395,6 @@ function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: a
     members,
     expenses,
     settlements,
+    settlementError,
   };
 }

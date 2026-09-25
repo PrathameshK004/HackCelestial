@@ -8,30 +8,30 @@
  * Reference: SecurityScreen.tsx (baseline design)
  */
 
-import { colors } from './colors';
+import { colors } from "./colors";
 
 // ── Background Colors ─────────────────────────────────────────────────────────
 export const backgrounds = {
   /** Main screen / page background */
-  screen: '#F8FAFC',
+  screen: "#FDFEFE",
   /** Card / section surface */
-  card: '#FFFFFF',
+  card: "#FFFFFF",
   /** Header background (matches screen) */
-  header: '#F8FAFC',
+  header: "#FDFEFE",
   /** Input field background */
-  input: '#F8FAFC',
+  input: "#F8FAFC",
   /** Modal overlay */
-  overlay: 'rgba(15, 23, 42, 0.65)',
+  overlay: "rgba(15, 23, 42, 0.65)",
   /** Modal card surface */
-  modal: '#FFFFFF',
+  modal: "#FFFFFF",
   /** Info box / highlight area */
-  infoBox: '#ECFDF5',
+  infoBox: "#ECFDF5",
   /** Danger / destructive action background */
-  danger: '#FFE4E6',
+  danger: "#FFE4E6",
   /** Enable confirmation icon bg */
-  enableBg: '#ECFDF5',
+  enableBg: "#ECFDF5",
   /** Disable confirmation icon bg */
-  disableBg: '#FEF2F2',
+  disableBg: "#FEF2F2",
 } as const;
 
 // ── Border Colors ─────────────────────────────────────────────────────────────
@@ -108,10 +108,10 @@ export const fontSize = {
 
 // ── Font Weights ──────────────────────────────────────────────────────────────
 export const fontWeight = {
-  bold: '800' as const,
-  semiBold: '700' as const,
-  medium: '600' as const,
-  regular: '400' as const,
+  bold: "800" as const,
+  semiBold: "700" as const,
+  medium: "600" as const,
+  regular: "400" as const,
 } as const;
 
 // ── Spacing ───────────────────────────────────────────────────────────────────
@@ -140,6 +140,20 @@ export const spacing = {
   otpHeight: 42,
 } as const;
 
+// ── Screen Header Specification ─────────────────────────────────────────────
+export const screenHeader = {
+  height: 64,
+  horizontalPadding: spacing.headerHorizontal,
+  topPadding: 6,
+  bottomPadding: spacing.headerBottom,
+  backgroundColor: backgrounds.card,
+  borderColor: borders.header,
+  titleFontSize: 18,
+  titleFontWeight: fontWeight.bold,
+  titleColor: colors.slate900,
+  titleLetterSpacing: -0.3,
+} as const;
+
 // ── Combined Theme Export ─────────────────────────────────────────────────────
 export const theme = {
   backgrounds,
@@ -148,6 +162,7 @@ export const theme = {
   fontSize,
   fontWeight,
   spacing,
+  screenHeader,
 } as const;
 
 export default theme;

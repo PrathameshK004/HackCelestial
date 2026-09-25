@@ -5,7 +5,7 @@ let usersController = require('../controllers/user.controller');
 let paymentController = require('../controllers/payment.controller');
 let illustrationController = require('../controllers/illustration.controller');
 let userMiddleware = require('../middleware/user.middleware');
-const { sendSuccess } = require('../utils/response.util');
+const { sendSuccess, sendError } = require('../utils/response.util');
 
 let verifyToken = require('../middleware/auth.middleware');
 
@@ -46,16 +46,27 @@ router.post('/revoke-sessions', verifyToken, usersController.revokeAllSessions);
 
 // Profile picture / Avatar upload with multer in memory
 const multer = require('multer');
+const allowedExt = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif']);
+
+const isAllowedImageFile = (file) => {
+    const mimetype = String(file?.mimetype || '').toLowerCase();
+    const extension = String(file?.originalname || '').split('.').pop()?.toLowerCase() || '';
+    const hasImageMime = mimetype.startsWith('image/');
+    const hasAllowedExtension = allowedExt.has(`.${extension}`);
+
+    return hasImageMime || hasAllowedExtension;
+};
+
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
         fileSize: 5 * 1024 * 1024, // 5MB limit
     },
     fileFilter: (req, file, cb) => {
-        if (file.mimetype && (file.mimetype.startsWith('image/') || file.mimetype === 'application/octet-stream')) {
+        if (isAllowedImageFile(file)) {
             cb(null, true);
         } else {
-            cb(new Error('Only image files (JPG, PNG, WEBP, GIF, HEIC) are allowed'), false);
+            cb(new Error('Only image files (JPG, PNG, WEBP, GIF, HEIC, HEIF) are allowed'), false);
         }
     }
 });
@@ -94,6 +105,7 @@ router.patch('/profile', verifyToken, usersController.updateProfile);
 router.post('/profile', verifyToken, usersController.updateProfile);
 
 // S3 Profile picture upload & removal
+router.get('/profile/picture', usersController.getProfilePicture);
 router.post('/profile/picture', verifyToken, handleUploadMiddleware, usersController.uploadProfilePicture);
 router.post('/profile/avatar-upload', verifyToken, handleUploadMiddleware, usersController.uploadProfilePicture);
 router.delete('/profile/picture', verifyToken, usersController.removeProfilePicture);

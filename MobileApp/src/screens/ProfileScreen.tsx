@@ -39,13 +39,16 @@ import {
   X,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
+import { screenHeader } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
 import { useTrips } from '../context/TripContext';
 import { Trip } from '../types';
 import { authService } from '../api/auth.service';
+import { storage } from '../database/storage';
 import { DatePickerModal } from '../components/common/DatePickerModal';
 import { IllustrationAvatar } from '../components/common/IllustrationAvatar';
 import { IllustrationPickerModal } from '../components/common/IllustrationPickerModal';
+import * as ImagePicker from 'expo-image-picker';
 
 type TravelStyle = 'Boutique' | 'Coastal' | 'Nature' | 'Urban' | 'Mountain';
 
@@ -170,67 +173,63 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
   const handlePickFromGallery = async () => {
     setIsAvatarChoiceModalOpen(false);
 
-    let ImagePicker: typeof import('expo-image-picker') | null = null;
-    try {
-      // Dynamic require prevents Hermes crashing at bundle startup if client binary was built without expo-image-picker
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      ImagePicker = require('expo-image-picker');
-    } catch (e: any) {
-      console.warn('ExponentImagePicker native module not linked in current binary:', e);
-    }
-
-    if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.status !== 'granted') {
       Alert.alert(
-        'Module Rebuild Required',
-        'Photo library access requires an updated app binary. Please rebuild your app (e.g. npx expo run:ios or EAS Build) to pick custom photos. In the meantime, you can use our built-in illustration avatars!'
+        'Permission needed',
+        'Please allow access to your photo library to upload a profile picture.'
       );
       return;
     }
 
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      exif: false,
+    });
+
+    if (result.canceled || !result.assets?.[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    const uploadFile = {
+      uri: asset.uri,
+      name: asset.fileName || `profile-${Date.now()}.jpg`,
+      type: asset.mimeType || 'image/jpeg',
+    };
+
+    setIsUploadingAvatar(true);
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert(
-          'Permission Needed',
-          'Please allow access to your photo library to select a profile picture.'
-        );
-        return;
+      const res = await authService.uploadProfilePicture(uploadFile);
+      const responseData = (res as any)?.data ?? {};
+      const avatarUrl = responseData.avatar || responseData.user?.avatar || responseData.url;
+      if (!avatarUrl) {
+        throw new Error(res.message || 'Profile picture upload failed.');
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.85,
-      });
+      const persisted = await updateUser({ avatar: avatarUrl });
+      const refreshedUser = await refreshProfile?.();
+      const finalAvatar = refreshedUser?.avatar || persisted.user?.avatar || avatarUrl;
 
-      if (result.canceled || !result.assets || result.assets.length === 0) {
-        return;
-      }
+      const nextAuthUser = {
+        ...(user || {}),
+        id: user?.id || refreshedUser?.id || persisted.user?.id || (user as any)?.userId || (refreshedUser as any)?.userId || (persisted.user as any)?.userId,
+        name: user?.name || user?.username || refreshedUser?.name || refreshedUser?.username,
+        username: user?.username || user?.name || refreshedUser?.username || refreshedUser?.name,
+        email: user?.email || user?.emailId || refreshedUser?.email || refreshedUser?.emailId,
+        emailId: user?.emailId || user?.email || refreshedUser?.emailId || refreshedUser?.email,
+        avatar: finalAvatar || null,
+      };
 
-      const asset = result.assets[0];
-      setIsUploadingAvatar(true);
+      await storage.setAuthUser(nextAuthUser as any);
+      setAvatar(finalAvatar || null);
 
-      const fileName = asset.fileName || `avatar_${Date.now()}.jpg`;
-      const mimeType = asset.mimeType || 'image/jpeg';
-
-      const uploadRes = await authService.uploadProfilePicture({
-        uri: asset.uri,
-        name: fileName,
-        type: mimeType,
-      });
-
-      const newAvatarUrl = (uploadRes.data as any)?.avatar || (uploadRes as any).avatar;
-      if (newAvatarUrl) {
-        setAvatar(newAvatarUrl);
-        await refreshProfile?.();
-        Alert.alert('Profile Picture Saved', 'Your photo has been uploaded to AWS S3 and saved to your profile.');
-      } else {
-        await refreshProfile?.();
-      }
+      Alert.alert('Profile Picture Saved', 'Your custom photo has been uploaded successfully.');
     } catch (err: any) {
-      console.error('Gallery pick error:', err);
-      Alert.alert('Upload Failed', err.message || 'Failed to upload photo to S3.');
+      Alert.alert('Upload Failed', err.message || 'Failed to upload profile picture.');
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -283,12 +282,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
     }
   };
 
-  const headerTopPadding = Platform.OS === 'android'
-    ? Math.max(StatusBar.currentHeight || 0, insets.top, 24) + 10
-    : insets.top > 0
-      ? 12
-      : 16;
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -296,9 +289,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
       <View
         style={[
           styles.header,
-          {
-            paddingTop: headerTopPadding,
-          },
         ]}
       >
         <View style={styles.headerLeft}>
@@ -459,7 +449,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
         style={[
           styles.stickyBottomBar,
           {
-            paddingBottom: Math.max(insets.bottom, 16),
+            paddingBottom: insets.bottom,
           },
         ]}
       >
@@ -598,11 +588,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: screenHeader.horizontalPadding,
+    paddingTop: screenHeader.topPadding,
+    paddingBottom: screenHeader.bottomPadding,
+    minHeight: screenHeader.height,
+    backgroundColor: screenHeader.backgroundColor,
     borderBottomWidth: 1,
-    borderBottomColor: colors.slate100,
+    borderBottomColor: screenHeader.borderColor,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -615,10 +607,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.3,
+    fontSize: screenHeader.titleFontSize,
+    fontWeight: screenHeader.titleFontWeight,
+    color: screenHeader.titleColor,
+    letterSpacing: screenHeader.titleLetterSpacing,
   },
   headerRight: {
     flexDirection: 'row',

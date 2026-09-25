@@ -13,7 +13,13 @@ export interface User {
   avatar?: string | null;
   avatarBg?: string;
   upiId?: string | null;
-  travelStyle?: 'Boutique' | 'Coastal' | 'Nature' | 'Urban' | 'Mountain' | string;
+  travelStyle?:
+    | "Boutique"
+    | "Coastal"
+    | "Nature"
+    | "Urban"
+    | "Mountain"
+    | string;
   currency?: string;
   dob?: string | null;
   twoFactorEnabled?: boolean;
@@ -72,12 +78,12 @@ export interface RegisterUserPayload {
   code?: string;
 }
 
-export type CostSharingModel = 
-  | 'EQUAL' 
-  | 'PARTICIPANT_BASED' 
-  | 'ROOM_SHARE' 
-  | 'ACTIVITY_BASED' 
-  | 'ORGANIZER_PAID';
+export type CostSharingModel =
+  | "EQUAL"
+  | "PARTICIPANT_BASED"
+  | "ROOM_SHARE"
+  | "ACTIVITY_BASED"
+  | "ORGANIZER_PAID";
 
 export interface Participant {
   id: string;
@@ -85,14 +91,14 @@ export interface Participant {
   userId?: string;
   name: string;
   email?: string;
-  role: 'Organizer' | 'Traveler';
+  role: "Organizer" | "Traveler";
   avatarBg: string;
   isUser?: boolean;
   balance: number;
-  status?: 'ACCEPTED' | 'PENDING' | 'REJECTED' | 'DECLINED';
+  status?: "ACCEPTED" | "PENDING" | "REJECTED" | "DECLINED";
   inviteCode?: string;
   inviteUrl?: string;
-  syncStatus?: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';
+  syncStatus?: "SYNCED" | "PENDING" | "LOCAL_ONLY";
 }
 
 export interface ExpenseParticipantSplit {
@@ -103,16 +109,20 @@ export interface ExpenseParticipantSplit {
   isOptedIn: boolean;
   shareType?: string;
   shareValue?: number;
-  syncStatus?: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';
+  syncStatus?: "SYNCED" | "PENDING" | "LOCAL_ONLY";
 }
 
-export type VerificationStatus = 'AUTO_VERIFIED' | 'PENDING_APPROVAL' | 'VERIFIED' | 'DISPUTED';
+export type VerificationStatus =
+  | "AUTO_VERIFIED"
+  | "PENDING_APPROVAL"
+  | "VERIFIED"
+  | "DISPUTED";
 
 export interface ExpenseApproval {
   memberId: string;
   memberName: string;
   userId?: string;
-  action: 'APPROVE' | 'DISPUTE';
+  action: "APPROVE" | "DISPUTE";
   timestamp: string;
 }
 
@@ -123,16 +133,16 @@ export interface Expense {
   description?: string;
   amount: number;
   currency: string;
-  category: 'Stay' | 'Food' | 'Transport' | 'Activities' | 'Supplies' | 'Other';
+  category: "Stay" | "Food" | "Transport" | "Activities" | "Supplies" | "Other";
   paidById: string;
   paidByName: string;
   splitModel: CostSharingModel;
   splitCount: number;
-  paymentMethod: 'CASH' | 'UPI';
+  paymentMethod: "CASH" | "UPI";
   paymentReference?: string;
   date: string;
   time: string;
-  syncStatus: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';
+  syncStatus: "SYNCED" | "PENDING" | "LOCAL_ONLY";
   splits?: ExpenseParticipantSplit[];
   // Verification & Approval (60% consensus flow)
   verificationStatus?: VerificationStatus;
@@ -154,12 +164,12 @@ export interface SettlementTransfer {
   amount: number;
   currency: string;
   currencySymbol: string;
-  status: 'pending' | 'completed';
+  status: "pending" | "completed";
   paymentMethod?: string;
   paymentReference?: string;
   remarks?: string;
   dueDate?: string;
-  syncStatus: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';
+  syncStatus: "SYNCED" | "PENDING" | "LOCAL_ONLY";
   createdAt?: string;
 }
 
@@ -167,8 +177,8 @@ export interface Trip {
   id: string;
   name: string;
   destination: string;
-  tripType: 'Friends' | 'Family' | 'Corporate' | 'Student' | 'Other';
-  status: 'active' | 'upcoming' | 'completed';
+  tripType: "Friends" | "Family" | "Corporate" | "Student" | "Other";
+  status: "active" | "upcoming" | "completed";
   startDate?: string;
   endDate?: string;
   currency: string;
@@ -180,26 +190,27 @@ export interface Trip {
   createdBy?: string;
   description?: string;
   coverGradient?: string;
-  syncStatus: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY';
+  syncStatus: "SYNCED" | "PENDING" | "LOCAL_ONLY";
   members?: Participant[];
   expenses?: Expense[];
   settlements?: SettlementTransfer[];
+  settlementError?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
 
 export interface SyncQueueItem {
   id: string;
-  entityType: 'TRIP' | 'EXPENSE' | 'MEMBER' | 'SETTLEMENT' | 'PAYMENT';
+  entityType: "TRIP" | "EXPENSE" | "MEMBER" | "SETTLEMENT" | "PAYMENT";
   entityId: string;
-  operation: 'CREATE' | 'UPDATE' | 'DELETE';
+  operation: "CREATE" | "UPDATE" | "DELETE";
   endpoint: string;
-  httpMethod: 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  httpMethod: "POST" | "PUT" | "DELETE" | "PATCH";
   payload: string; // JSON stringified
   idempotencyKey?: string;
   retryCount: number;
   maxRetries: number;
-  status: 'PENDING' | 'SYNCING' | 'FAILED' | 'RESOLVED';
+  status: "PENDING" | "SYNCING" | "FAILED" | "RESOLVED";
   errorMessage?: string;
   createdAt: string;
   updatedAt: string;
@@ -245,15 +256,15 @@ export interface InviteDetails {
   organizerName: string;
   invitedEmail?: string;
   role: string;
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+  status: "PENDING" | "ACCEPTED" | "REJECTED" | "EXPIRED";
   memberCount: number;
   members?: Array<{
     id: string | number;
     name: string;
     email: string;
-    role: 'Organizer' | 'Traveler' | 'Admin';
+    role: "Organizer" | "Traveler" | "Admin";
     avatarBg?: string;
-    status?: 'ACCEPTED' | 'PENDING' | 'REJECTED';
+    status?: "ACCEPTED" | "PENDING" | "REJECTED";
   }>;
   expiresAt: string;
 }
@@ -264,7 +275,6 @@ export interface InboxNotification {
   description: string;
   timestamp: string;
   isRead: boolean;
-  category: 'trip' | 'expense' | 'security' | 'system';
-  actionTab?: 'explore' | 'trips' | 'expenses' | 'payments';
+  category: "trip" | "expense" | "security" | "system";
+  actionTab?: "explore" | "trips" | "expenses" | "payments";
 }
-

@@ -72,6 +72,14 @@ export const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ onBack, on
   const [endDate, setEndDate] = useState('');
   const [datePickerTarget, setDatePickerTarget] = useState<'start' | 'end' | null>(null);
 
+  const getTodayIso = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Formats YYYY-MM-DD for clean iOS display (e.g., Oct 10, 2026)
   const formatDisplayDate = (isoStr: string) => {
     if (!isoStr) return '';
@@ -84,6 +92,8 @@ export const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ onBack, on
     if (isNaN(d.getTime())) return isoStr;
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
+
+  const todayIso = getTodayIso();
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -172,13 +182,17 @@ export const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ onBack, on
       newErrors.startDate = 'Please enter start date';
     } else if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate.trim())) {
       newErrors.startDate = 'Use format YYYY-MM-DD';
+    } else if (startDate.trim() < todayIso) {
+      newErrors.startDate = 'Start date cannot be in the past';
     }
 
     if (!endDate.trim()) {
       newErrors.endDate = 'Please enter end date';
     } else if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate.trim())) {
       newErrors.endDate = 'Use format YYYY-MM-DD';
-    } else if (startDate.trim() && new Date(endDate.trim()) < new Date(startDate.trim())) {
+    } else if (endDate.trim() < todayIso) {
+      newErrors.endDate = 'End date cannot be in the past';
+    } else if (startDate.trim() && endDate.trim() < startDate.trim()) {
       newErrors.endDate = 'End date must be on or after start date';
     }
 
@@ -846,7 +860,13 @@ export const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ onBack, on
           onClose={() => setDatePickerTarget(null)}
           title={datePickerTarget === 'start' ? 'Select Start Date' : 'Select End Date'}
           selectedDate={datePickerTarget === 'start' ? startDate : endDate}
-          minDate={datePickerTarget === 'end' ? startDate : undefined}
+          minDate={
+            datePickerTarget === 'start'
+              ? todayIso
+              : startDate && startDate > todayIso
+                ? startDate
+                : todayIso
+          }
           onSelectDate={(isoDate) => {
             if (datePickerTarget === 'start') {
               setStartDate(isoDate);
@@ -869,11 +889,11 @@ export const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ onBack, on
 const styles = StyleSheet.create({
   safeContainer: {
     flex: 1,
-    backgroundColor: '#F2F2F7', // Apple standard grouped background
+    backgroundColor: colors.bgApp,
   },
   keyboardContainer: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: colors.bgApp,
   },
 
   // iOS Top Navigation
@@ -884,7 +904,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 10,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: colors.bgApp,
   },
   navBackBtn: {
     width: 44,
@@ -1035,6 +1055,7 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
     paddingVertical: 9,
     minHeight: 52,
@@ -1048,7 +1069,7 @@ const styles = StyleSheet.create({
   inputRowLabel: {
     fontSize: 10.5,
     fontWeight: '600',
-    color: '#8E8E93',
+    color: '#475569',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
     marginBottom: 2,
@@ -1056,7 +1077,7 @@ const styles = StyleSheet.create({
   inputRowField: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#1C1C1E',
+    color: '#0F172A',
     padding: 0,
     height: 20,
   },
