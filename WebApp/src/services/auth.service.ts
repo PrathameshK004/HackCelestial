@@ -38,6 +38,20 @@ export const authService = {
     });
   },
 
+  async toggleTwoFactor(enable: boolean): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/2fa/toggle', {
+      method: 'POST',
+      body: JSON.stringify({ enable }),
+    });
+  },
+
+  async verifyTwoFactorLogin(payload: { emailId: string; code: string }): Promise<AuthResponse> {
+    return request<AuthResponse>('/users/2fa/verify-login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   /**
    * Direct 1-step user registration with instant authentication
    */

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Receipt, Tag, Users, Check, Sliders, Home, Compass, ShieldCheck } from 'lucide-react';
+import { X, Receipt, Users, Check, Sliders, Home, Compass, ShieldCheck } from 'lucide-react';
 import { GroupCardItem, GroupExpense } from '../../mock/dashboardMockData';
 import { groupService } from '../../services/group.service';
 
@@ -184,12 +184,12 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
   };
 
   return (
-    <div className="modal-backdrop-blur">
-      <div className="settle-modal-card" style={{ maxWidth: '620px', width: '92%' }}>
-        <div className="modal-top-bar">
-          <div className="modal-heading-group">
-            <span className="badge-pill-emerald">Multi-Vendor Ledger</span>
+    <div className="modal-backdrop-blur quick-expense-backdrop">
+      <div className="settle-modal-card quick-expense-modal-card">
+        <div className="quick-expense-header">
+          <div>
             <h3 className="modal-main-title">Add Group Expense</h3>
+            <p>Add expense and split costs with group</p>
           </div>
           <button type="button" className="btn-close-circle" onClick={onClose}>
             <X size={18} />
@@ -197,12 +197,12 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
         </div>
 
         {feedbackError && (
-          <div style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', borderRadius: '8px', color: '#fca5a5', fontSize: '13px', margin: '0 20px 10px' }}>
+          <div className="quick-expense-error">
             {feedbackError}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="settle-form-content">
+        <form id="quick-expense-form" onSubmit={handleSubmit} className="settle-form-content">
           {/* Select Group */}
           <div className="form-group-block">
             <label className="form-group-label">Select Group Trip</label>
@@ -223,7 +223,7 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
           </div>
 
           {/* Title & Amount */}
-          <div className="form-row-2col">
+          <div className="quick-expense-title-amount">
             <div className="form-group-block">
               <label className="form-group-label">Expense Description</label>
               <div className="input-with-icon">
@@ -266,7 +266,6 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
                   className={`category-pill-btn ${category === cat ? 'active' : ''}`}
                   onClick={() => setCategory(cat)}
                 >
-                  <Tag size={13} />
                   <span>{cat}</span>
                 </button>
               ))}
@@ -275,14 +274,14 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
 
           {/* Cost-Sharing Model (5 Models from PRD) */}
           <div className="form-group-block">
-            <label className="form-group-label">Cost-Sharing Policy (PRD Multi-Vendor Engine)</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+            <label className="form-group-label">Cost-Sharing Model</label>
+            <div className="quick-expense-model-list">
               {[
-                { id: 'EQUAL', label: 'Equal Split', icon: Users },
-                { id: 'ACTIVITY_BASED', label: 'Activity Opt-In', icon: Compass },
-                { id: 'ROOM_SHARE', label: 'Room Units', icon: Home },
-                { id: 'PARTICIPANT_BASED', label: 'Custom Fixed', icon: Sliders },
-                { id: 'ORGANIZER_PAID', label: 'Organizer Paid', icon: ShieldCheck },
+                { id: 'EQUAL', label: 'Equal Split', description: 'Divided evenly among all selected travelers', icon: Users },
+                { id: 'PARTICIPANT_BASED', label: 'Participant-Based', description: 'Per-person customized share', icon: Sliders },
+                { id: 'ROOM_SHARE', label: 'Room Share', description: 'Split based on occupied rooms', icon: Home },
+                { id: 'ACTIVITY_BASED', label: 'Activity-Based', description: 'Split only among opted-in members', icon: Compass },
+                { id: 'ORGANIZER_PAID', label: 'Organizer Sponsored', description: 'Organizer covers full cost, 0 debt', icon: ShieldCheck },
               ].map((model) => {
                 const IconComponent = model.icon;
                 const isCurrent = splitModel === model.id;
@@ -291,24 +290,15 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
                     key={model.id}
                     type="button"
                     onClick={() => setSplitModel(model.id as CostSplitModel)}
-                    style={{
-                      padding: '8px 6px',
-                      borderRadius: '8px',
-                      border: isCurrent ? '1.5px solid #10b981' : '1px solid var(--border-light, #2e3820)',
-                      background: isCurrent ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card, #1c2612)',
-                      color: isCurrent ? '#10b981' : 'var(--text-secondary, #a3b899)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '4px',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      fontWeight: isCurrent ? 600 : 500,
-                      transition: 'all 0.15s ease'
-                    }}
+                    className={`quick-expense-model ${isCurrent ? 'active' : ''}`}
+                    aria-pressed={isCurrent}
                   >
-                    <IconComponent size={16} />
-                    <span style={{ textAlign: 'center' }}>{model.label}</span>
+                    <span className="quick-expense-model-icon"><IconComponent size={17} /></span>
+                    <span className="quick-expense-model-copy">
+                      <span className="quick-expense-model-title">{model.label}</span>
+                      <span className="quick-expense-model-description">{model.description}</span>
+                    </span>
+                    {isCurrent && <Check size={17} className="quick-expense-model-check" />}
                   </button>
                 );
               })}
@@ -317,7 +307,7 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
 
           {/* Paid By */}
           <div className="form-group-block">
-            <label className="form-group-label">Paid By (Who fronted the money?)</label>
+            <label className="form-group-label">Paid By</label>
             <div className="traveler-selector-grid">
               {currentGroup?.members.map((member) => {
                 const isSelected = activePayerId === member.id;
@@ -345,17 +335,17 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
           <div className="form-group-block">
             <label className="form-group-label">
               {splitModel === 'ACTIVITY_BASED'
-                ? 'Select Travelers Participating in this Activity'
+                ? `Split Among (${selectedMemberIds.length} selected travelers)`
                 : splitModel === 'ROOM_SHARE'
-                ? 'Room Occupancy Units per Traveler (e.g. 1 = Single, 0.5 = Shared)'
+                ? 'Room Units per Traveler'
                 : splitModel === 'PARTICIPANT_BASED'
                 ? 'Custom Amount per Traveler'
                 : splitModel === 'ORGANIZER_PAID'
-                ? 'Covered 100% by Payer / Sponsor'
+                ? 'Covered by Organizer'
                 : 'Split Breakdown'}
             </label>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+            <div className="quick-expense-member-list">
               {currentGroup?.members.map((m) => {
                 const isOptedIn = selectedMemberIds.includes(m.id);
                 const estimatedOwed = liveEstimatedShares[m.id] || 0;
@@ -363,37 +353,29 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
                 return (
                   <div
                     key={m.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: isOptedIn ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
-                    }}
+                    className={`quick-expense-member-row ${isOptedIn ? 'selected' : ''}`}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="quick-expense-member-identity">
                       {splitModel === 'ACTIVITY_BASED' && (
                         <input
                           type="checkbox"
                           checked={isOptedIn}
                           onChange={() => toggleMemberOptIn(m.id)}
-                          style={{ accentColor: '#10b981', width: '16px', height: '16px', cursor: 'pointer' }}
+                          className="quick-expense-member-checkbox"
                         />
                       )}
                       <div className="avatar-dot" style={{ backgroundColor: m.avatarBg, width: '24px', height: '24px', fontSize: '11px' }}>
                         {m.name[0]}
                       </div>
-                      <span style={{ fontSize: '13px', color: isOptedIn ? '#fff' : '#6b7280' }}>
+                      <span className="quick-expense-member-name">
                         {m.name} {m.isUser && '(You)'}
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="quick-expense-member-values">
                       {splitModel === 'ROOM_SHARE' && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span style={{ fontSize: '11px', color: '#9ca3af' }}>Units:</span>
+                        <div className="quick-expense-member-input-wrap">
+                          <span>Units</span>
                           <input
                             type="number"
                             step="0.5"
@@ -401,26 +383,26 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
                             max="5"
                             value={customValues[m.id] || '1'}
                             onChange={(e) => handleCustomValueChange(m.id, e.target.value)}
-                            style={{ width: '50px', padding: '2px 4px', fontSize: '12px', background: '#1c2612', color: '#fff', border: '1px solid #374151', borderRadius: '4px' }}
+                            className="quick-expense-member-input"
                           />
                         </div>
                       )}
 
                       {splitModel === 'PARTICIPANT_BASED' && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span style={{ fontSize: '11px', color: '#9ca3af' }}>Owes:</span>
+                        <div className="quick-expense-member-input-wrap">
+                          <span>Owes</span>
                           <input
                             type="number"
                             step="any"
                             value={customValues[m.id] || ''}
                             placeholder="0.00"
                             onChange={(e) => handleCustomValueChange(m.id, e.target.value)}
-                            style={{ width: '70px', padding: '2px 4px', fontSize: '12px', background: '#1c2612', color: '#fff', border: '1px solid #374151', borderRadius: '4px' }}
+                            className="quick-expense-member-input"
                           />
                         </div>
                       )}
 
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#10b981' }}>
+                      <span className="quick-expense-member-share">
                         {currentGroup?.currencySymbol || '₹'}{estimatedOwed.toFixed(2)}
                       </span>
                     </div>
@@ -430,16 +412,12 @@ export const QuickExpenseModal: React.FC<QuickExpenseModalProps> = ({
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="modal-bottom-actions">
-            <button type="button" className="btn-cancel-flat" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-confirm-settlement" disabled={isSubmitting}>
-              {isSubmitting ? 'Saving to Ledger...' : 'Save to Ledger'}
-            </button>
-          </div>
         </form>
+        <div className="quick-expense-footer">
+          <button type="submit" form="quick-expense-form" className="quick-expense-submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Saving Expense...' : `Add Expense • ${currentGroup?.currencySymbol || '₹'}${(Number(amount) || 0).toLocaleString()}`}
+          </button>
+        </div>
       </div>
     </div>
   );

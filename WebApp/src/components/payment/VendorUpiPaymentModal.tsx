@@ -143,6 +143,7 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
   }, [userGroups, selectedGroupId]);
 
   const selectedTrip = userGroups.find((g) => g.id === selectedGroupId) || userGroups[0];
+  const isAutoVerified = verifiedResult?.verificationStatus === 'AUTO_VERIFIED';
 
   // -------------------------------------------------------------
   // Camera Scanner Lifecycle
@@ -222,7 +223,10 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
   // Instead, the user explicitly confirms whether the payment was completed or canceled.
 
   // Verify and record to PostgreSQL
-  const verifyPaymentOnReturn = async (overrideUtr?: string) => {
+  const verifyPaymentOnReturn = async (
+    overrideUtr?: string,
+    verificationStatus: 'AUTO_VERIFIED' | 'PENDING_APPROVAL' = 'PENDING_APPROVAL'
+  ) => {
     if (!selectedGroupId || !amount || isVerifying) return;
 
     setIsVerifying(true);
@@ -246,7 +250,8 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
         paymentMethod: appLabels[selectedApp] || 'UPI',
         utr: overrideUtr || utrNumber.trim() || undefined,
         vendorUpi,
-        vendorName
+        vendorName,
+        verificationStatus
       });
 
       setVerifiedResult(res.data);
@@ -397,7 +402,7 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
               {step === 'details' && '2. Trip & Expense Details'}
               {step === 'select_app' && '3. Choose Payment App'}
               {step === 'verifying' && '4. Verifying Payment'}
-              {step === 'success' && 'Expense Verified & Split!'}
+              {step === 'success' && (isAutoVerified ? 'Expense Verified & Split!' : 'Submitted for Group Approval')}
             </h2>
           </div>
 
@@ -1543,6 +1548,10 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
               Please confirm the outcome from your UPI app screen.
             </p>
 
+            <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', fontSize: '0.72rem', lineHeight: 1.45, textAlign: 'left', marginBottom: '14px' }}>
+              This browser cannot read bank SMS. Your confirmation will be submitted for group approval; no automatic bank verification is claimed.
+            </div>
+
             {/* Tracking Reference */}
             <div
               style={{
@@ -1696,23 +1705,31 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                 width: '60px',
                 height: '60px',
                 borderRadius: '50%',
-                background: '#DCFCE7',
-                color: '#15803D',
+                background: isAutoVerified ? '#DCFCE7' : '#FEF3C7',
+                color: isAutoVerified ? '#15803D' : '#D97706',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 14px'
               }}
             >
-              <CheckCircle2 size={34} />
+              {isAutoVerified ? <CheckCircle2 size={34} /> : <Clock size={34} />}
             </div>
 
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>
-              Payment Verified!
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: isAutoVerified ? 'var(--text-primary)' : '#92400E', margin: '0 0 4px' }}>
+              {isAutoVerified ? 'Payment Verified!' : 'Submitted for Group Approval'}
             </h3>
-            <p style={{ fontSize: '0.78rem', color: '#15803D', fontWeight: 600, margin: '0 0 16px' }}>
-              Committed to PostgreSQL & auto-split across {verifiedResult.groupName || selectedTrip?.name}
+            <p style={{ fontSize: '0.78rem', color: isAutoVerified ? '#15803D' : '#92400E', fontWeight: 600, margin: '0 0 10px' }}>
+              {isAutoVerified
+                ? `Committed and auto-split across ${verifiedResult.groupName || selectedTrip?.name}`
+                : `Recorded as pending approval for ${verifiedResult.groupName || selectedTrip?.name}`}
             </p>
+
+            <div style={{ padding: '8px 10px', borderRadius: '10px', background: isAutoVerified ? '#DCFCE7' : '#FEF3C7', border: `1px solid ${isAutoVerified ? '#86EFAC' : '#FDE68A'}`, color: isAutoVerified ? '#166534' : '#92400E', fontSize: '0.7rem', fontWeight: 700, marginBottom: '14px' }}>
+              {isAutoVerified
+                ? 'Bank verified · No group approval needed'
+                : `60% of group members must approve · ${verifiedResult.requiredApprovals || '?'} approvals required`}
+            </div>
 
             {/* Receipt Summary */}
             <div
@@ -1747,6 +1764,12 @@ export const VendorUpiPaymentModal: React.FC<VendorUpiPaymentModalProps> = ({
                 <span style={{ fontSize: '0.72rem', color: '#64748B' }}>Reference</span>
                 <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569' }}>
                   {verifiedResult.paymentReference}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748B' }}>Status</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: isAutoVerified ? '#15803D' : '#B45309' }}>
+                  {isAutoVerified ? 'AUTO VERIFIED' : 'PENDING APPROVAL'}
                 </span>
               </div>
             </div>
