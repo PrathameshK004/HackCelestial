@@ -113,6 +113,20 @@ async function createTicket(req, res) {
             }).catch((mailErr) => console.warn('[Ticket Confirmation Mail Error]:', mailErr.message));
         }
 
+        try {
+            const { emitTicketCreated } = require('../utils/socket.util');
+            emitTicketCreated({
+                ticketNumber: createdTicket.ticketNumber,
+                userId: req.userKey,
+                category: createdTicket.category,
+                subject: createdTicket.subject,
+                status: createdTicket.status,
+                createdAt: createdTicket.createdAt
+            });
+        } catch (socketErr) {
+            console.warn('[Socket Ticket Created Emit Note]:', socketErr.message);
+        }
+
         return sendSuccess(res, 'Support ticket submitted successfully', createdTicket, 201);
     } catch (error) {
         console.error('Create support ticket error:', error.message);
