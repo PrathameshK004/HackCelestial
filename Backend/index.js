@@ -14,7 +14,7 @@ const { sendError } = require('./utils/response.util');
 app.use(cors({
   origin: corsOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['X-Requested-With', 'Content-Type', 'Origin', 'Accept', 'Authorization'],
+  allowedHeaders: ['X-Requested-With', 'Content-Type', 'Origin', 'Accept', 'Authorization', 'Idempotency-Key'],
   exposedHeaders: ['Authorization'],
   credentials: true // Allows session cookies & headers
 }));

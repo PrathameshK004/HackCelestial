@@ -3,6 +3,7 @@ const multer = require('multer');
 const verifyToken = require('../middleware/auth.middleware');
 const authenticateSupportAdmin = require('../middleware/support-admin.middleware');
 const supportController = require('../controllers/support.controller');
+const supportAssistantController = require('../controllers/supportAssistant.controller');
 
 const router = express.Router();
 const upload = multer({
@@ -27,6 +28,7 @@ router.get('/tickets/:ticketNumber/attachment', verifyToken, supportController.g
 // Dedicated chat & document upload routes for tickets
 router.get('/tickets/:ticketNumber/messages', verifyToken, supportController.getTicketMessages);
 router.post('/tickets/:ticketNumber/messages', verifyToken, upload.single('attachment'), supportController.sendTicketMessage);
+router.post('/assistant', verifyToken, supportAssistantController.replyToSupportAssistant);
 
 
 // Admin operations (Accessible to Admin console)

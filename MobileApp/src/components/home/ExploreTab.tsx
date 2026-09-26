@@ -340,12 +340,25 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   const loadExplorePackages = async () => {
     try {
       const res: any = await apiRequest('/packages/explore');
-      const pkgs = res?.data?.packages || res?.packages;
-      if (Array.isArray(pkgs)) {
-        setExploreStays(pkgs);
-      } else {
-        setExploreStays([]);
+      const rawPackages = res?.data?.packages ?? res?.packages ?? [];
+      let pkgs: any[] = [];
+
+      if (Array.isArray(rawPackages)) {
+        pkgs = rawPackages;
+      } else if (rawPackages && typeof rawPackages === 'object') {
+        if (Array.isArray(rawPackages.value)) {
+          pkgs = rawPackages.value;
+        } else if (typeof rawPackages.value === 'string') {
+          try {
+            const parsed = JSON.parse(rawPackages.value);
+            pkgs = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            pkgs = [];
+          }
+        }
       }
+
+      setExploreStays(pkgs);
     } catch (err) {
       console.warn('Failed to load Redis-backed tour packages:', err);
       setExploreStays([]);

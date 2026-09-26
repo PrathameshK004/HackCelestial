@@ -40,6 +40,30 @@ export interface SupportAttachment {
   type: string;
 }
 
+export interface SupportAssistantMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface SupportAssistantReply {
+  answer: string;
+  sources: string[];
+}
+
+export async function askSupportAssistant(
+  messages: SupportAssistantMessage[],
+): Promise<SupportAssistantReply> {
+  const response = await apiRequest<{ data: SupportAssistantReply }>(
+    "/support/assistant",
+    {
+      method: "POST",
+      body: JSON.stringify({ messages: messages.slice(-8) }),
+      timeoutMs: 25000,
+    },
+  );
+  return response.data;
+}
+
 async function appendAttachment(
   formData: FormData,
   fieldName: string,

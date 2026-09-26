@@ -3,16 +3,17 @@
  * Left: circular profile avatar | Center: pill search bar | Right: Inbox icon
  */
 
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   TextInput,
+  Alert,
   Platform,
 } from 'react-native';
-import { Search, Inbox } from 'lucide-react-native';
+import { Search, Inbox, Mic, MicOff } from 'lucide-react-native';
 import { colors, radii } from '../../theme/colors';
 import { screenHeader } from '../../theme/theme';
 import { useAuth } from '../../context/AuthContext';
@@ -34,9 +35,72 @@ export const Header: React.FC<HeaderProps> = ({
   unreadCount = 0,
 }) => {
   const { user } = useAuth();
-  const inputRef = useRef<TextInput>(null);
+  const [isListening, setIsListening] = useState(false);
+  const speechModuleRef = useRef<{
+    stop: () => void;
+    abort: () => void;
+  } | null>(null);
+  const speechListenersRef = useRef<Array<{ remove: () => void }>>([]);
 
   const displayName = user?.name || user?.username || 'Yogesh Dandawalkar';
+
+  useEffect(() => {
+    return () => {
+      speechListenersRef.current.forEach((listener) => listener.remove());
+      speechModuleRef.current?.abort();
+    };
+  }, []);
+
+  const toggleVoiceSearch = async () => {
+    if (isListening) {
+      speechModuleRef.current?.stop();
+      return;
+    }
+
+    try {
+      const { ExpoSpeechRecognitionModule } = await import('expo-speech-recognition');
+      speechModuleRef.current = ExpoSpeechRecognitionModule;
+
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Microphone permission required', 'Allow microphone access to search by voice.');
+        return;
+      }
+
+      if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
+        Alert.alert('Speech recognition unavailable', 'Enable a speech recognition service on your device and try again.');
+        return;
+      }
+
+      speechListenersRef.current.forEach((listener) => listener.remove());
+      speechListenersRef.current = [
+        ExpoSpeechRecognitionModule.addListener('start', () => setIsListening(true)),
+        ExpoSpeechRecognitionModule.addListener('end', () => setIsListening(false)),
+        ExpoSpeechRecognitionModule.addListener('result', (event) => {
+          const transcript = event.results?.[0]?.transcript?.trim();
+          if (transcript) onSearchChange?.(transcript);
+        }),
+        ExpoSpeechRecognitionModule.addListener('error', (event) => {
+          setIsListening(false);
+          if (event.error !== 'aborted') {
+            Alert.alert('Voice search failed', event.message || 'Please try again.');
+          }
+        }),
+      ];
+
+      ExpoSpeechRecognitionModule.start({
+        lang: 'en-US',
+        interimResults: true,
+        continuous: false,
+      });
+    } catch (error) {
+      setIsListening(false);
+      Alert.alert(
+        'Voice search unavailable',
+        error instanceof Error ? error.message : 'Please rebuild the app with speech recognition enabled.'
+      );
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -57,10 +121,8 @@ export const Header: React.FC<HeaderProps> = ({
       </TouchableOpacity>
 
       {/* Center: Pill search bar */}
-      <TouchableOpacity
+      <View
         style={styles.searchPill}
-        activeOpacity={1}
-        onPress={() => inputRef.current?.focus()}
       >
         <Search
           size={16}
@@ -69,7 +131,6 @@ export const Header: React.FC<HeaderProps> = ({
           style={styles.searchIcon}
         />
         <TextInput
-          ref={inputRef}
           style={styles.searchInput}
           placeholder="Search trips, expenses, places…"
           placeholderTextColor="#9CA3AF"
@@ -80,7 +141,18 @@ export const Header: React.FC<HeaderProps> = ({
           autoCorrect={false}
           clearButtonMode="while-editing"
         />
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.voiceBtn, isListening && styles.voiceBtnListening]}
+          onPress={toggleVoiceSearch}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel={isListening ? 'Stop voice search' : 'Search by voice'}
+          accessibilityState={{ selected: isListening }}
+          hitSlop={8}
+        >
+          {isListening ? <MicOff size={17} color="#FFFFFF" /> : <Mic size={17} color="#FFFFFF" />}
+        </TouchableOpacity>
+      </View>
 
       {/* Right: Inbox icon (no circle background — bare icon like reference) */}
       <TouchableOpacity
@@ -154,6 +226,17 @@ const styles = StyleSheet.create({
     margin: 0,
     height: Platform.OS === 'android' ? 42 : undefined,
     fontWeight: '400',
+  },
+  voiceBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#747A51',
+  },
+  voiceBtnListening: {
+    backgroundColor: '#B45309',
   },
   iconBtn: {
     width: 36,

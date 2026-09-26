@@ -50,6 +50,29 @@ export interface TicketChatResponse {
   messages: TicketMessage[];
 }
 
+export interface SupportAssistantMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface SupportAssistantReply {
+  answer: string;
+  sources: string[];
+}
+
+export async function askSupportAssistant(
+  messages: SupportAssistantMessage[],
+): Promise<SupportAssistantReply> {
+  const response = await apiRequest<{ data: SupportAssistantReply }>(
+    "/support/assistant",
+    {
+      method: "POST",
+      body: JSON.stringify({ messages: messages.slice(-8) }),
+    },
+  );
+  return response.data;
+}
+
 export async function createSupportTicket(
   payload: SupportTicketPayload,
 ): Promise<SupportTicketResponse> {

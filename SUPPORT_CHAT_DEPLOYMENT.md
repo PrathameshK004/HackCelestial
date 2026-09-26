@@ -10,6 +10,12 @@
 - Socket.IO delivers immediately when clients are connected. Customer and agent clients reload persisted history on reconnect, so temporary disconnects do not lose messages.
 - The customer API and admin API use separate JWT secrets. Do not share admin signing secrets with the customer API.
 
+## FAQ Assistant
+
+The customer API exposes an authenticated `POST /api/support/assistant` endpoint for the web and mobile FAQ screens. Configure `OPENAI_API_KEY` on the customer API service only. `OPENAI_MODEL` is optional and defaults to `gpt-4o-mini`; set it on the backend to select another compatible model. Never use a `VITE_` or `EXPO_PUBLIC_` variable for provider credentials.
+
+The endpoint sends the user's question, recent chat turns, and matching help-guide excerpts to OpenAI. It does not fetch or send ticket, trip, payment, or other account data. Questions without a matching help article receive a ticket-support handoff without calling the model. Keep the guide content in `Backend/controllers/supportAssistant.controller.js` accurate as app flows change.
+
 ## Deployment Order
 
 1. Deploy the outer repository's customer API `support` branch. Its startup migration creates the outbox tables and triggers.

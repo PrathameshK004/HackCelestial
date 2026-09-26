@@ -142,7 +142,7 @@ export interface Expense {
   paymentReference?: string;
   date: string;
   time: string;
-  syncStatus: "SYNCED" | "PENDING" | "LOCAL_ONLY";
+  syncStatus: "SYNCED" | "PENDING" | "LOCAL_ONLY" | "FAILED";
   splits?: ExpenseParticipantSplit[];
   // Verification & Approval (60% consensus flow)
   verificationStatus?: VerificationStatus;

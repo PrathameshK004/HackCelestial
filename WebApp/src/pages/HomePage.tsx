@@ -32,7 +32,10 @@ import {
   ShoppingBag,
   Receipt,
   Inbox,
-  X
+  X,
+  Search,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { groupService } from '../services/group.service';
@@ -74,6 +77,21 @@ type DockTab = 'explore' | 'trips' | 'expenses' | 'profile' | 'saved';
 type ViewMode = 'gallery' | 'list' | 'map';
 type StayCategory = 'all' | 'hotel' | 'villa' | 'resort' | 'camping' | 'house';
 
+interface BrowserSpeechRecognition {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface BrowserSpeechRecognitionConstructor {
+  new (): BrowserSpeechRecognition;
+}
+
 interface CuratedStay {
   id: string;
   name: string;
@@ -110,10 +128,18 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const [dockTab, setDockTab] = useState<DockTab>('explore');
   const [viewMode, setViewMode] = useState<ViewMode>('gallery');
   const [activeCategory, setActiveCategory] = useState<StayCategory>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
   const [selectedStay, setSelectedStay] = useState<CuratedStay | null>(null);
   const [savedStays, setSavedStays] = useState<SavedTrip[]>([]);
   const savedStayIds = savedStays.map((stay) => stay.id);
   const [exploreStays, setExploreStays] = useState<CuratedStay[]>([]);
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+
+  useEffect(() => {
+    return () => speechRecognitionRef.current?.stop();
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -474,12 +500,63 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
 
   // Filtered Stays
   const filteredStays = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
     return exploreStays.filter((stay) => {
       const matchCategory =
         activeCategory === 'all' || stay.category === activeCategory;
-      return matchCategory;
+      const matchSearch = !normalizedQuery || [
+        stay.name,
+        stay.destination,
+        stay.type,
+        stay.style
+      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+      return matchCategory && matchSearch;
     });
-  }, [exploreStays, activeCategory]);
+  }, [exploreStays, activeCategory, searchQuery]);
+
+  const toggleVoiceSearch = () => {
+    if (isVoiceListening) {
+      speechRecognitionRef.current?.stop();
+      return;
+    }
+
+    const speechWindow = window as Window & {
+      SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+      webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    };
+    const SpeechRecognitionAPI = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) {
+      setVoiceError('Voice search is not supported in this browser.');
+      return;
+    }
+
+    setVoiceError('');
+    const recognition = new SpeechRecognitionAPI();
+    speechRecognitionRef.current = recognition;
+    recognition.lang = navigator.language || 'en-US';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript || '';
+      setSearchQuery(transcript);
+    };
+    recognition.onend = () => setIsVoiceListening(false);
+    recognition.onerror = (event) => {
+      setIsVoiceListening(false);
+      setVoiceError(event.error === 'not-allowed'
+        ? 'Microphone permission was denied.'
+        : 'Could not recognize speech. Please try again.');
+    };
+
+    try {
+      recognition.start();
+      setIsVoiceListening(true);
+    } catch {
+      setIsVoiceListening(false);
+      setVoiceError('Could not start voice search. Please try again.');
+    }
+  };
 
   const featuredStay = filteredStays[0] || null;
   const gridMatches = filteredStays.slice(1);
@@ -1409,9 +1486,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
         {/* ---------------- TAB: EXPLORE ---------------- */}
         {dockTab === 'explore' && (
           <main>
-            {/* Header Subtitle: 12 curated picks · San Francisco */}
+            {/* Header Subtitle: filtered curated picks · San Francisco */}
             <div className="curated-header-info">
-              <h2 className="curated-title">12 curated picks</h2>
+              <h2 className="curated-title">{filteredStays.length} curated picks</h2>
               <div className="curated-meta">
                 <span>San Francisco</span>
                 <span>·</span>
@@ -1420,6 +1497,31 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 <span>2 guests</span>
               </div>
             </div>
+
+            <div className="explore-search-wrap">
+              <Search size={18} className="explore-search-icon" aria-hidden="true" />
+              <input
+                type="search"
+                className="explore-search-input"
+                placeholder="Search destinations, stays, or styles"
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setVoiceError('');
+                }}
+                aria-label="Search destinations, stays, or styles"
+              />
+              <button
+                type="button"
+                className={`explore-mic-button ${isVoiceListening ? 'listening' : ''}`}
+                onClick={toggleVoiceSearch}
+                aria-label={isVoiceListening ? 'Stop voice search' : 'Start voice search'}
+                title={isVoiceListening ? 'Stop voice search' : 'Search by voice'}
+              >
+                {isVoiceListening ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
+            </div>
+            {voiceError && <p className="explore-voice-error" role="status">{voiceError}</p>}
 
             {/* Segmented View Switcher: Map | Gallery | List */}
             <div className="view-segmented-control">

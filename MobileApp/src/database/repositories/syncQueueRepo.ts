@@ -36,8 +36,10 @@ export const syncQueueRepo = {
 
   getPendingQueue(): SyncQueueItem[] {
     const db = getDatabase();
+    db.runSync("UPDATE sync_queue SET status = 'PENDING' WHERE status = 'SYNCING'");
     const rows = db.getAllSync<any>(
-      "SELECT * FROM sync_queue WHERE status IN ('PENDING', 'SYNCING') ORDER BY created_at ASC"
+      "SELECT * FROM sync_queue WHERE status = 'PENDING' AND (next_attempt_at IS NULL OR next_attempt_at <= ?) ORDER BY created_at ASC",
+      [new Date().toISOString()]
     );
     return rows.map((r) => ({
       id: r.id,
@@ -60,7 +62,15 @@ export const syncQueueRepo = {
   getPendingCount(): number {
     const db = getDatabase();
     const row = db.getFirstSync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM sync_queue WHERE status = 'PENDING'"
+      "SELECT COUNT(*) as count FROM sync_queue WHERE status IN ('PENDING', 'SYNCING')"
+    );
+    return row ? Number(row.count || 0) : 0;
+  },
+
+  getFailedCount(): number {
+    const db = getDatabase();
+    const row = db.getFirstSync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sync_queue WHERE status = 'FAILED'"
     );
     return row ? Number(row.count || 0) : 0;
   },
@@ -79,24 +89,42 @@ export const syncQueueRepo = {
     db.runSync('DELETE FROM sync_queue WHERE id = ?', [id]);
   },
 
-  markFailed(id: string, errorMessage: string): void {
+  markFailed(id: string, errorMessage: string, retryable: boolean): void {
     const db = getDatabase();
     const row = db.getFirstSync<any>('SELECT retry_count, max_retries FROM sync_queue WHERE id = ?', [id]);
     if (!row) return;
 
     const nextRetry = Number(row.retry_count || 0) + 1;
-    const isFatal = nextRetry >= Number(row.max_retries || 5);
+    const isFatal = !retryable;
+    const backoffMs = Math.min(15 * 60 * 1000, 1000 * (2 ** Math.min(nextRetry - 1, 10)));
+    const jitteredBackoffMs = Math.round(backoffMs * (0.8 + Math.random() * 0.4));
+    const nextAttemptAt = isFatal ? null : new Date(Date.now() + jitteredBackoffMs).toISOString();
 
     db.runSync(`
       UPDATE sync_queue 
-      SET retry_count = ?, status = ?, error_message = ?, updated_at = ?
+      SET retry_count = ?, status = ?, error_message = ?, next_attempt_at = ?, updated_at = ?
       WHERE id = ?
     `, [
       nextRetry,
       isFatal ? 'FAILED' : 'PENDING',
       errorMessage,
+      nextAttemptAt,
       new Date().toISOString(),
       id
+    ]);
+  },
+
+  retryFailed(id: string): void {
+    const db = getDatabase();
+    db.runSync("UPDATE sync_queue SET status = 'PENDING', retry_count = 0, next_attempt_at = NULL, error_message = NULL, updated_at = ? WHERE id = ? AND status = 'FAILED'", [
+      new Date().toISOString(), id
+    ]);
+  },
+
+  retryAllFailed(): void {
+    const db = getDatabase();
+    db.runSync("UPDATE sync_queue SET status = 'PENDING', retry_count = 0, next_attempt_at = NULL, error_message = NULL, updated_at = ? WHERE status = 'FAILED'", [
+      new Date().toISOString()
     ]);
   },
 

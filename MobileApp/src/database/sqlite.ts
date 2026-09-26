@@ -9,10 +9,22 @@ import { SCHEMA_SQL } from './schema';
 const DB_NAME = 'grouptrip_ledger.db';
 
 let databaseInstance: SQLite.SQLiteDatabase | null = null;
+let activeUserId: string | null = null;
+
+export function setDatabaseUser(userId: string | null): void {
+  const nextUserId = userId || null;
+  if (activeUserId === nextUserId) return;
+  databaseInstance?.closeSync();
+  databaseInstance = null;
+  activeUserId = nextUserId;
+}
 
 export function getDatabase(): SQLite.SQLiteDatabase {
   if (!databaseInstance) {
-    databaseInstance = SQLite.openDatabaseSync(DB_NAME);
+    const userSuffix = activeUserId
+      ? `_${activeUserId.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+      : '';
+    databaseInstance = SQLite.openDatabaseSync(`grouptrip_ledger${userSuffix}.db`);
     // Enable WAL mode & foreign keys for high-performance concurrent writes
     databaseInstance.execSync(`
       PRAGMA journal_mode = WAL;
@@ -20,6 +32,19 @@ export function getDatabase(): SQLite.SQLiteDatabase {
     `);
     // Initialize Schema
     databaseInstance.execSync(SCHEMA_SQL);
+    try {
+      databaseInstance.execSync('ALTER TABLE sync_queue ADD COLUMN next_attempt_at TEXT;');
+    } catch (_) {}
+    for (const statement of [
+      "ALTER TABLE expenses ADD COLUMN verification_status TEXT DEFAULT 'VERIFIED';",
+      "ALTER TABLE expenses ADD COLUMN approvals_json TEXT DEFAULT '[]';",
+      'ALTER TABLE expenses ADD COLUMN required_approvals INTEGER DEFAULT 0;',
+      'ALTER TABLE expenses ADD COLUMN raw_sms_proof TEXT;'
+    ]) {
+      try {
+        databaseInstance.execSync(statement);
+      } catch (_) {}
+    }
   }
   return databaseInstance;
 }
@@ -36,6 +61,9 @@ export function initializeDatabase(): void {
   } catch (_) {}
   try {
     db.execSync("ALTER TABLE participants ADD COLUMN invite_code TEXT;");
+  } catch (_) {}
+  try {
+    db.execSync('ALTER TABLE sync_queue ADD COLUMN next_attempt_at TEXT;');
   } catch (_) {}
   
   // Purge legacy dummy offline seed data so SQLite reflects real user/server trips only

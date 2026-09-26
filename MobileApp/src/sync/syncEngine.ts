@@ -8,6 +8,8 @@ import { syncQueueRepo } from '../database/repositories/syncQueueRepo';
 import { expenseRepo } from '../database/repositories/expenseRepo';
 import { tripRepo } from '../database/repositories/tripRepo';
 import { apiRequest } from '../api/apiClient';
+import { syncService } from './syncService';
+import { storage } from '../database/storage';
 
 let isProcessing = false;
 
@@ -20,10 +22,6 @@ export const syncEngine = {
       const isOnline = Boolean(state.isConnected && state.isInternetReachable !== false);
       if (onStatusChange) {
         onStatusChange(isOnline);
-      }
-      if (isOnline) {
-        // Automatic trigger when connectivity returns
-        this.processQueue();
       }
     });
     return unsubscribe;
@@ -39,6 +37,7 @@ export const syncEngine = {
     const netState = await NetInfo.fetch();
     const isOnline = Boolean(netState.isConnected && netState.isInternetReachable !== false);
     if (!isOnline) return { processed: 0, errors: 0 };
+    if (!(await storage.getAuthToken())) return { processed: 0, errors: 0 };
 
     isProcessing = true;
     let processed = 0;
@@ -48,8 +47,10 @@ export const syncEngine = {
       const queue = syncQueueRepo.getPendingQueue();
       for (const item of queue) {
         syncQueueRepo.markSyncing(item.id);
+        if (item.entityType === 'EXPENSE' && item.operation === 'CREATE') {
+          expenseRepo.updateExpenseSyncStatus(item.entityId, item.entityId, 'PENDING');
+        }
         try {
-          const payloadObj = JSON.parse(item.payload);
           const response = await apiRequest<any>(item.endpoint, {
             method: item.httpMethod,
             body: item.payload,
@@ -59,9 +60,12 @@ export const syncEngine = {
           // Handle server ID reconciliation
           if (item.entityType === 'EXPENSE' && item.operation === 'CREATE') {
             const serverId = response?.data?.id || response?.id;
-            if (serverId) {
-              expenseRepo.updateExpenseSyncStatus(item.entityId, String(serverId), 'SYNCED');
+            if (!serverId || String(serverId) !== item.entityId) {
+              const conflict = new Error('Server did not confirm the local expense ID; local expense was preserved for review.');
+              (conflict as any).status = 409;
+              throw conflict;
             }
+            expenseRepo.updateExpenseSyncStatus(item.entityId, item.entityId, 'SYNCED');
           } else if (item.entityType === 'TRIP' && item.operation === 'CREATE') {
             const serverId = response?.data?.id || response?.id;
             if (serverId) {
@@ -74,9 +78,15 @@ export const syncEngine = {
         } catch (err: any) {
           errors++;
           console.warn(`Sync failed for item ${item.id}:`, err.message);
-          syncQueueRepo.markFailed(item.id, err.message || 'Network sync error');
+          const status = Number(err?.status || 0);
+          const retryable = !status || status === 408 || status === 425 || status === 429 || status >= 500;
+          syncQueueRepo.markFailed(item.id, err.message || 'Network sync error', retryable);
+          if (!retryable && item.entityType === 'EXPENSE' && item.operation === 'CREATE') {
+            expenseRepo.updateExpenseSyncStatus(item.entityId, item.entityId, 'FAILED');
+          }
         }
       }
+      if (processed > 0 || errors > 0) syncService.notifyListeners();
     } finally {
       isProcessing = false;
     }
