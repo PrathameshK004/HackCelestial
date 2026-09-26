@@ -1325,7 +1325,7 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                   </View>
 
                   <TouchableOpacity
-                    style={styles.primaryBtn}
+                    style={[styles.primaryBtn, styles.successDoneBtn]}
                     onPress={onClose}
                     activeOpacity={0.85}
                   >
@@ -1978,6 +1978,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     gap: 14,
+  },
+  successDoneBtn: {
+    alignSelf: 'stretch',
   },
   successIconCircle: {
     width: 68,

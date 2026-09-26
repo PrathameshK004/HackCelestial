@@ -37,7 +37,6 @@ import {
   SlidersHorizontal,
   X,
   Check,
-  Download,
   Plus,
   QrCode,
   ShieldCheck,
@@ -460,14 +459,6 @@ export const PaymentsScreen: React.FC<PaymentsScreenProps> = ({ onBack }) => {
             accessibilityLabel="Record Payment"
           >
             <Plus size={17} color="#475569" strokeWidth={2.4} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.iconBtn}
-            onPress={handleExportCSV}
-            activeOpacity={0.7}
-            accessibilityLabel="Export CSV"
-          >
-            <Download size={17} color="#475569" strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1206,7 +1197,7 @@ const styles = StyleSheet.create({
   /* ── Floating QR FAB (matches WebApp .tx-floating-scan-fab) ── */
   fab: {
     position: 'absolute',
-    bottom: 92,
+    bottom: 108,
     right: 20,
     width: 50,
     height: 50,

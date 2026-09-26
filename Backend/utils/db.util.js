@@ -575,6 +575,31 @@ const initializeDatabase = async () => {
             ]);
         }
     }
+    await seedExplorePackages();
+};
+
+const seedExplorePackages = async () => {
+    const packages = [
+        ['Lantern House Stay', 'Hotel', 'hotel', 'Kyoto', 'Japan', '5D/4N', 'Oct 10-14', 2, 94, 4.91, 22400, 4, 'Heritage', true, 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1000&q=80', "A calm heritage stay near Kyoto's temple lanes, gardens, and traditional tea houses."],
+        ['Lake Pichola Palace Escape', 'Hotel', 'hotel', 'Udaipur', 'India', '4D/3N', 'Nov 06-09', 2, 96, 4.95, 26800, 3, 'Luxury', true, 'https://images.unsplash.com/photo-1599661046827-dacff0c0f09a?auto=format&fit=crop&w=1000&q=80', "A lakeside heritage escape with rooftop dining and views across Udaipur's old city."],
+        ['South Goa Beachfront Villa', 'Villa', 'villa', 'South Goa', 'India', '6D/5N', 'Dec 12-17', 4, 93, 4.88, 31500, 5, 'Coastal', false, 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1000&q=80', 'A relaxed private villa close to quiet beaches, local seafood, and palm-lined lanes.'],
+        ['Himalayan Pine Camp', 'Camping', 'camping', 'Manali', 'India', '5D/4N', 'Jan 18-22', 2, 90, 4.82, 17200, 4, 'Adventure', false, 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1000&q=80', 'A mountain camp base for forest walks, alpine views, and guided day hikes.'],
+        ['Bali Jungle Wellness Retreat', 'Resort', 'resort', 'Ubud', 'Indonesia', '7D/6N', 'Feb 03-09', 2, 95, 4.94, 38200, 6, 'Wellness', true, 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1000&q=80', 'A tropical retreat with a quiet garden setting, wellness sessions, and easy access to Ubud.'],
+        ['Jaipur Heritage Haveli', 'House', 'villa', 'Jaipur', 'India', '4D/3N', 'Mar 14-17', 3, 91, 4.87, 19800, 3, 'Heritage', false, 'https://images.unsplash.com/photo-1477587458883-47145ed94245?auto=format&fit=crop&w=1000&q=80', "A restored haveli stay within reach of Jaipur's historic forts, markets, and cuisine."]
+    ];
+
+    for (const p of packages) {
+        await pool.query(`
+            INSERT INTO tour_packages (
+                title, type, category, destination, country, duration, date_range, guests, match_score,
+                rating, base_price, total_nights, style, featured, status, image, description
+            )
+            SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Published',$15,$16
+            WHERE NOT EXISTS (
+                SELECT 1 FROM tour_packages WHERE LOWER(title) = LOWER($1) AND LOWER(destination) = LOWER($4)
+            )
+        `, p);
+    }
 };
 
 module.exports = { pool, initializeDatabase };

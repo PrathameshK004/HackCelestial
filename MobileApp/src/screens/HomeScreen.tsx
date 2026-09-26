@@ -39,6 +39,7 @@ interface HomeScreenProps {
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTrip }) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<DockTab>('explore');
+  const [isRestaurantMode, setIsRestaurantMode] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
@@ -513,7 +514,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
     <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
         {/* Top Header */}
-        {activeTab !== 'payments' && activeTab !== 'profile' && (
+        {activeTab !== 'payments' && activeTab !== 'profile' && !isRestaurantMode && (
           <>
             <Header
               onPressProfile={() => setIsDrawerOpen(true)}
@@ -533,6 +534,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
               onSelectTrip={onSelectTrip}
               onCreateTrip={onCreateTrip}
               onRefresh={handleFullRefresh}
+              onRestaurantModeChange={setIsRestaurantMode}
             />
           )}
           {activeTab === 'trips' && (
@@ -559,7 +561,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
         </View>
 
         {/* Floating Bottom Navigation Dock — hidden on Profile */}
-        {activeTab !== 'profile' && (
+        {activeTab !== 'profile' && !isRestaurantMode && (
           <BottomDock
             activeTab={activeTab}
             onTabChange={handleTabChange}

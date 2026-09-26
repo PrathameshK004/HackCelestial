@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const verifyToken = require('../middleware/auth.middleware');
-const { adminAuth } = require('../middleware/adminAuth.middleware');
+const authenticateSupportAdmin = require('../middleware/support-admin.middleware');
 const supportController = require('../controllers/support.controller');
 
 const router = express.Router();
@@ -30,10 +30,10 @@ router.post('/tickets/:ticketNumber/messages', verifyToken, upload.single('attac
 
 
 // Admin operations (Accessible to Admin console)
-router.get('/admin/tickets', adminAuth, supportController.getAllTicketsAdmin);
-router.get('/admin/tickets/:ticketNumber', adminAuth, supportController.getTicketAdminDetails);
-router.get('/admin/tickets/:ticketNumber/attachment', adminAuth, supportController.getAdminTicketAttachment);
-router.post('/admin/tickets/:ticketNumber/messages', adminAuth, upload.single('attachment'), supportController.sendAdminTicketMessage);
-router.patch('/admin/tickets/:ticketNumber/status', adminAuth, supportController.updateAdminTicketStatus);
+router.use('/admin', authenticateSupportAdmin);
+router.get('/admin/tickets', supportController.getAllTicketsAdmin);
+router.get('/admin/tickets/:ticketNumber', supportController.getTicketAdminDetails);
+router.post('/admin/tickets/:ticketNumber/messages', upload.single('attachment'), supportController.sendAdminTicketMessage);
+router.patch('/admin/tickets/:ticketNumber/status', supportController.updateAdminTicketStatus);
 
 module.exports = router;
