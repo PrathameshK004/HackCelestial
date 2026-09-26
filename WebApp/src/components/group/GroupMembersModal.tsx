@@ -1,13 +1,13 @@
 import React from 'react';
 import { X, Users, ShieldCheck, Mail } from 'lucide-react';
-import { SettlementData } from '../../types/group';
+import { Traveler } from '../../types/group';
 
 interface GroupMembersModalProps {
   isOpen: boolean;
   onClose: () => void;
   groupName: string;
   destination: string;
-  members: SettlementData['members'];
+  members: Traveler[];
   currency: string;
 }
 
@@ -64,9 +64,10 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
           {members.map((member, index) => {
             const initial = (member.name || 'T')[0].toUpperCase();
             const avatarBg = getAvatarBg(member.name, index);
-            const isOrganizer = index === 0 || member.role === 'Organizer';
-            const isConfirmed = isOrganizer || member.status === 'ACCEPTED';
-            const isDeclined = !isOrganizer && (member.status === 'REJECTED' || member.status === 'DECLINED');
+            const isOrganizer = String(member.role).toLowerCase() === 'organizer';
+            const memberStatus = String(member.status || '').toUpperCase();
+            const isConfirmed = isOrganizer || memberStatus === 'ACCEPTED';
+            const isDeclined = !isOrganizer && (memberStatus === 'REJECTED' || memberStatus === 'DECLINED');
 
             return (
               <div
@@ -142,7 +143,7 @@ export const GroupMembersModal: React.FC<GroupMembersModalProps> = ({
                 <div style={{ flexShrink: 0, textAlign: 'right' }}>
                   {isConfirmed ? (
                     <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669', padding: '3px 8px', background: '#ecfdf5', borderRadius: '999px', border: '1px solid #a7f3d0' }}>
-                      Confirmed
+                      {isOrganizer ? 'Organizer' : 'Accepted'}
                     </span>
                   ) : isDeclined ? (
                     <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#e11d48', padding: '3px 8px', background: '#ffe4e6', borderRadius: '999px', border: '1px solid #fecdd3' }}>

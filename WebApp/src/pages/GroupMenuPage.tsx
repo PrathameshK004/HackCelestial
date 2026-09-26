@@ -11,18 +11,156 @@ import {
   Plus,
   Receipt,
   RefreshCw,
+  Smartphone,
   Trash2,
   Users,
   X,
-  ExternalLink
+  TrendingUp,
+  Utensils,
+  BedDouble,
+  Car,
+  Ticket,
+  ShoppingBag,
+  CircleHelp
 } from 'lucide-react';
 import QrScanner from 'qr-scanner';
 import { groupService } from '../services/group.service';
 import { useRealtimePoller } from '../hooks/useRealtimePoller';
-import { GroupSummary, SettlementData, SettlementExpense, SettlementTransfer } from '../types/group';
+import { GroupSummary, SettlementData, SettlementExpense, SettlementTransfer, Traveler } from '../types/group';
 import { GroupMembersModal } from '../components/group/GroupMembersModal';
 
 type LedgerTab = 'expenses' | 'debts' | 'transactions' | 'balances';
+
+const isAcceptedMember = (member: Traveler) => {
+  return String(member.status || 'ACCEPTED').toUpperCase() === 'ACCEPTED' || String(member.role).toLowerCase() === 'organizer';
+};
+
+const isPendingMember = (member: Traveler) => {
+  return String(member.status || '').toUpperCase() === 'PENDING' && String(member.role).toLowerCase() !== 'organizer';
+};
+
+const getTransferEndpoint = (transfer: SettlementTransfer, side: 'from' | 'to') => {
+  const value = transfer[side];
+  const memberId = side === 'from' ? transfer.fromMemberId : transfer.toMemberId;
+  const name = side === 'from' ? transfer.fromName : transfer.toName;
+  return {
+    id: String(memberId || (typeof value === 'string' ? value : value?.id) || ''),
+    name: name || (typeof value === 'string' ? value : value?.name) || 'Traveler',
+    avatarBg: typeof value === 'object' ? value?.avatarBg : undefined
+  };
+};
+
+interface DebtGraphViewProps {
+  transfers: SettlementTransfer[];
+  members: SettlementData['members'];
+  currency: string;
+}
+
+const DebtGraphView: React.FC<DebtGraphViewProps> = ({ transfers, members, currency }) => {
+  const nodesById = new Map<string, { id: string; name: string; avatarBg: string }>();
+  transfers.forEach((transfer) => {
+    (['from', 'to'] as const).forEach((side) => {
+      const endpoint = getTransferEndpoint(transfer, side);
+      if (!endpoint.id || nodesById.has(endpoint.id)) return;
+      const member = members.find((candidate) => String(candidate.id) === endpoint.id);
+      nodesById.set(endpoint.id, {
+        id: endpoint.id,
+        name: member?.name || endpoint.name,
+        avatarBg: member?.avatarBg || endpoint.avatarBg || (side === 'from' ? '#dc2626' : '#059669')
+      });
+    });
+  });
+
+  const nodes = Array.from(nodesById.values());
+  if (nodes.length === 0) return null;
+
+  const width = 360;
+  const height = 340;
+  const centerX = width / 2;
+  const centerY = 148;
+  const radius = Math.min(108, 96 + nodes.length * 2);
+  const nodeRadius = 21;
+  const positions = new Map<string, { x: number; y: number }>();
+  nodes.forEach((node, index) => {
+    const angle = (2 * Math.PI * index) / nodes.length - Math.PI / 2;
+    positions.set(node.id, {
+      x: centerX + radius * Math.cos(angle),
+      y: centerY + radius * Math.sin(angle)
+    });
+  });
+  const currencyPrefix = currency === 'INR' ? '₹' : `${currency} `;
+
+  return (
+    <div className="group-debt-graph-wrap">
+      <svg className="group-debt-graph" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Graph showing who owes whom">
+        <defs>
+          <marker id="group-debt-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#059669" />
+          </marker>
+        </defs>
+        {transfers.map((transfer, index) => {
+          const from = positions.get(getTransferEndpoint(transfer, 'from').id);
+          const to = positions.get(getTransferEndpoint(transfer, 'to').id);
+          if (!from || !to) return null;
+          const dx = to.x - from.x;
+          const dy = to.y - from.y;
+          const distance = Math.hypot(dx, dy) || 1;
+          const unitX = dx / distance;
+          const unitY = dy / distance;
+          const startX = from.x + unitX * (nodeRadius + 3);
+          const startY = from.y + unitY * (nodeRadius + 3);
+          const endX = to.x - unitX * (nodeRadius + 8);
+          const endY = to.y - unitY * (nodeRadius + 8);
+          const midX = (startX + endX) / 2;
+          const midY = (startY + endY) / 2;
+          const amount = Number(transfer.amount) || 0;
+          const amountLabel = amount >= 1000 ? `${currencyPrefix}${(amount / 1000).toFixed(1)}k` : `${currencyPrefix}${amount.toFixed(0)}`;
+
+          return (
+            <g key={transfer.id || index}>
+              <line x1={startX} y1={startY} x2={endX} y2={endY} stroke="#059669" strokeWidth="2" strokeDasharray="6 3" markerEnd="url(#group-debt-arrow)" opacity="0.8" />
+              <rect x={midX - 29} y={midY - 14} width="58" height="28" rx="9" fill="#fff" stroke="#a7f3d0" />
+              <text x={midX} y={midY - 2} textAnchor="middle" fontSize="8.5" fontWeight="800" fill="#047857">{amountLabel}</text>
+              <text x={midX} y={midY + 9} textAnchor="middle" fontSize="6.5" fill="#64748b">owes</text>
+            </g>
+          );
+        })}
+        {nodes.map((node) => {
+          const position = positions.get(node.id);
+          if (!position) return null;
+          const member = members.find((candidate) => String(candidate.id) === node.id);
+          const balance = Number(member?.netBalance) || 0;
+          const balanceColor = balance < -0.01 ? '#dc2626' : balance > 0.01 ? '#059669' : '#64748b';
+          const shortName = node.name.length > 10 ? `${node.name.slice(0, 9)}…` : node.name;
+          const balanceLabel = balance > 0.01 ? `+${currencyPrefix}${Math.abs(balance).toFixed(0)}` : balance < -0.01 ? `-${currencyPrefix}${Math.abs(balance).toFixed(0)}` : `${currencyPrefix}0`;
+          return (
+            <g key={node.id}>
+              <circle cx={position.x} cy={position.y} r={nodeRadius + 3} fill="none" stroke={balanceColor} strokeWidth="2" opacity="0.5" />
+              <circle cx={position.x} cy={position.y} r={nodeRadius} fill={node.avatarBg} />
+              <text x={position.x} y={position.y + 5} textAnchor="middle" fontSize="14" fontWeight="900" fill="#fff">{node.name.charAt(0).toUpperCase()}</text>
+              <text x={position.x} y={position.y + nodeRadius + 16} textAnchor="middle" fontSize="9" fontWeight="700" fill="#334155">{shortName}</text>
+              <text x={position.x} y={position.y + nodeRadius + 29} textAnchor="middle" fontSize="8" fontWeight="800" fill={balanceColor}>{balanceLabel}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="group-debt-graph-legend">
+        <span><i className="owes" />Owes money</span>
+        <span><i className="gets-paid" />Gets paid</span>
+        <span><i className="pays" />Pays →</span>
+      </div>
+    </div>
+  );
+};
+
+const EXPENSE_CATEGORY_OPTIONS = [
+  { value: 'Food', label: 'Food', Icon: Utensils },
+  { value: 'Lodging', label: 'Stay', Icon: BedDouble },
+  { value: 'Transport', label: 'Transport', Icon: Car },
+  { value: 'Activities', label: 'Activities', Icon: Ticket },
+  { value: 'Groceries', label: 'Supplies', Icon: ShoppingBag },
+  { value: 'Other', label: 'Other', Icon: CircleHelp }
+] as const;
 
 interface GroupMenuPageProps {
   group: GroupSummary;
@@ -40,11 +178,11 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
   user,
   initialMenu = 'expenses',
   onBack,
-  onRefresh,
-  onSettled
+  onRefresh
 }) => {
   const [activeTab, setActiveTab] = useState<LedgerTab>(initialMenu);
   const [settlementData, setSettlementData] = useState<SettlementData | null>(initialSettlement || null);
+  const [groupMembers, setGroupMembers] = useState<Traveler[]>(group.members || []);
   const [isLoading, setIsLoading] = useState<boolean>(!initialSettlement);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
@@ -74,10 +212,10 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
     remarks: '',
     reference: ''
   });
+  const [settlementToMemberId, setSettlementToMemberId] = useState('');
 
   // UI Toast & State
   const [toastMessage, setToastMessage] = useState('');
-  const [copiedUpi, setCopiedUpi] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // QR Scanner State
@@ -86,6 +224,26 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
   const scannerRef = useRef<QrScanner | null>(null);
 
   const isSettled = group.status === 'SETTLED' || settlementData?.groupStatus === 'SETTLED';
+  const acceptedMembers = groupMembers.filter(isAcceptedMember);
+  const pendingMembers = groupMembers.filter(isPendingMember);
+  const loggedInMember = groupMembers.find((member) => {
+    const currentUserId = user?.userId || user?.id;
+    const hasMatchingId = currentUserId && member.userId && String(currentUserId) === String(member.userId);
+    const currentEmail = user?.emailId || user?.email;
+    const hasMatchingEmail = currentEmail && member.email && currentEmail.trim().toLowerCase() === member.email.trim().toLowerCase();
+    return Boolean(hasMatchingId || hasMatchingEmail);
+  });
+  const payerMember = loggedInMember && isAcceptedMember(loggedInMember) ? loggedInMember : null;
+  const payerDisplayName = loggedInMember?.name || user?.username || user?.name || user?.emailId || user?.email || 'Current user';
+  const payerGroupStatus = payerMember
+    ? 'Accepted'
+    : loggedInMember
+      ? String(loggedInMember.status || 'Pending').toLowerCase() === 'rejected'
+        ? 'Declined'
+        : String(loggedInMember.status || 'Pending').toLowerCase() === 'declined'
+          ? 'Declined'
+          : 'Pending'
+      : 'Not in this group';
 
   // Fetch or sync settlement data
   const loadSettlement = async (silent = false) => {
@@ -111,6 +269,20 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
     }
   }, [initialSettlement, group.id]);
 
+  useEffect(() => {
+    let isCurrentGroup = true;
+    setGroupMembers(group.members || []);
+    groupService.getGroupById(group.id)
+      .then(({ data }) => {
+        if (isCurrentGroup && Array.isArray(data.members)) setGroupMembers(data.members);
+      })
+      .catch((err) => console.warn('Failed to load group member statuses:', err));
+
+    return () => {
+      isCurrentGroup = false;
+    };
+  }, [group.id]);
+
   // Real-time Database Status Sync (3s interval, tab focus, mutation events)
   useRealtimePoller(() => {
     loadSettlement(true);
@@ -122,21 +294,21 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
     scannerRef.current?.destroy();
   }, []);
 
-  // Initialize participants in Add Expense form once members load (confirmed members only)
+  // Initialize participants from the group roster, whose status is invitation acceptance.
   useEffect(() => {
-    if (settlementData?.members && settlementData.members.length > 0) {
-      const acceptedIds = settlementData.members
-        .filter((m: any) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer')
+    if (groupMembers.length > 0) {
+      const acceptedIds = groupMembers
+        .filter(isAcceptedMember)
         .map((m: any) => String(m.id));
       setExpenseForm((prev) => ({
         ...prev,
         participants: prev.participants.length > 0
           ? prev.participants.filter((p) => acceptedIds.includes(p))
           : acceptedIds,
-        paidByMemberId: prev.paidByMemberId && acceptedIds.includes(prev.paidByMemberId) ? prev.paidByMemberId : (acceptedIds[0] || '')
+        paidByMemberId: payerMember ? String(payerMember.id) : ''
       }));
     }
-  }, [settlementData]);
+  }, [groupMembers, user?.userId, user?.id, user?.emailId, user?.email]);
 
   // QR Scanner logic
   const startScanner = () => {
@@ -201,9 +373,9 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
 
   // Select all / none (confirmed members only)
   const toggleAllParticipants = () => {
-    if (!settlementData) return;
-    const acceptedIds = settlementData.members
-      .filter((m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer')
+    if (groupMembers.length === 0) return;
+    const acceptedIds = groupMembers
+      .filter(isAcceptedMember)
       .map((m) => String(m.id));
     setExpenseForm((prev) => ({
       ...prev,
@@ -222,6 +394,10 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
       setToastMessage('Please select at least one traveler to share the cost.');
       return;
     }
+    if (!payerMember) {
+      setToastMessage('Your account must be an accepted group member to record this purchase.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -231,7 +407,7 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
         category: expenseForm.category,
         currency: group.currency,
         splitModel: expenseForm.splitModel,
-        paidByMemberId: expenseForm.paidByMemberId || undefined,
+        paidByMemberId: String(payerMember.id),
         participants: expenseForm.participants,
         paymentMethod: expenseForm.paymentMethod,
         paymentReference: expenseForm.paymentReference || undefined
@@ -245,8 +421,8 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
         amount: '',
         category: 'Food',
         splitModel: 'EQUAL',
-        paidByMemberId: settlementData?.members[0]?.id ? String(settlementData.members[0].id) : '',
-        participants: settlementData?.members.map((m) => String(m.id)) || [],
+        paidByMemberId: payerMember ? String(payerMember.id) : '',
+        participants: acceptedMembers.map((member) => String(member.id)),
         paymentMethod: 'CASH',
         paymentReference: ''
       });
@@ -278,7 +454,12 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
   // Open Settle Up Drawer for a Transfer
   const openSettleUp = (tx: SettlementTransfer, method: 'UPI' | 'CASH' = 'UPI') => {
     setSelectedTransfer(tx);
-    const payee = settlementData?.members.find((m) => String(m.id) === (typeof tx.to === 'string' ? tx.to : tx.to?.id));
+    const initialPayee = getTransferEndpoint(tx, 'to');
+    const payee = settlementData?.members.find((m) => String(m.id) === initialPayee.id);
+    const firstCreditor = settlementData?.members.find((member) =>
+      String(member.id) !== getTransferEndpoint(tx, 'from').id && Number(member.netBalance) > 0.01
+    );
+    setSettlementToMemberId(String(payee?.id || initialPayee.id || firstCreditor?.id || ''));
     setSettlementForm({
       amount: String(tx.amount),
       paymentMethod: method,
@@ -292,9 +473,13 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
   const handleConfirmSettlement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTransfer) return;
-    const payeeId = typeof selectedTransfer.to === 'string' ? selectedTransfer.to : selectedTransfer.to?.id;
-    const payerId = typeof selectedTransfer.from === 'string' ? selectedTransfer.from : selectedTransfer.from?.id;
+    const payerId = getTransferEndpoint(selectedTransfer, 'from').id;
+    const payeeId = settlementToMemberId || getTransferEndpoint(selectedTransfer, 'to').id;
     if (!payeeId || !payerId) return;
+    if (payeeId === payerId) {
+      setToastMessage('Choose a different receiver for this settlement.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -313,6 +498,7 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
 
       setIsSettleUpModalOpen(false);
       setSelectedTransfer(null);
+      setSettlementToMemberId('');
       setToastMessage('Settlement payment recorded successfully.');
       setTimeout(() => setToastMessage(''), 3500);
     } catch (err: any) {
@@ -322,30 +508,25 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
     }
   };
 
-  // Trigger UPI App Intent on Mobile
-  const handleLaunchUpi = (upiId: string, payeeName: string, amount: number) => {
-    const intent = new URL('upi://pay');
-    intent.searchParams.set('pa', upiId);
-    intent.searchParams.set('pn', payeeName);
-    intent.searchParams.set('am', Number(amount).toFixed(2));
-    intent.searchParams.set('cu', group.currency);
-    intent.searchParams.set('tn', `Triptual settlement for ${group.name}`);
-
-    const uri = intent.toString();
+  const launchSettlementUpi = () => {
+    if (!selectedTransfer) return;
+    const payee = settlementData?.members.find((member) => String(member.id) === settlementToMemberId);
+    if (!payee) return;
+    const upiId = payee.upiId || `${payee.name.toLowerCase().replace(/\s+/g, '')}@okaxis`;
+    const params = new URLSearchParams({
+      pa: upiId,
+      pn: payee.name,
+      am: Number(settlementForm.amount || selectedTransfer.amount).toFixed(2),
+      cu: group.currency,
+      tn: `Settlement for ${group.name}`
+    });
     const link = document.createElement('a');
-    link.href = uri;
+    link.href = `upi://pay?${params.toString()}`;
     link.target = '_blank';
-    link.rel = 'noopener';
+    link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
     link.click();
     link.remove();
-  };
-
-  // Copy text helper
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedUpi(true);
-    setTimeout(() => setCopiedUpi(false), 2000);
   };
 
   // Calculate user's personal net balance
@@ -364,6 +545,16 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
   const settlementsList = settlementData?.settlements || [];
   const membersList = settlementData?.members || [];
   const totalSpend = settlementData?.totalSpend || expensesList.reduce((acc, e) => acc + Number(e.amount), 0);
+  const debtTotalVolume = transfersList.reduce((total, transfer) => total + (Number(transfer.amount) || 0), 0);
+  const debtorsCount = membersList.filter((member) => Number(member.netBalance) < -0.01).length;
+  const creditorsCount = membersList.filter((member) => Number(member.netBalance) > 0.01).length;
+  const settlementPayer = selectedTransfer ? getTransferEndpoint(selectedTransfer, 'from') : null;
+  const settlementReceiverId = settlementToMemberId || (selectedTransfer ? getTransferEndpoint(selectedTransfer, 'to').id : '');
+  const settlementReceiver = membersList.find((member) => String(member.id) === settlementReceiverId);
+  const settlementReceiverUpi = settlementReceiver?.upiId || (settlementReceiver?.name
+    ? `${settlementReceiver.name.toLowerCase().replace(/\s+/g, '')}@okaxis`
+    : '');
+  const settlementAmount = Number(settlementForm.amount || selectedTransfer?.amount || 0);
 
   return (
     <div className="profile-page-root animate-fade-in" style={{ minHeight: '100vh', paddingBottom: '90px' }}>
@@ -917,166 +1108,116 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
           </div>
         )}
 
-        {/* ================= TAB 2: DEBTS & SETTLE-UP (OPTIMAL TRANSFERS) ================= */}
+        {/* ================= TAB 2: DEBTS & SMART SETTLEMENT ================= */}
         {!isLoading && activeTab === 'debts' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div>
-              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.08rem', color: 'var(--text-primary)', margin: 0 }}>
-                Debt Simplification (Min-Cash-Flow)
-              </h3>
-              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
-                Algorithmic minimal transactions required to completely clear all balances.
+          <div className="group-debts-tab">
+            <section className="group-debt-optimizer">
+              <div className="group-debt-optimizer-heading">
+                <TrendingUp size={17} />
+                <h3>Smart Debt Minimization</h3>
+              </div>
+              <p>
+                {transfersList.length > 0
+                  ? `Optimized to ${transfersList.length} transfer${transfersList.length === 1 ? '' : 's'} · Total: ${group.currency} ${debtTotalVolume.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                  : 'All balances are fully settled.'}
               </p>
-            </div>
+              {transfersList.length > 0 && (
+                <div className="group-debt-stats">
+                  <div><strong>{transfersList.length}</strong><span>Transfers</span></div>
+                  <div><strong>{group.currency} {debtTotalVolume.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong><span>Total Owed</span></div>
+                  <div><strong>{debtorsCount}</strong><span>Debtors</span></div>
+                  <div><strong>{creditorsCount}</strong><span>Creditors</span></div>
+                </div>
+              )}
+            </section>
 
             {transfersList.length === 0 ? (
-              <div
-                style={{
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-card)',
-                  borderRadius: '16px',
-                  textAlign: 'center',
-                  padding: '36px 18px'
-                }}
-              >
-                <div
-                  style={{
-                    width: '46px',
-                    height: '46px',
-                    borderRadius: '50%',
-                    background: 'rgba(5, 150, 105, 0.12)',
-                    color: '#059669',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    margin: '0 auto 10px'
-                  }}
-                >
-                  <Check size={24} strokeWidth={3} />
-                </div>
-                <h4 style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-primary)', margin: '0 0 4px', fontSize: '1.1rem' }}>
-                  All Balances are Balanced!
-                </h4>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 16px' }}>
-                  No one in this group owes any money. The ledger is perfectly even.
-                </p>
-                {!isSettled && expensesList.length > 0 && (
-                  <button
-                    type="button"
-                    className="btn-primary-luxury"
-                    onClick={onSettled}
-                    style={{ padding: '8px 18px', fontSize: '0.78rem', borderRadius: '999px' }}
-                  >
-                    <Check size={14} />
-                    <span>Mark Trip as Fully Settled</span>
-                  </button>
-                )}
+              <div className="group-debt-empty">
+                <span className="group-debt-empty-icon"><Check size={24} strokeWidth={3} /></span>
+                <h4>Group is completely settled!</h4>
+                <p>No outstanding balances among travelers.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {transfersList.map((tx, idx) => {
-                  const toPayee = membersList.find((m) => String(m.id) === (typeof tx.to === 'string' ? tx.to : tx.to?.id));
-                  const payeeUpi = toPayee?.upiId || (typeof tx.to === 'object' ? tx.to?.upiId : '');
+              <>
+                <section className="group-debt-graph-section">
+                  <h4>Who Owes Whom</h4>
+                  <DebtGraphView transfers={transfersList} members={membersList} currency={group.currency} />
+                </section>
 
-                  return (
-                    <div
-                      key={idx}
-                      style={{
-                        background: 'var(--bg-surface)',
-                        border: '1px solid var(--border-card)',
-                        borderRadius: '16px',
-                        padding: '16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px'
-                      }}
-                    >
-                      {/* From -> To Row */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                          <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                            {tx.fromName}
-                          </span>
-                          <ArrowRight size={14} color="var(--text-muted)" />
-                          <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--accent-olive)' }}>
-                            {tx.toName}
-                          </span>
+                <h4 className="group-debt-list-heading">Settlement Instructions</h4>
+                <div className="group-debt-list">
+                  {transfersList.map((transfer, index) => {
+                    const from = getTransferEndpoint(transfer, 'from');
+                    const to = getTransferEndpoint(transfer, 'to');
+                    const fromMember = membersList.find((member) => String(member.id) === from.id);
+                    const toMember = membersList.find((member) => String(member.id) === to.id);
+                    const isUserDebtor = Boolean(
+                      (loggedInMember && (from.id === String(loggedInMember.id) || from.id === String(loggedInMember.userId))) ||
+                      (user?.userId && (from.id === String(user.userId) || fromMember?.userId === user.userId)) ||
+                      (user?.emailId && fromMember?.email?.toLowerCase() === user.emailId.toLowerCase())
+                    );
+                    const isUserCreditor = Boolean(
+                      (loggedInMember && (to.id === String(loggedInMember.id) || to.id === String(loggedInMember.userId))) ||
+                      (user?.userId && (to.id === String(user.userId) || toMember?.userId === user.userId)) ||
+                      (user?.emailId && toMember?.email?.toLowerCase() === user.emailId.toLowerCase())
+                    );
+                    const amount = Number(transfer.amount) || 0;
+                    const currencyPrefix = group.currency === 'INR' ? '₹' : `${group.currency} `;
+
+                    return (
+                      <article
+                        key={transfer.id || `${from.id}-${to.id}-${index}`}
+                        className={`group-debt-card ${isUserDebtor ? 'user-owes' : ''} ${isUserCreditor ? 'user-owed' : ''}`}
+                      >
+                        <span className="group-debt-index">#{index + 1}</span>
+                        <div className="group-debt-parties">
+                          <div className="group-debt-party">
+                            <span className="group-debt-avatar debtor" style={{ backgroundColor: fromMember?.avatarBg || from.avatarBg || '#dc2626' }}>
+                              {from.name.charAt(0).toUpperCase()}
+                            </span>
+                            <span className="group-debt-party-info">
+                              <strong>{from.name}{isUserDebtor ? ' (You)' : ''}</strong>
+                              <small className="owes-tag">OWES</small>
+                            </span>
+                          </div>
+
+                          <div className="group-debt-direction">
+                            <strong>{currencyPrefix}{amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+                            <ArrowRight size={18} />
+                          </div>
+
+                          <div className="group-debt-party receiver">
+                            <span className="group-debt-avatar creditor" style={{ backgroundColor: toMember?.avatarBg || to.avatarBg || '#059669' }}>
+                              {to.name.charAt(0).toUpperCase()}
+                            </span>
+                            <span className="group-debt-party-info">
+                              <strong>{to.name}{isUserCreditor ? ' (You)' : ''}</strong>
+                              <small className="gets-paid-tag">GETS PAID</small>
+                            </span>
+                          </div>
                         </div>
 
-                        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.18rem', fontWeight: 700, color: '#dc2626' }}>
-                          {group.currency} {Number(tx.amount).toFixed(2)}
-                        </div>
-                      </div>
+                        {(isUserDebtor || isUserCreditor) && (
+                          <div className={`group-debt-user-note ${isUserDebtor ? 'owes' : 'owed'}`}>
+                            {isUserDebtor
+                              ? `You need to pay ${currencyPrefix}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} to ${to.name}`
+                              : `${from.name} needs to pay you ${currencyPrefix}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+                          </div>
+                        )}
 
-                      {/* Payee Details if UPI */}
-                      {payeeUpi && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '6px 10px',
-                            borderRadius: '8px',
-                            background: 'var(--bg-surface-warm)',
-                            fontSize: '0.72rem',
-                            color: 'var(--text-secondary)'
-                          }}
-                        >
-                          <span>UPI ID: <strong>{payeeUpi}</strong></span>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(payeeUpi)}
-                            style={{ background: 'transparent', border: 'none', color: 'var(--accent-olive)', cursor: 'pointer', fontWeight: 600 }}
-                          >
-                            {copiedUpi ? 'Copied!' : 'Copy'}
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Action Buttons */}
-                      {!isSettled && (
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            type="button"
-                            className="btn-primary-luxury"
-                            onClick={() => {
-                              if (payeeUpi) {
-                                handleLaunchUpi(payeeUpi, tx.toName || 'Traveler', tx.amount);
-                              }
-                              openSettleUp(tx, 'UPI');
-                            }}
-                            style={{
-                              flex: 1,
-                              justifyContent: 'center',
-                              padding: '8px 12px',
-                              fontSize: '0.76rem',
-                              borderRadius: '10px'
-                            }}
-                          >
-                            <span>Pay via UPI</span>
-                            <ExternalLink size={13} />
-                          </button>
-
-                          <button
-                            type="button"
-                            className="profile-header-icon-btn"
-                            onClick={() => openSettleUp(tx, 'CASH')}
-                            style={{
-                              flex: 1,
-                              justifyContent: 'center',
-                              padding: '8px 12px',
-                              fontSize: '0.76rem',
-                              borderRadius: '10px'
-                            }}
-                          >
-                            <span>Record Cash</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        {isUserDebtor && !isSettled && (
+                          <div className="group-debt-actions">
+                            <button type="button" onClick={() => openSettleUp(transfer, 'UPI')}>
+                              <Smartphone size={14} />
+                              <span>Pay / Settle via UPI</span>
+                            </button>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         )}
@@ -1188,6 +1329,12 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                 const net = m.netBalance || 0;
                 const paid = m.totalPaid || 0;
                 const owed = m.totalOwed || 0;
+                const rosterMember = groupMembers.find((member) => String(member.id) === String(m.id));
+                const memberStatus = String(rosterMember?.status || (String(m.role).toLowerCase() === 'organizer' ? 'ACCEPTED' : '')).toUpperCase();
+                const isAccepted = memberStatus === 'ACCEPTED' || String(rosterMember?.role || m.role).toLowerCase() === 'organizer';
+                const isPending = memberStatus === 'PENDING';
+                const isDeclined = memberStatus === 'REJECTED' || memberStatus === 'DECLINED';
+                const membershipLabel = isAccepted ? 'Accepted' : isPending ? 'Pending Invite' : isDeclined ? 'Declined' : 'Checking status';
 
                 return (
                   <div
@@ -1234,18 +1381,26 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                             <span style={{ fontSize: '0.62rem', padding: '1px 6px', borderRadius: '4px', background: 'var(--border-light)', color: 'var(--text-secondary)' }}>
                               {m.role || 'Traveler'}
                             </span>
-                            {((m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer') ? (
+                            {isAccepted ? (
                               <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0' }}>
                                 ✓ Accepted
                               </span>
-                            ) : (
+                            ) : isPending ? (
                               <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>
                                 ⏳ Pending Invite
+                              </span>
+                            ) : isDeclined ? (
+                              <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' }}>
+                                Declined
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.62rem', fontWeight: 600, padding: '1px 6px', borderRadius: '4px', background: 'var(--bg-surface-warm)', color: 'var(--text-muted)', border: '1px solid var(--border-light)' }}>
+                                {membershipLabel}
                               </span>
                             )}
                           </div>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            {m.email} • {((m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer') ? 'Active in Ledger' : 'No Debt Until Accepted'}
+                            {m.email} • {isAccepted ? 'Active in Ledger' : isPending ? 'No Debt Until Accepted' : isDeclined ? 'Invitation declined' : 'Invitation status unavailable'}
                           </div>
                         </div>
                       </div>
@@ -1299,7 +1454,7 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
         {isAddExpenseOpen && (
           <div className="success-drawer-overlay" onClick={() => setIsAddExpenseOpen(false)}>
             <div
-              className="success-drawer-sheet"
+              className="success-drawer-sheet expense-entry-sheet"
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-modal="true"
@@ -1316,36 +1471,34 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                 </button>
               </div>
 
-              <div className="success-drawer-content" style={{ textAlign: 'left', alignItems: 'stretch' }}>
-                <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', color: 'var(--text-primary)', margin: '0 0 4px 0' }}>
-                  Record Trip Purchase
-                </h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 16px 0' }}>
-                  Add an expense. The ledger will distribute shares according to your split settings.
-                </p>
-
-                <form onSubmit={handleSaveExpense} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="success-drawer-content expense-entry-content" style={{ textAlign: 'left', alignItems: 'stretch' }}>
+                <div className="expense-mobile-header">
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                      Description
+                    <h3>Add Group Expense</h3>
+                    <p>Add expense and split costs with group</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveExpense} className="expense-mobile-form">
+                  <div className="expense-mobile-field">
+                    <label className="expense-mobile-label">
+                      Expense Title / Description
                     </label>
                     <input
                       className="styled-text-input"
                       required
-                      placeholder="e.g. Seafood Dinner, Villa Booking, Fuel"
+                      placeholder="e.g., Seafood Dinner at Jimbaran"
                       value={expenseForm.description}
                       onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
-                      style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.82rem', padding: '9px 12px' }}
+                      style={{ width: '100%', boxSizing: 'border-box' }}
                     />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        Amount ({group.currency})
-                      </label>
+                  <div className="expense-mobile-field">
+                    <label className="expense-mobile-label">Amount ({group.currency})</label>
+                    <div className="expense-mobile-amount-wrap">
+                      <span>{group.currency === 'INR' ? '₹' : group.currency}</span>
                       <input
-                        className="styled-text-input font-bold"
                         required
                         type="number"
                         min="0.01"
@@ -1353,114 +1506,119 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                         placeholder="0.00"
                         value={expenseForm.amount}
                         onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.86rem', padding: '9px 12px' }}
                       />
                     </div>
+                  </div>
 
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        Category
-                      </label>
-                      <select
-                        className="styled-text-input"
-                        value={expenseForm.category}
-                        onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.82rem', padding: '9px 12px' }}
-                      >
-                        <option value="Food">Food & Dining</option>
-                        <option value="Lodging">Lodging & Stay</option>
-                        <option value="Transport">Transport & Fuel</option>
-                        <option value="Activities">Activities & Tickets</option>
-                        <option value="Groceries">Groceries & Drinks</option>
-                        <option value="Other">Other</option>
-                      </select>
+                  <div className="expense-mobile-field">
+                    <label className="expense-mobile-label">Category</label>
+                    <div className="expense-mobile-category-row">
+                      {EXPENSE_CATEGORY_OPTIONS.map(({ value, label }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`expense-mobile-category-chip ${expenseForm.category === value ? 'active' : ''}`}
+                          onClick={() => setExpenseForm({ ...expenseForm, category: value })}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        Paid By
-                      </label>
-                      <select
-                        className="styled-text-input"
-                        value={expenseForm.paidByMemberId}
-                        onChange={(e) => setExpenseForm({ ...expenseForm, paidByMemberId: e.target.value })}
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.82rem', padding: '9px 12px' }}
-                      >
-                        {membersList
-                          .filter((m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer')
-                          .map((m) => (
-                            <option key={String(m.id)} value={String(m.id)}>
-                              {m.name} {m.role === 'Organizer' ? '(Organizer)' : ''}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        Split Model
-                      </label>
-                      <select
-                        className="styled-text-input"
-                        value={expenseForm.splitModel}
-                        onChange={(e) => setExpenseForm({ ...expenseForm, splitModel: e.target.value as any })}
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.82rem', padding: '9px 12px' }}
-                      >
-                        <option value="EQUAL">Equal Split</option>
-                        <option value="PARTICIPANT_BASED">Participant Share</option>
-                        <option value="ROOM_SHARE">Room Share</option>
-                        <option value="ACTIVITY_BASED">Opt-in Activity</option>
-                        <option value="ORGANIZER_PAID">Organizer Covers 100%</option>
-                      </select>
+                  <div className="expense-mobile-field">
+                    <label className="expense-mobile-label">Cost-Sharing Model</label>
+                    <div className="expense-mobile-model-list">
+                      {[
+                        ['EQUAL', 'Equal Split', 'Divided evenly among all selected travelers'],
+                        ['PARTICIPANT_BASED', 'Participant-Based', 'Per-person customized share'],
+                        ['ROOM_SHARE', 'Room Share', 'Split based on occupied rooms'],
+                        ['ACTIVITY_BASED', 'Activity-Based', 'Split only among opted-in members'],
+                        ['ORGANIZER_PAID', 'Organizer Sponsored', 'Organizer covers full cost, 0 debt']
+                      ].map(([value, label, description]) => {
+                        const isSelected = expenseForm.splitModel === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`expense-mobile-model-card ${isSelected ? 'active' : ''}`}
+                            onClick={() => setExpenseForm({ ...expenseForm, splitModel: value as typeof expenseForm.splitModel })}
+                            aria-pressed={isSelected}
+                          >
+                            <span className="expense-mobile-model-copy">
+                              <strong>{label}</strong>
+                              <span>{description}</span>
+                            </span>
+                            {isSelected && <Check size={17} aria-hidden="true" />}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* Participants Multi-Select (Confirmed Only) */}
-                  <div>
-                    {(() => {
-                      const confirmedList = membersList.filter((m) => (m.status || 'ACCEPTED') === 'ACCEPTED' || m.role === 'Organizer');
-                      const pendingList = membersList.filter((m) => m.status === 'PENDING' && m.role !== 'Organizer');
-                      return (
-                        <>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                            <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                              Split Among ({expenseForm.participants.length} confirmed travelers)
-                            </label>
+                  <div className="expense-mobile-field">
+                    <label className="expense-mobile-label">Paid By</label>
+                    <div className="expense-mobile-payer" role="status" aria-label="Expense payer, signed-in user">
+                      <span>{payerDisplayName} (You)</span>
+                      <span className={`expense-mobile-status ${payerMember ? 'accepted' : 'unconfirmed'}`}>
+                        {payerGroupStatus}
+                      </span>
+                    </div>
+                  </div>
+
+                  {expenseForm.splitModel !== 'ORGANIZER_PAID' && (
+                    <div className="expense-mobile-field">
+                      <div className="expense-mobile-section-heading">
+                        <label className="expense-mobile-label">
+                          Split Among ({expenseForm.participants.length} accepted travelers)
+                        </label>
+                        <button type="button" onClick={toggleAllParticipants}>
+                          {expenseForm.participants.length === acceptedMembers.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+                      <div className="expense-mobile-member-list">
+                        {acceptedMembers.map((member) => {
+                          const memberId = String(member.id);
+                          const isSelected = expenseForm.participants.includes(memberId);
+                          const share = Number(expenseForm.amount || 0) / Math.max(expenseForm.participants.length, 1);
+                          return (
                             <button
+                              key={memberId}
                               type="button"
-                              onClick={toggleAllParticipants}
-                              style={{ background: 'transparent', border: 'none', color: 'var(--accent-olive)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer' }}
+                              className={`expense-mobile-member-row ${isSelected ? 'selected' : ''}`}
+                              onClick={() => toggleParticipant(memberId)}
+                              aria-pressed={isSelected}
                             >
-                              {expenseForm.participants.length === confirmedList.length ? 'Deselect All' : 'Select All'}
+                              <span className={`expense-mobile-checkbox ${isSelected ? 'checked' : ''}`} aria-hidden="true">
+                                {isSelected && <Check size={12} strokeWidth={3} />}
+                              </span>
+                              <span className="expense-mobile-member-avatar" style={{ backgroundColor: member.avatarBg || '#059669' }}>
+                                {(member.name || 'T').charAt(0).toUpperCase()}
+                              </span>
+                              <span className="expense-mobile-member-name">{member.name}</span>
+                              <span className="expense-mobile-status accepted">Accepted</span>
+                              <span className="expense-mobile-member-share">
+                                {group.currency === 'INR' ? '₹' : `${group.currency} `}{share.toFixed(2)}
+                              </span>
                             </button>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
-                            {confirmedList.map((m) => {
-                              const isChecked = expenseForm.participants.includes(String(m.id));
-                              return (
-                                <button
-                                  key={String(m.id)}
-                                  type="button"
-                                  className={`category-pill ${isChecked ? 'active' : ''}`}
-                                  onClick={() => toggleParticipant(String(m.id))}
-                                  style={{ padding: '6px 10px', fontSize: '0.72rem', justifyContent: 'center' }}
-                                >
-                                  <Check size={11} style={{ opacity: isChecked ? 1 : 0.2 }} />
-                                  <span>{m.name}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {pendingList.length > 0 && (
-                            <div style={{ marginTop: '8px', padding: '6px 10px', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fde68a', fontSize: '0.7rem', color: '#92400e' }}>
-                              ⏳ {pendingList.length} traveler{pendingList.length > 1 ? 's' : ''} awaiting invitation acceptance (excluded from splits until confirmed).
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
+                          );
+                        })}
+                      </div>
+                      {pendingMembers.length > 0 && (
+                        <div className="expense-mobile-pending-note">
+                          {pendingMembers.length} traveler{pendingMembers.length === 1 ? '' : 's'} awaiting invitation acceptance; pending members are excluded from this split.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="expense-mobile-preview">
+                    <strong>Split Preview</strong>
+                    <span>
+                      {expenseForm.splitModel === 'ORGANIZER_PAID'
+                        ? 'Organizer covers 100% of this expense (0 impact on travelers)'
+                        : `Each of the ${expenseForm.participants.length || 1} selected travelers will owe ${group.currency === 'INR' ? '₹' : `${group.currency} `}${(Number(expenseForm.amount || 0) / Math.max(expenseForm.participants.length, 1)).toFixed(2)}`}
+                    </span>
                   </div>
 
                   {/* Payment Channel */}
@@ -1512,15 +1670,16 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
                     </div>
                   )}
 
-                  <button
-                    type="submit"
-                    className="success-drawer-dashboard-btn"
-                    disabled={isSubmitting}
-                    style={{ marginTop: '8px' }}
-                  >
-                    <span>{isSubmitting ? 'Recording Expense...' : 'Save & Rebalance Ledger'}</span>
-                    <ArrowRight size={17} />
-                  </button>
+                  <div className="expense-mobile-footer">
+                    <button
+                      type="submit"
+                      className="success-drawer-dashboard-btn"
+                      disabled={isSubmitting}
+                    >
+                      <span>{isSubmitting ? 'Recording Expense...' : `Add Expense • ${group.currency === 'INR' ? '₹' : `${group.currency} `}${Number(expenseForm.amount || 0).toLocaleString()}`}</span>
+                      <ArrowRight size={17} />
+                    </button>
+                  </div>
                 </form>
               </div>
             </div>
@@ -1531,106 +1690,154 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
         {isSettleUpModalOpen && selectedTransfer && (
           <div className="success-drawer-overlay" onClick={() => setIsSettleUpModalOpen(false)}>
             <div
-              className="success-drawer-sheet"
+              className="success-drawer-sheet settle-up-sheet"
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-modal="true"
+              aria-labelledby="settle-up-title"
             >
               <div className="success-drawer-handle-bar">
                 <div className="success-drawer-handle" />
                 <button
                   type="button"
                   className="success-drawer-close-btn"
-                  onClick={() => setIsSettleUpModalOpen(false)}
+                  onClick={() => {
+                    setIsSettleUpModalOpen(false);
+                    setSettlementToMemberId('');
+                  }}
+                  aria-label="Close settle up"
                 >
                   <X size={18} strokeWidth={2.4} />
                 </button>
               </div>
 
-              <div className="success-drawer-content" style={{ textAlign: 'left', alignItems: 'stretch' }}>
-                <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', color: 'var(--text-primary)', margin: '0 0 4px 0' }}>
-                  Record Debt Settlement
-                </h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 16px 0' }}>
-                  Confirm payment from <strong>{selectedTransfer.fromName}</strong> to <strong>{selectedTransfer.toName}</strong>.
-                </p>
+              <div className="success-drawer-content settle-up-content">
+                <div className="settle-up-heading">
+                  <h3 id="settle-up-title">Settle Up</h3>
+                  <p>{group.name}</p>
+                </div>
 
-                <form onSubmit={handleConfirmSettlement} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                      Settlement Amount ({group.currency})
-                    </label>
-                    <input
-                      className="styled-text-input font-bold"
-                      required
-                      type="number"
-                      step="0.01"
-                      value={settlementForm.amount}
-                      onChange={(e) => setSettlementForm({ ...settlementForm, amount: e.target.value })}
-                      style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.9rem', padding: '9px 12px' }}
-                    />
+                <div className="settle-flow-card">
+                  <div className="settle-flow-member">
+                    <span className="settle-flow-avatar" style={{ backgroundColor: settlementPayer?.avatarBg || '#059669' }}>
+                      {(settlementPayer?.name || 'P').trim().slice(0, 2).toUpperCase()}
+                    </span>
+                    <strong>{settlementPayer?.name || 'Payer'}</strong>
+                    <small>Paying</small>
                   </div>
+                  <div className="settle-flow-arrow"><ArrowRight size={17} /></div>
+                  <div className="settle-flow-member">
+                    <span className="settle-flow-avatar" style={{ backgroundColor: settlementReceiver?.avatarBg || '#0284C7' }}>
+                      {(settlementReceiver?.name || 'R').trim().slice(0, 2).toUpperCase()}
+                    </span>
+                    <strong>{settlementReceiver?.name || 'Receiver'}</strong>
+                    <small>Receiving</small>
+                  </div>
+                </div>
 
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                      Payment Method
-                    </label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        type="button"
-                        className={`category-pill ${settlementForm.paymentMethod === 'UPI' ? 'active' : ''}`}
-                        onClick={() => setSettlementForm({ ...settlementForm, paymentMethod: 'UPI' })}
-                        style={{ flex: 1, justifyContent: 'center', padding: '8px', fontSize: '0.76rem' }}
-                      >
-                        <span>UPI / Online</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={`category-pill ${settlementForm.paymentMethod === 'CASH' ? 'active' : ''}`}
-                        onClick={() => setSettlementForm({ ...settlementForm, paymentMethod: 'CASH' })}
-                        style={{ flex: 1, justifyContent: 'center', padding: '8px', fontSize: '0.76rem' }}
-                      >
-                        <span>Cash</span>
-                      </button>
+                <div className="settle-up-body">
+                  <section className="settle-up-section">
+                    <h4>You Are Paying</h4>
+                    <div className="settle-locked-payer">
+                      <span className="settle-flow-avatar small" style={{ backgroundColor: settlementPayer?.avatarBg || '#059669' }}>
+                        {(settlementPayer?.name || 'P').trim().slice(0, 1).toUpperCase()}
+                      </span>
+                      <strong>{settlementPayer?.name || 'Payer'} (You)</strong>
                     </div>
-                  </div>
+                  </section>
 
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                      UTR / Transaction Reference (Optional)
-                    </label>
-                    <input
-                      className="styled-text-input"
-                      placeholder="e.g. UPI Ref 394827103"
-                      value={settlementForm.reference}
-                      onChange={(e) => setSettlementForm({ ...settlementForm, reference: e.target.value })}
-                      style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.8rem', padding: '8px 12px' }}
-                    />
-                  </div>
+                  <section className="settle-up-section">
+                    <h4>Paying To</h4>
+                    <div className="settle-creditor-chips">
+                      {membersList
+                        .filter((member) => String(member.id) !== settlementPayer?.id && Number(member.netBalance) > 0.01)
+                        .map((member) => {
+                          const isSelected = String(member.id) === settlementReceiverId;
+                          return (
+                            <button
+                              key={String(member.id)}
+                              type="button"
+                              className={`settle-creditor-chip ${isSelected ? 'active' : ''}`}
+                              onClick={() => {
+                                setSettlementToMemberId(String(member.id));
+                                setSettlementForm((previous) => ({
+                                  ...previous,
+                                  remarks: `Settlement to ${member.name}`
+                                }));
+                              }}
+                              aria-pressed={isSelected}
+                            >
+                              <span className="settle-chip-avatar" style={{ backgroundColor: member.avatarBg || '#0284C7' }}>
+                                {(member.name || 'T').charAt(0).toUpperCase()}
+                              </span>
+                              {member.name.split(' ')[0]}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </section>
 
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                      Remarks Note
-                    </label>
-                    <input
-                      className="styled-text-input"
-                      placeholder="e.g. Settle dinner split"
-                      value={settlementForm.remarks}
-                      onChange={(e) => setSettlementForm({ ...settlementForm, remarks: e.target.value })}
-                      style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.8rem', padding: '8px 12px' }}
-                    />
+                  <section className="settle-up-section">
+                    <h4>Amount</h4>
+                    <div className="settle-amount-card">
+                      <span>{group.currency === 'INR' ? '₹' : group.currency}</span>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={settlementForm.amount}
+                        onChange={(event) => setSettlementForm({ ...settlementForm, amount: event.target.value })}
+                        aria-label="Settlement amount"
+                      />
+                      {settlementAmount > 0 && (
+                        <small>{settlementAmount.toLocaleString('en-IN')}</small>
+                      )}
+                    </div>
+                  </section>
+
+                  <div className="settle-vpa-card">
+                    <span className="settle-vpa-icon"><Smartphone size={17} /></span>
+                    <span className="settle-vpa-info">
+                      <small>RECEIVER UPI VPA</small>
+                      <strong>{settlementReceiverUpi || 'Select a creditor'}</strong>
+                    </span>
                   </div>
 
                   <button
-                    type="submit"
-                    className="success-drawer-dashboard-btn"
-                    disabled={isSubmitting}
-                    style={{ marginTop: '8px' }}
+                    type="button"
+                    className="settle-launch-upi"
+                    onClick={launchSettlementUpi}
+                    disabled={!settlementReceiver || settlementAmount <= 0}
                   >
-                    <span>{isSubmitting ? 'Recording Settlement...' : 'Confirm Settlement & Clear Debt'}</span>
-                    <Check size={16} strokeWidth={2.5} />
+                    <Smartphone size={17} />
+                    <span>Pay via UPI App</span>
                   </button>
-                </form>
+
+                  <form onSubmit={handleConfirmSettlement} className="settle-reference-form">
+                    <label htmlFor="settle-reference">UTR / Transaction Reference (Optional)</label>
+                    <input
+                      id="settle-reference"
+                      className="styled-text-input"
+                      placeholder="Enter payment reference"
+                      value={settlementForm.reference}
+                      onChange={(event) => setSettlementForm({ ...settlementForm, reference: event.target.value })}
+                    />
+                    <input
+                      type="hidden"
+                      value={settlementForm.remarks}
+                      readOnly
+                    />
+                    <button
+                      type="submit"
+                      className="settle-record-button"
+                      disabled={isSubmitting || settlementAmount <= 0 || !settlementReceiver}
+                    >
+                      <Check size={17} />
+                      <span>{isSubmitting ? 'Recording...' : `Mark as Settled · ${group.currency === 'INR' ? '₹' : `${group.currency} `}${settlementAmount.toLocaleString('en-IN')}`}</span>
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
           </div>
@@ -1642,7 +1849,7 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
           onClose={() => setIsMembersModalOpen(false)}
           groupName={group.name}
           destination={group.destination}
-          members={membersList}
+          members={groupMembers}
           currency={group.currency}
         />
       </div>
