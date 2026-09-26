@@ -18,7 +18,7 @@ async function handleSupportDatabaseEvent(payload) {
   if (!io || !payload?.type) return;
   const ticketNumber = String(payload.ticketNumber || '').trim();
   if (payload.type === 'ticket:created') {
-    io.to('support:admins').emit('ticket:created', { ticketNumber });
+    io.to('admin:support').emit('ticket:created', { ticketNumber });
     return;
   }
   if (!ticketNumber) return;

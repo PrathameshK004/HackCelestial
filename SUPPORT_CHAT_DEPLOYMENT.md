@@ -20,7 +20,7 @@
 
 ## Verification
 
-- Admin dashboard displays `Live Socket Connected` after login.
+- Admin dashboard displays `Live chat connected` after login.
 - Open the same ticket in the customer app and agent dashboard.
 - Send a message from either side. It should appear immediately in the other conversation without refreshing.
 - Disconnect/reconnect one client; the open conversation should resync from persisted history.

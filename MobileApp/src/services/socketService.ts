@@ -321,6 +321,15 @@ class SocketService {
     this.joinedTicketNumbers.delete(cleanTicketNumber);
     this.socket?.emit("leave:ticket", cleanTicketNumber);
   }
+
+  sendTicketTyping(ticketNumber: string, isTyping: boolean) {
+    const cleanTicketNumber = String(ticketNumber || "").trim();
+    if (!cleanTicketNumber || !this.socket?.connected) return;
+    this.socket.emit("ticket:typing", {
+      ticketNumber: cleanTicketNumber,
+      isTyping,
+    });
+  }
 }
 
 export const socketService = new SocketService();
