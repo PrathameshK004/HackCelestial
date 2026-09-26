@@ -26,12 +26,7 @@ import {
   FileIcon
 } from 'lucide-react';
 import {
-  joinTicketRoom,
-  leaveTicketRoom,
-  subscribeTicketMessages,
-  subscribeTicketStatus,
-  subscribeTicketCreated,
-  sendSocketTicketMessage
+  subscribeTicketCreated
 } from '../services/socket.service';
 import {
   createSupportTicket,

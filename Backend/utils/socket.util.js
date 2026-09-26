@@ -271,8 +271,6 @@ function initSocketServer(httpServer) {
       socket.userId = resolvedUserId;
       socket.role = requestedRole;
       return next();
-    } catch (err) {
-      return next();
     } catch (error) {
       return next(new Error('unauthorized'));
     }
