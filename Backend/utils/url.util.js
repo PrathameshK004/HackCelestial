@@ -1,15 +1,14 @@
 /**
  * URL Utilities for GroupTrip Ledger
- * Resolves links sent via Email, WhatsApp, Telegram, SMS, and share links
- * against the local web app during development.
+ * Resolves links sent via Email, WhatsApp, Telegram, SMS, and share links.
  */
 
-const LOCAL_APP_URL = 'http://localhost:5173';
+const LIVE_APP_URL = 'https://triptual-web.vercel.app';
 
 /**
  * Resolves the real live public application URL for public sharing and emails.
  * @param {import('express').Request} [req] - Optional express request object
- * @returns {string} Fully qualified local base URL
+ * @returns {string} Fully qualified application base URL
  */
 function getLiveAppUrl(req) {
     // 1. Check explicit environment variable
@@ -34,11 +33,11 @@ function getLiveAppUrl(req) {
         }
     }
 
-    // 3. Local fallback
-    return LOCAL_APP_URL;
+    // 3. Production fallback
+    return LIVE_APP_URL;
 }
 
 module.exports = {
     getLiveAppUrl,
-    LOCAL_APP_URL
+    LIVE_APP_URL
 };
