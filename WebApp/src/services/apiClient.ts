@@ -8,13 +8,26 @@ import { Capacitor } from "@capacitor/core";
 export const getApiBase = (): string => {
   const liveApiBase = "https://triptual-api.onrender.com/api";
 
+  const resolveConfiguredApi = (value: unknown): string | null => {
+    if (typeof value !== "string" || !value.trim()) return null;
+    const configuredUrl = value.trim().replace(/\/+$/, "");
+    if (typeof window === "undefined") return configuredUrl;
+
+    const runningLocally = ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
+    if (!runningLocally && window.location.protocol === "https:" && !configuredUrl.startsWith("https://")) {
+      console.warn("Ignoring insecure API URL in HTTPS deployment; using the live API.");
+      return null;
+    }
+    if (!runningLocally && /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/|$)/i.test(configuredUrl)) {
+      console.warn("Ignoring localhost API URL in deployment; using the live API.");
+      return null;
+    }
+    return configuredUrl;
+  };
+
   // 1. When running on native mobile app (Capacitor Android/iOS), connect to local backend
   if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
-    const envUrl = (import.meta as any).env?.VITE_API_URL;
-    if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
-      return envUrl.trim().replace(/\/+$/, "");
-    }
-    return liveApiBase;
+    return resolveConfiguredApi((import.meta as any).env?.VITE_API_URL) || liveApiBase;
   }
 
   // 2. When running on web browser localhost / dev machine, route to local backend via /api proxy
@@ -30,10 +43,8 @@ export const getApiBase = (): string => {
   }
 
   // 3. Explicit custom API URL or live backend fallback
-  const envUrl = (import.meta as any).env?.VITE_API_URL;
-  if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
-    return envUrl.trim().replace(/\/+$/, "");
-  }
+  const envUrl = resolveConfiguredApi((import.meta as any).env?.VITE_API_URL);
+  if (envUrl) return envUrl;
 
   return liveApiBase;
 };
@@ -156,7 +167,7 @@ export async function apiRequest<T>(
   } catch (netErr: any) {
     console.error("API network error:", netErr);
     const error = new Error(
-      "Cannot connect to backend server. Please verify port 4000.",
+      `Cannot connect to the support API at ${API_BASE}. Check the configured API URL and network connection.`,
     );
     (error as any).status = 503;
     throw error;
