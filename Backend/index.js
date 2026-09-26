@@ -5,44 +5,23 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const cors = require('cors');
 require('dotenv').config();
+const { corsOrigin } = require('./utils/cors.util');
 const indexRouter = require('./routes/index');
 const { initializeDatabase, pool } = require('./utils/db.util');
 const { sendError } = require('./utils/response.util');
 
-app.use(bodyParser.json({ limit: '20mb' }));
-app.use(cookieParser());
-app.use(bodyParser.urlencoded({ extended: false, limit: '20mb' }));
-
 // CORS Configuration
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:8081',
-  'http://127.0.0.1:8081',
-];
-
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, server-to-server)
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    // Allow known origins or any local dev server (localhost / 127.0.0.1)
-    if (allowedOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-      return callback(null, true);
-    }
-
-    // Fallback permit in development
-    return callback(null, true);
-  },
+  origin: corsOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['X-Requested-With', 'Content-Type', 'Origin', 'Accept', 'Authorization'],
   exposedHeaders: ['Authorization'],
   credentials: true // Allows session cookies & headers
 }));
+
+app.use(bodyParser.json({ limit: '20mb' }));
+app.use(cookieParser());
+app.use(bodyParser.urlencoded({ extended: false, limit: '20mb' }));
 
 const healthController = require('./controllers/health.controller');
 

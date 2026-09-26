@@ -4,6 +4,7 @@ const { pool } = require('../utils/db.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const { uploadSupportDocumentToS3 } = require('../utils/s3.util');
 const { sendTicketCreatedEmail } = require('../utils/mail.util');
+const { emitToTicket } = require('../utils/socket.util');
 
 /**
  * Create a new support ticket
@@ -356,6 +357,11 @@ async function sendTicketMessage(req, res) {
             client.release();
         }
 
+        emitToTicket(ticket.ticketNumber, 'ticket:message', { message: newMsg });
+        if (ticket.status === 'RESOLVED') {
+            emitToTicket(ticket.ticketNumber, 'ticket:status_change', { status: 'OPEN' });
+        }
+
         return sendSuccess(res, 'Message sent successfully', newMsg, 201);
     } catch (error) {
         console.error('Send ticket message error:', error.message);
@@ -520,6 +526,37 @@ async function getTicketAdminDetails(req, res) {
     }
 }
 
+async function getAdminTicketAttachment(req, res) {
+    const { ticketNumber } = req.params;
+    try {
+        const result = await pool.query(
+            `SELECT attachment_name, attachment_type, attachment_url, attachment_data
+             FROM support_tickets
+             WHERE ticket_number = $1
+             LIMIT 1`,
+            [ticketNumber]
+        );
+        if (!result.rows.length) return sendError(res, 'Ticket not found', null, 404);
+
+        const attachment = result.rows[0];
+        if (attachment.attachment_url && /^https?:\/\//i.test(attachment.attachment_url)) {
+            return res.redirect(attachment.attachment_url);
+        }
+        if (attachment.attachment_url && attachment.attachment_url.startsWith('/uploads/')) {
+            return res.redirect(attachment.attachment_url);
+        }
+        if (attachment.attachment_data) {
+            res.setHeader('Content-Type', attachment.attachment_type || 'application/octet-stream');
+            res.setHeader('Content-Disposition', `inline; filename="${attachment.attachment_name || 'document'}"`);
+            return res.send(attachment.attachment_data);
+        }
+        return sendError(res, 'No attachment document available for this ticket', null, 404);
+    } catch (error) {
+        console.error('Admin get ticket attachment error:', error.message);
+        return sendError(res, 'Failed to retrieve attachment', error, 500);
+    }
+}
+
 /**
  * Admin: Send message in ticket thread (Real-time dispatched to user)
  */
@@ -589,13 +626,7 @@ async function sendAdminTicketMessage(req, res) {
 
         const newMsg = insertRes.rows[0];
 
-        // Broadcast real-time socket event to user
-        try {
-            const { emitTicketMessage } = require('../utils/socket.util');
-            emitTicketMessage(ticket.ticketNumber, newMsg);
-        } catch (sErr) {
-            console.warn('[Socket Message Emit Note]:', sErr.message);
-        }
+        emitToTicket(ticket.ticketNumber, 'ticket:message', { message: newMsg });
 
         return sendSuccess(res, 'Admin response sent successfully', newMsg, 201);
     } catch (error) {
@@ -667,6 +698,7 @@ module.exports = {
     getTicketAttachment,
     getAllTicketsAdmin,
     getTicketAdminDetails,
+    getAdminTicketAttachment,
     sendAdminTicketMessage,
     updateAdminTicketStatus
 };

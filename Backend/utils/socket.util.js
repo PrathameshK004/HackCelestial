@@ -2,6 +2,8 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { verifyToken: verifyJWT } = require('./jwt.util');
 const { pool } = require('./db.util');
+const { verifyAdminAccessToken } = require('../middleware/adminAuth.middleware');
+const { corsOrigin } = require('./cors.util');
 
 let io = null;
 let supportEventsClient = null;
@@ -195,10 +197,7 @@ async function emitTicketRoomPresence(room, ticketNumber) {
 function initSocketServer(httpServer) {
   io = new Server(httpServer, {
     cors: {
-      origin: (origin, callback) => {
-        // Allow mobile apps (no origin/exp://) or any allowed domain
-        return callback(null, true);
-      },
+      origin: corsOrigin,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     },
@@ -246,10 +245,7 @@ function initSocketServer(httpServer) {
 
   io.on('connection', (socket) => {
     const userId = socket.userId;
-    if (socket.role === 'ADMIN' || socket.role === 'SUPPORT') {
-      socket.join('admin:support');
-    }
-    if (userId) {
+    if (userId && socket.userAuthenticated) {
       socket.join(`user:${userId}`);
       socket.join(`user_${userId}`);
       socket.join(String(userId));
@@ -260,8 +256,8 @@ function initSocketServer(httpServer) {
 
     // Explicit room registration from mobile/web client
     socket.on('join:user', (userKey) => {
-      if (socket.actorRole === 'USER' && userKey && String(userKey).trim() === socket.userId) {
-        const cleanKey = socket.userId;
+      if (socket.userAuthenticated && socket.userId && userKey && String(userKey).trim() === String(socket.userId)) {
+        const cleanKey = String(userKey).trim();
         socket.join(`user:${cleanKey}`);
         socket.join(`user_${cleanKey}`);
         socket.join(cleanKey);

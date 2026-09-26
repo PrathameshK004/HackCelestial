@@ -26,12 +26,7 @@ import {
   FileIcon
 } from 'lucide-react';
 import {
-  joinTicketRoom,
-  joinTicketRooms,
-  subscribeTicketMessages,
-  subscribeTicketStatus,
-  subscribeTicketCreated,
-  sendSocketTicketMessage
+  subscribeTicketCreated
 } from '../services/socket.service';
 import {
   createSupportTicket,
@@ -140,9 +135,6 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     try {
       const tickets = await listSupportTickets();
       setMyTickets(tickets);
-      joinTicketRooms(
-        tickets.map((ticket) => ticket.ticketNumber)
-      );
     } catch (err) {
       console.warn('Could not load support tickets:', err);
     } finally {
