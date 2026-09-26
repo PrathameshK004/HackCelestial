@@ -4,6 +4,17 @@ import { API_BASE } from './apiClient';
 let socket: Socket | null = null;
 const joinedTicketRooms = new Set<string>();
 
+function getStoredUserId() {
+  const userRaw = typeof localStorage !== 'undefined' ? localStorage.getItem('triptual_auth_user') : null;
+  if (!userRaw) return null;
+  try {
+    const user = JSON.parse(userRaw);
+    return user.id || user.key || user.userId || null;
+  } catch {
+    return null;
+  }
+}
+
 export function getSocketUrl(): string {
   // 1. If custom environment variable is set
   const envUrl = (import.meta as any).env?.VITE_SOCKET_URL;
@@ -34,19 +45,13 @@ export function getSocketUrl(): string {
 export function getSocket(): Socket {
   if (!socket) {
     const socketUrl = getSocketUrl();
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('triptual_auth_token') : null;
-    const userRaw = typeof localStorage !== 'undefined' ? localStorage.getItem('triptual_auth_user') : null;
-    let userId = null;
-    if (userRaw) {
-      try {
-        const u = JSON.parse(userRaw);
-        userId = u.id || u.key || u.userId;
-      } catch (_) {}
-    }
-
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
-      auth: { token, userId, role: 'USER' },
+      auth: (callback) => callback({
+        token: typeof localStorage !== 'undefined' ? localStorage.getItem('triptual_auth_token') : null,
+        userId: getStoredUserId(),
+        role: 'USER',
+      }),
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
@@ -54,6 +59,7 @@ export function getSocket(): Socket {
 
     socket.on('connect', () => {
       console.log('⚡ [Socket.io] Connected to server successfully (ID:', socket?.id, ')');
+      const userId = getStoredUserId();
       if (userId) {
         socket?.emit('join:user', userId);
       }
@@ -76,7 +82,9 @@ export function joinTicketRoom(ticketNumber: string) {
   if (ticketNumber) {
     const clean = String(ticketNumber).trim();
     joinedTicketRooms.add(clean);
-    s.emit('join:ticket', clean);
+    s.emit('join:ticket', clean, (result: { success: boolean; error?: string }) => {
+      if (!result?.success) console.warn('[Socket.io] Could not join ticket room:', result?.error || clean);
+    });
     console.log('⚡ [Socket.io] Joined room for ticket:', clean);
   }
 }
