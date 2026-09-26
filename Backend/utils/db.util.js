@@ -378,6 +378,74 @@ const initializeDatabase = async () => {
         CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id, created_at ASC);
     `);
     await pool.query('ALTER TABLE support_ticket_messages ALTER COLUMN sender_id DROP NOT NULL');
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS support_ticket_event_outbox (
+            event_id BIGSERIAL PRIMARY KEY,
+            event_type VARCHAR(40) NOT NULL,
+            ticket_number VARCHAR(32) NOT NULL,
+            payload JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_support_ticket_event_outbox_created
+            ON support_ticket_event_outbox(event_id);
+        CREATE TABLE IF NOT EXISTS support_ticket_event_consumers (
+            consumer_name VARCHAR(80) PRIMARY KEY,
+            last_event_id BIGINT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE OR REPLACE FUNCTION public.notify_support_ticket_event()
+        RETURNS trigger AS $support_ticket_event$
+        DECLARE
+            ticket_number_value TEXT;
+            event_payload JSONB;
+            event_type_value TEXT;
+            new_event_id BIGINT;
+        BEGIN
+            IF TG_TABLE_NAME = 'support_tickets' THEN
+                IF TG_OP = 'INSERT' THEN
+                    event_type_value := 'ticket:created';
+                    event_payload := jsonb_build_object('ticketNumber', NEW.ticket_number);
+                ELSIF OLD.status IS DISTINCT FROM NEW.status THEN
+                    event_type_value := 'ticket:status_change';
+                    event_payload := jsonb_build_object('ticketNumber', NEW.ticket_number, 'status', NEW.status);
+                ELSE
+                    RETURN NEW;
+                END IF;
+                PERFORM pg_advisory_xact_lock(hashtext('triptual_support_event_outbox'));
+                INSERT INTO support_ticket_event_outbox (event_type, ticket_number, payload)
+                VALUES (event_type_value, NEW.ticket_number, event_payload)
+                RETURNING event_id INTO new_event_id;
+                PERFORM pg_notify('triptual_support_events', new_event_id::text);
+                RETURN NEW;
+            END IF;
+
+            SELECT ticket_number INTO ticket_number_value
+            FROM support_tickets
+            WHERE id = NEW.ticket_id;
+
+            IF ticket_number_value IS NOT NULL THEN
+                event_payload := jsonb_build_object('messageId', NEW.id);
+                PERFORM pg_advisory_xact_lock(hashtext('triptual_support_event_outbox'));
+                INSERT INTO support_ticket_event_outbox (event_type, ticket_number, payload)
+                VALUES ('ticket:message', ticket_number_value, event_payload)
+                RETURNING event_id INTO new_event_id;
+                PERFORM pg_notify('triptual_support_events', new_event_id::text);
+            END IF;
+            RETURN NEW;
+        END;
+        $support_ticket_event$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS support_ticket_notify_event ON support_tickets;
+        CREATE TRIGGER support_ticket_notify_event
+        AFTER INSERT OR UPDATE OF status ON support_tickets
+        FOR EACH ROW EXECUTE FUNCTION public.notify_support_ticket_event();
+
+        DROP TRIGGER IF EXISTS support_ticket_message_notify_event ON support_ticket_messages;
+        CREATE TRIGGER support_ticket_message_notify_event
+        AFTER INSERT ON support_ticket_messages
+        FOR EACH ROW EXECUTE FUNCTION public.notify_support_ticket_event();
+    `);
 
     await pool.query(`
         ALTER TABLE IF EXISTS support_ticket_messages

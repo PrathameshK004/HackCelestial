@@ -77,9 +77,20 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
       setSelectedTicket((current) => current?.ticketNumber === ticketNumber ? { ...current, status: payload.status } : current);
       setTickets((current) => current.map((item) => item.ticketNumber === ticketNumber ? { ...item, status: payload.status } : item));
     });
+    const unsubscribeReconnect = socketService.onConnected(() => {
+      getTicketMessages(ticketNumber).then((result) => {
+        setSelectedTicket((current) => current?.ticketNumber === ticketNumber ? result.ticket : current);
+        setMessages((current) => {
+          const byId = new Map((result.messages || []).map((message) => [message.id, message]));
+          current.forEach((message) => byId.set(message.id, message));
+          return [...byId.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        });
+      }).catch((err) => console.warn('Could not resync support chat after reconnect:', err));
+    });
     return () => {
       unsubscribe();
       unsubscribeStatus();
+      unsubscribeReconnect();
       socketService.leaveTicket(ticketNumber);
     };
   }, [screen, selectedTicket?.ticketNumber]);

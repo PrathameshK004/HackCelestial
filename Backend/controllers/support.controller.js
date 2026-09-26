@@ -4,7 +4,6 @@ const { pool } = require('../utils/db.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const { uploadSupportDocumentToS3 } = require('../utils/s3.util');
 const { sendTicketCreatedEmail } = require('../utils/mail.util');
-const { emitToTicket, emitToSupportAdmins } = require('../utils/socket.util');
 
 /**
  * Create a new support ticket
@@ -46,52 +45,57 @@ async function createTicket(req, res) {
             }
         }
 
-        // Insert ticket into database (storing attachment_url in S3, NOT saving binary in attachment_data)
-        const result = await pool.query(
-            `INSERT INTO support_tickets
-             (id, user_id, ticket_number, category, subject, message, status, attachment_name, attachment_type, attachment_size, attachment_url, attachment_key)
-             VALUES ($1, $2, $3, $4, $5, $6, 'OPEN', $7, $8, $9, $10, $11)
-             RETURNING ticket_number AS "ticketNumber", category, subject, message, status,
-                       attachment_name AS "attachmentName", attachment_type AS "attachmentType",
-                       attachment_size AS "attachmentSize", attachment_url AS "attachmentUrl",
-                       created_at AS "createdAt"`,
-            [
-                ticketId,
-                req.userKey,
-                ticketNumber,
-                String(category),
-                String(subject).trim(),
-                String(message).trim(),
-                attachment?.originalname || null,
-                attachment?.mimetype || null,
-                attachment?.size || null,
-                attachmentUrl,
-                attachmentKey
-            ]
-        );
-
-        const createdTicket = result.rows[0];
-
-        // Seed initial message into dedicated chat thread
         const userName = req.user?.username || 'User';
-        await pool.query(
-            `INSERT INTO support_ticket_messages
-             (id, ticket_id, sender_id, sender_name, sender_role, message, attachment_url, attachment_name, attachment_type, attachment_size)
-             VALUES ($1, $2, $3, $4, 'USER', $5, $6, $7, $8, $9)`,
-            [
-                crypto.randomUUID(),
-                ticketId,
-                req.userKey,
-                userName,
-                String(message).trim(),
-                attachmentUrl,
-                attachment?.originalname || null,
-                attachment?.mimetype || null,
-                attachment?.size || null
-            ]
-        ).catch((err) => console.warn('[Support Ticket Message Seed Warning]:', err.message));
-
-        emitToSupportAdmins('ticket:created', { ticket: createdTicket });
+        const client = await pool.connect();
+        let createdTicket;
+        try {
+            await client.query('BEGIN');
+            const result = await client.query(
+                `INSERT INTO support_tickets
+                 (id, user_id, ticket_number, category, subject, message, status, attachment_name, attachment_type, attachment_size, attachment_url, attachment_key)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'OPEN', $7, $8, $9, $10, $11)
+                 RETURNING ticket_number AS "ticketNumber", category, subject, message, status,
+                           attachment_name AS "attachmentName", attachment_type AS "attachmentType",
+                           attachment_size AS "attachmentSize", attachment_url AS "attachmentUrl",
+                           created_at AS "createdAt"`,
+                [
+                    ticketId,
+                    req.userKey,
+                    ticketNumber,
+                    String(category),
+                    String(subject).trim(),
+                    String(message).trim(),
+                    attachment?.originalname || null,
+                    attachment?.mimetype || null,
+                    attachment?.size || null,
+                    attachmentUrl,
+                    attachmentKey
+                ]
+            );
+            createdTicket = result.rows[0];
+            await client.query(
+                `INSERT INTO support_ticket_messages
+                 (id, ticket_id, sender_id, sender_name, sender_role, message, attachment_url, attachment_name, attachment_type, attachment_size)
+                 VALUES ($1, $2, $3, $4, 'USER', $5, $6, $7, $8, $9)`,
+                [
+                    crypto.randomUUID(),
+                    ticketId,
+                    req.userKey,
+                    userName,
+                    String(message).trim(),
+                    attachmentUrl,
+                    attachment?.originalname || null,
+                    attachment?.mimetype || null,
+                    attachment?.size || null
+                ]
+            );
+            await client.query('COMMIT');
+        } catch (transactionError) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw transactionError;
+        } finally {
+            client.release();
+        }
 
         // Send email to user saying "We will looking into Issue"
         let userEmail = req.user?.emailId;
@@ -183,36 +187,40 @@ async function updateTicketStatus(req, res) {
     }
 
     try {
-        const result = await pool.query(
-            `UPDATE support_tickets
-             SET status = $1
-             WHERE ticket_number = $2 AND user_id = $3
-             RETURNING id, ticket_number AS "ticketNumber", category, subject, message, status,
-                       attachment_name AS "attachmentName", attachment_url AS "attachmentUrl",
-                       created_at AS "createdAt"`,
-            [status, ticketNumber, req.userKey]
-        );
-
-        if (result.rows.length === 0) {
-            return sendError(res, 'Ticket not found or unauthorized', null, 404);
-        }
-
-        const ticket = result.rows[0];
-
-        // Insert system audit message in chat
-        if (status === 'RESOLVED') {
-            const systemMessage = await pool.query(
-                `INSERT INTO support_ticket_messages
-                 (id, ticket_id, sender_id, sender_name, sender_role, message)
-                 VALUES ($1, $2, $3, 'System', 'SYSTEM', 'Ticket was marked as solved.')
-                 RETURNING id, ticket_id AS "ticketId", sender_id AS "senderId", sender_name AS "senderName",
-                           sender_role AS "senderRole", message, created_at AS "createdAt"`,
-                [crypto.randomUUID(), ticket.id, req.userKey]
+        const client = await pool.connect();
+        let ticket;
+        try {
+            await client.query('BEGIN');
+            const result = await client.query(
+                `UPDATE support_tickets
+                 SET status = $1
+                 WHERE ticket_number = $2 AND user_id = $3
+                 RETURNING id, ticket_number AS "ticketNumber", category, subject, message, status,
+                           attachment_name AS "attachmentName", attachment_url AS "attachmentUrl",
+                           created_at AS "createdAt"`,
+                [status, ticketNumber, req.userKey]
             );
-            emitToTicket(ticketNumber, 'ticket:message', { message: systemMessage.rows[0] });
+            if (result.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return sendError(res, 'Ticket not found or unauthorized', null, 404);
+            }
+            ticket = result.rows[0];
+            if (status === 'RESOLVED') {
+                await client.query(
+                    `INSERT INTO support_ticket_messages
+                     (id, ticket_id, sender_id, sender_name, sender_role, message)
+                     VALUES ($1, $2, $3, 'System', 'SYSTEM', 'Ticket was marked as solved.')`,
+                    [crypto.randomUUID(), ticket.id, req.userKey]
+                );
+            }
+            await client.query('COMMIT');
+        } catch (transactionError) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw transactionError;
+        } finally {
+            client.release();
         }
 
-        emitToTicket(ticketNumber, 'ticket:status_change', { status });
         return sendSuccess(res, `Ticket marked as ${status.toLowerCase()}`, ticket);
     } catch (error) {
         console.error('Update ticket status error:', error.message);
@@ -312,41 +320,42 @@ async function sendTicketMessage(req, res) {
         }
 
         const userName = req.user?.username || 'User';
-        const msgId = crypto.randomUUID();
-
-        const insertRes = await pool.query(
-            `INSERT INTO support_ticket_messages
-             (id, ticket_id, sender_id, sender_name, sender_role, message, attachment_url, attachment_name, attachment_type, attachment_size)
-             VALUES ($1, $2, $3, $4, 'USER', $5, $6, $7, $8, $9)
-             RETURNING id, ticket_id AS "ticketId", sender_id AS "senderId", sender_name AS "senderName",
-                       sender_role AS "senderRole", message, attachment_url AS "attachmentUrl",
-                       attachment_name AS "attachmentName", attachment_type AS "attachmentType",
-                       attachment_size AS "attachmentSize", created_at AS "createdAt"`,
-            [
-                msgId,
-                ticket.id,
-                req.userKey,
-                userName,
-                message ? String(message).trim() : null,
-                attachmentUrl,
-                attachment?.originalname || null,
-                attachment?.mimetype || null,
-                attachment?.size || null
-            ]
-        );
-
-        const newMsg = insertRes.rows[0];
-
-        // If the ticket was resolved, automatically reopen it on new user response
-        if (ticket.status === 'RESOLVED') {
-            await pool.query(
-                `UPDATE support_tickets SET status = 'OPEN' WHERE id = $1`,
-                [ticket.id]
+        const client = await pool.connect();
+        let newMsg;
+        try {
+            await client.query('BEGIN');
+            const insertRes = await client.query(
+                `INSERT INTO support_ticket_messages
+                 (id, ticket_id, sender_id, sender_name, sender_role, message, attachment_url, attachment_name, attachment_type, attachment_size)
+                 VALUES ($1, $2, $3, $4, 'USER', $5, $6, $7, $8, $9)
+                 RETURNING id, ticket_id AS "ticketId", sender_id AS "senderId", sender_name AS "senderName",
+                           sender_role AS "senderRole", message, attachment_url AS "attachmentUrl",
+                           attachment_name AS "attachmentName", attachment_type AS "attachmentType",
+                           attachment_size AS "attachmentSize", created_at AS "createdAt"`,
+                [
+                    crypto.randomUUID(),
+                    ticket.id,
+                    req.userKey,
+                    userName,
+                    message ? String(message).trim() : null,
+                    attachmentUrl,
+                    attachment?.originalname || null,
+                    attachment?.mimetype || null,
+                    attachment?.size || null
+                ]
             );
-            emitToTicket(ticketNumber, 'ticket:status_change', { status: 'OPEN' });
+            newMsg = insertRes.rows[0];
+            if (ticket.status === 'RESOLVED') {
+                await client.query('UPDATE support_tickets SET status = $1 WHERE id = $2', ['OPEN', ticket.id]);
+            }
+            await client.query('COMMIT');
+        } catch (transactionError) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw transactionError;
+        } finally {
+            client.release();
         }
 
-        emitToTicket(ticketNumber, 'ticket:message', { message: newMsg });
         return sendSuccess(res, 'Message sent successfully', newMsg, 201);
     } catch (error) {
         console.error('Send ticket message error:', error.message);

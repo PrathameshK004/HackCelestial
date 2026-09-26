@@ -6,13 +6,15 @@ import { Capacitor } from "@capacitor/core";
  */
 
 export const getApiBase = (): string => {
+  const liveApiBase = "https://triptual-api.onrender.com/api";
+
   // 1. When running on native mobile app (Capacitor Android/iOS), connect to local backend
   if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
     const envUrl = (import.meta as any).env?.VITE_API_URL;
     if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
       return envUrl.trim().replace(/\/+$/, "");
     }
-    return "http://localhost:4000/api";
+    return liveApiBase;
   }
 
   // 2. When running on web browser localhost / dev machine, route to local backend via /api proxy
@@ -27,13 +29,13 @@ export const getApiBase = (): string => {
     }
   }
 
-  // 3. Explicit custom API URL or local backend fallback
+  // 3. Explicit custom API URL or live backend fallback
   const envUrl = (import.meta as any).env?.VITE_API_URL;
   if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
     return envUrl.trim().replace(/\/+$/, "");
   }
 
-  return "http://localhost:4000/api";
+  return liveApiBase;
 };
 
 export const API_BASE = getApiBase();
