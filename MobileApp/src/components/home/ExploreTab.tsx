@@ -43,6 +43,7 @@ import {
 import { colors, radii, shadows } from '../../theme/colors';
 import { useTrips } from '../../context/TripContext';
 import { apiRequest } from '../../api/apiClient';
+import { DineScreen } from '../../screens/DineScreen';
 
 export interface CuratedStay {
   id: string;
@@ -320,6 +321,7 @@ interface ExploreTabProps {
   onSelectTrip?: (tripId: string) => void;
   onCreateTrip?: () => void;
   onRefresh?: () => Promise<void> | void;
+  onRestaurantModeChange?: (active: boolean) => void;
 }
 
 export const ExploreTab: React.FC<ExploreTabProps> = ({
@@ -327,6 +329,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   onSelectTrip,
   onCreateTrip,
   onRefresh,
+  onRestaurantModeChange,
 }) => {
   const insets = useSafeAreaInsets();
   const { trips, refreshTrips } = useTrips();
@@ -381,11 +384,16 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   }, [trips]);
 
   // Navigation & View States
-  const [viewMode, setViewMode] = useState<'gallery' | 'list' | 'map'>('gallery');
+  const [viewMode, setViewMode] = useState<'gallery' | 'restaurant'>('gallery');
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [selectedStay, setSelectedStay] = useState<CuratedStay | null>(null);
   const [savedStayIds, setSavedStayIds] = useState<string[]>([]);
   const [isReserved, setIsReserved] = useState(false);
+
+  useEffect(() => {
+    onRestaurantModeChange?.(viewMode === 'restaurant');
+    return () => onRestaurantModeChange?.(false);
+  }, [viewMode, onRestaurantModeChange]);
 
   // Toggle Save Stay
   const toggleSaveStay = (id: string) => {
@@ -411,6 +419,14 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   const featuredStay = filteredStays[0] || null;
   const gridMatches = filteredStays.slice(1, 5);
 
+  if (viewMode === 'restaurant') {
+    return (
+      <View style={styles.screenWrapper}>
+        <DineScreen inline onClose={() => setViewMode('gallery')} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screenWrapper}>
       <ScrollView
@@ -426,37 +442,8 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
           />
         }
       >
-        {/* Curated Header Info */}
-        <View style={styles.curatedHeader}>
-          <Text style={styles.curatedTitle}>
-            {filteredStays.length} curated picks
-          </Text>
-          <View style={styles.curatedMetaRow}>
-            <Text style={styles.curatedMetaText}>San Francisco</Text>
-            <Text style={styles.curatedMetaDot}>·</Text>
-            <Text style={styles.curatedMetaText}>Jun 15-22</Text>
-            <Text style={styles.curatedMetaDot}>·</Text>
-            <Text style={styles.curatedMetaText}>2 guests</Text>
-          </View>
-        </View>
-
-        {/* View Segmented Switcher: Map | Gallery | List */}
+        {/* View Segmented Switcher: Tour Packages | Restaurant */}
         <View style={styles.segmentedControl}>
-          <TouchableOpacity
-            style={[styles.segmentBtn, viewMode === 'map' && styles.segmentBtnActive]}
-            onPress={() => setViewMode('map')}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.segmentBtnText,
-                viewMode === 'map' && styles.segmentBtnTextActive,
-              ]}
-            >
-              Map
-            </Text>
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.segmentBtn, viewMode === 'gallery' && styles.segmentBtnActive]}
             onPress={() => setViewMode('gallery')}
@@ -468,22 +455,19 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                 viewMode === 'gallery' && styles.segmentBtnTextActive,
               ]}
             >
-              Gallery
+              Tour Packages
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.segmentBtn, viewMode === 'list' && styles.segmentBtnActive]}
-            onPress={() => setViewMode('list')}
+            style={styles.segmentBtn}
+            onPress={() => setViewMode('restaurant')}
             activeOpacity={0.8}
           >
             <Text
-              style={[
-                styles.segmentBtnText,
-                viewMode === 'list' && styles.segmentBtnTextActive,
-              ]}
+              style={styles.segmentBtnText}
             >
-              List
+              Restaurant
             </Text>
           </TouchableOpacity>
         </View>
@@ -630,123 +614,8 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                   ))}
                 </View>
 
-                {/* View More Pill Button */}
-                <TouchableOpacity
-                  style={styles.btnViewMorePill}
-                  onPress={() => setViewMode('list')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.btnViewMoreText}>
-                    View More · {exploreStays.length} Total Picks
-                  </Text>
-                  <ArrowRight size={16} color="#181916" />
-                </TouchableOpacity>
               </>
             )}
-          </View>
-        )}
-
-        {/* ---------------- VIEW MODE: LIST ---------------- */}
-        {viewMode === 'list' && (
-          <View style={styles.listViewWrapper}>
-            {/* Curated User Banner */}
-            <View style={styles.curatedUserBanner}>
-              <View style={styles.curatedAvatarCircle}>
-                <Text style={styles.curatedAvatarText}>P</Text>
-              </View>
-              <View style={styles.curatedUserText}>
-                <Text style={styles.curatedUserTitle}>
-                  Your <Text style={styles.curatedUserTitleItalic}>twelve</Text> curated picks
-                </Text>
-                <Text style={styles.curatedUserSubtitle}>
-                  Based on your trip preferences
-                </Text>
-              </View>
-            </View>
-
-            {/* Curated List Container */}
-            <View style={styles.curatedListContainer}>
-              {filteredStays.map((stay) => (
-                <TouchableOpacity
-                  key={stay.id}
-                  style={styles.curatedListItem}
-                  onPress={() => setSelectedStay(stay)}
-                  activeOpacity={0.88}
-                >
-                  <View style={styles.curatedItemLeft}>
-                    <Image source={{ uri: stay.image }} style={styles.curatedItemThumb} />
-                    <View style={styles.curatedItemDetails}>
-                      <Text style={styles.curatedItemTitle} numberOfLines={1}>
-                        {stay.name}
-                      </Text>
-                      <View style={styles.curatedItemMeta}>
-                        <View style={styles.metaChipRow}>
-                          <Home size={12} color="#585952" />
-                          <Text style={styles.metaChipText}>{stay.type}</Text>
-                        </View>
-                        <Text style={styles.metaChipDot}>·</Text>
-                        <View style={styles.metaChipRow}>
-                          <Users size={12} color="#585952" />
-                          <Text style={styles.metaChipText}>{stay.guests} PAX</Text>
-                        </View>
-                        <Text style={styles.metaChipDot}>·</Text>
-                        <Text style={styles.metaChipText}>
-                          {stay.pricePerNight > 150 ? '$$$' : '$$'}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.curatedItemRight}>
-                    <View style={styles.matchBadge}>
-                      <Text style={styles.badgeTextDark}>{stay.matchScore}% Match</Text>
-                    </View>
-                    <View style={styles.listRatingRow}>
-                      <Star size={12} color="#181916" fill="#181916" />
-                      <Text style={styles.listRatingText}>{stay.rating}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* ---------------- VIEW MODE: MAP ---------------- */}
-        {viewMode === 'map' && (
-          <View style={styles.mapCardPlaceholder}>
-            <View style={styles.mapIconCircle}>
-              <MapPin size={34} color="#464B29" />
-            </View>
-            <Text style={styles.mapTitle}>Interactive Destination Map</Text>
-            <Text style={styles.mapSub}>
-              Showing curated stays with match ratings across San Francisco, Barcelona, Provence & Santorini.
-            </Text>
-
-            {/* Destination summary pills */}
-            <View style={styles.mapPillsRow}>
-              <View style={styles.mapCityPill}>
-                <Text style={styles.mapCityText}>San Francisco (5)</Text>
-              </View>
-              <View style={styles.mapCityPill}>
-                <Text style={styles.mapCityText}>Barcelona (3)</Text>
-              </View>
-              <View style={styles.mapCityPill}>
-                <Text style={styles.mapCityText}>Provence (2)</Text>
-              </View>
-              <View style={styles.mapCityPill}>
-                <Text style={styles.mapCityText}>Santorini (2)</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.btnReturnGallery}
-              onPress={() => setViewMode('gallery')}
-              activeOpacity={0.85}
-            >
-              <Compass size={16} color="#FFFFFF" />
-              <Text style={styles.btnReturnGalleryText}>Return to Curated Gallery</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -1057,6 +926,75 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+
+  dineSectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+    marginBottom: 16,
+    ...shadows.md,
+  },
+  dineHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  dineSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: '#059669',
+  },
+  dinePill: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  dinePillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  dineTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#181916',
+    marginBottom: 6,
+  },
+  dineSubtitle: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#585952',
+    marginBottom: 10,
+  },
+  dineFeatureList: {
+    marginBottom: 14,
+  },
+  dineFeature: {
+    fontSize: 12.5,
+    lineHeight: 20,
+    color: '#334155',
+  },
+  dineActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    borderRadius: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  dineActionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 
   /* Curated Header */

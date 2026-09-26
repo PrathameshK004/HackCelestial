@@ -424,8 +424,8 @@ async function getAllTicketsAdmin(req, res) {
                    t.attachment_name AS "attachmentName", t.attachment_type AS "attachmentType",
                    t.attachment_size AS "attachmentSize", t.attachment_url AS "attachmentUrl",
                    t.created_at AS "createdAt", t.user_id AS "userId",
-                   u.username AS "userName", u.email_id AS "userEmail", u.phone_number AS "userPhone",
-                   u.avatar_url AS "userAvatar",
+                   u.username AS "userName", u.email_id AS "userEmail", u.phone AS "userPhone",
+                   u.avatar AS "userAvatar",
                    (SELECT COUNT(*)::int FROM support_ticket_messages m WHERE m.ticket_id = t.id) AS "messagesCount",
                    (SELECT m2.message FROM support_ticket_messages m2 WHERE m2.ticket_id = t.id ORDER BY m2.created_at DESC LIMIT 1) AS "lastMessage"
             FROM support_tickets t
@@ -436,24 +436,24 @@ async function getAllTicketsAdmin(req, res) {
         let pIndex = 1;
 
         if (status && status !== 'all' && status !== 'ALL') {
-            query += ` AND LOWER(t.status) = LOWER(${pIndex})`;
+            query += ` AND LOWER(t.status) = LOWER($${pIndex})`;
             params.push(status);
             pIndex++;
         }
 
         if (category && category !== 'all' && category !== 'ALL') {
-            query += ` AND LOWER(t.category) = LOWER(${pIndex})`;
+            query += ` AND LOWER(t.category) = LOWER($${pIndex})`;
             params.push(category);
             pIndex++;
         }
 
         if (search && search.trim()) {
             query += ` AND (
-                t.ticket_number ILIKE ${pIndex} OR
-                t.subject ILIKE ${pIndex} OR
-                t.message ILIKE ${pIndex} OR
-                u.username ILIKE ${pIndex} OR
-                u.email_id ILIKE ${pIndex}
+                t.ticket_number ILIKE $${pIndex} OR
+                t.subject ILIKE $${pIndex} OR
+                t.message ILIKE $${pIndex} OR
+                u.username ILIKE $${pIndex} OR
+                u.email_id ILIKE $${pIndex}
             )`;
             params.push(`%${search.trim()}%`);
             pIndex++;
@@ -484,8 +484,8 @@ async function getTicketAdminDetails(req, res) {
                     t.attachment_name AS "attachmentName", t.attachment_type AS "attachmentType",
                     t.attachment_size AS "attachmentSize", t.attachment_url AS "attachmentUrl",
                     t.created_at AS "createdAt", t.user_id AS "userId",
-                    u.username AS "userName", u.email_id AS "userEmail", u.phone_number AS "userPhone",
-                    u.avatar_url AS "userAvatar"
+                    u.username AS "userName", u.email_id AS "userEmail", u.phone AS "userPhone",
+                    u.avatar AS "userAvatar"
              FROM support_tickets t
              LEFT JOIN users u ON t.user_id = u.id
              WHERE t.ticket_number = $1
