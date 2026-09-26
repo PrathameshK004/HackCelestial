@@ -454,7 +454,11 @@ function initSocketServer(httpServer) {
       const ticketRooms = [...socket.rooms].filter((room) => room.startsWith('ticket:'));
       setImmediate(() => {
         ticketRooms.forEach((room) => {
-          emitTicketPresence(room, room.slice('ticket:'.length)).catch(() => { });
+          try {
+            emitTicketPresence(room.slice('ticket:'.length));
+          } catch (error) {
+            console.warn('[Socket.io] Could not update ticket presence after disconnect:', error.message);
+          }
         });
       });
     });
