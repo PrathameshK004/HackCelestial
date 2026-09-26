@@ -49,6 +49,7 @@ import { useAuth } from '../context/AuthContext';
 import { groupService } from '../api/group.service';
 import { ledgerEngine } from '../sync/ledgerEngine';
 import { AddExpenseModal } from '../components/group/AddExpenseModal';
+import { SyncBanner } from '../components/common/SyncBanner';
 import { SettleUpModal } from '../components/group/SettleUpModal';
 import { GroupMembersModal } from '../components/group/GroupMembersModal';
 
@@ -270,21 +271,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const financialDataError = Boolean(trip?.settlementError);
   const members = trip?.members || [];
   const rawExpenses = trip?.expenses || [];
-  const expenses = useMemo(() => {
-    const seenIds = new Set<string>();
-    const seenFp = new Set<string>();
-    return rawExpenses.filter((e) => {
-      const eid = String(e.id || '');
-      if (eid && seenIds.has(eid)) return false;
-      if (eid) seenIds.add(eid);
-
-      const fp = `${(e.title || '').trim().toLowerCase()}_${Number(e.amount || 0)}_${e.paidById || ''}_${e.date || ''}_${(e.time || '').slice(0, 4)}`;
-      if (seenFp.has(fp)) return false;
-      seenFp.add(fp);
-
-      return true;
-    });
-  }, [rawExpenses]);
+  const expenses = rawExpenses;
   const settlements = trip?.settlements || [];
 
   const confirmedMembers = members.filter(
@@ -453,6 +440,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
       edges={['left', 'right']}
     >
       <View style={styles.container}>
+      <SyncBanner />
       {/* Top Navigation Bar */}
       <View style={styles.navBar}>
         <TouchableOpacity
@@ -648,6 +636,11 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                         <Text style={styles.expMeta}>
                           Paid by {exp.paidByName} • {exp.date}
                         </Text>
+                        {exp.syncStatus !== 'SYNCED' && (
+                          <Text style={[styles.expSyncStatus, exp.syncStatus === 'FAILED' && styles.expSyncFailed]}>
+                            {exp.syncStatus === 'FAILED' ? 'Needs attention' : 'Saved on this device • Waiting to sync'}
+                          </Text>
+                        )}
                       </View>
 
                       <View style={styles.expAmountCol}>
@@ -1300,6 +1293,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.slate500,
     marginTop: 2,
+  },
+  expSyncStatus: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.accentAmber,
+    marginTop: 3,
+  },
+  expSyncFailed: {
+    color: colors.accentRose,
   },
   expAmountCol: {
     alignItems: 'flex-end',

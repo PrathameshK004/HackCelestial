@@ -47,7 +47,7 @@ const CATEGORIES = ['Food', 'Stay', 'Transport', 'Activities', 'Supplies', 'Othe
 
 const SPLIT_MODELS: { id: CostSharingModel; label: string; desc: string }[] = [
   { id: 'EQUAL', label: 'Equal Split', desc: 'Divided evenly among all selected travelers' },
-  { id: 'PARTICIPANT_BASED', label: 'Participant-Based', desc: 'Per-person customized share' },
+  { id: 'PARTICIPANT_BASED', label: 'Participant-Based', desc: 'Percentage split across selected travelers' },
   { id: 'ROOM_SHARE', label: 'Room Share', desc: 'Split based on occupied rooms' },
   { id: 'ACTIVITY_BASED', label: 'Activity-Based', desc: 'Split only among opted-in members' },
   { id: 'ORGANIZER_PAID', label: 'Organizer Sponsored', desc: 'Organizer covers full cost, 0 debt' },
@@ -134,8 +134,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
         ? []
         : selectedMemberIds.map((memberId) => ({
             memberId,
-            shareType: 'EQUAL_UNIT',
-            shareValue: 1,
+            shareType: splitModel === 'PARTICIPANT_BASED' ? 'PERCENTAGE' : 'EQUAL_UNIT',
+            shareValue: splitModel === 'PARTICIPANT_BASED' ? 100 / selectedMemberIds.length : 1,
             isOptedIn: true,
           }));
 

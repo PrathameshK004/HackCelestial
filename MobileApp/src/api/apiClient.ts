@@ -76,10 +76,12 @@ const normalizeLocalDevUrl = (url: string): string => {
 };
 
 export const getApiBase = (): string => {
-  const envUrl =
+  const configuredUrl =
     process.env.EXPO_PUBLIC_API_URL ||
     process.env.REACT_APP_API_URL ||
     process.env.VITE_API_URL;
+  const normalizedUrl = configuredUrl?.trim().replace(/\/+$/, "");
+  const isDevelopment = process.env.NODE_ENV === "development";
 
   if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
     const normalizedUrl = normalizeLocalDevUrl(envUrl);

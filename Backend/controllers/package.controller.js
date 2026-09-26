@@ -70,6 +70,29 @@ const normalizePackageRow = (row = {}) => {
     };
 };
 
+const unwrapPackagesPayload = (packages) => {
+    if (Array.isArray(packages)) {
+        return packages;
+    }
+
+    if (packages && typeof packages === 'object') {
+        if (Array.isArray(packages.value)) {
+            return packages.value;
+        }
+
+        if (typeof packages.value === 'string') {
+            try {
+                const parsed = JSON.parse(packages.value);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (error) {
+                return [];
+            }
+        }
+    }
+
+    return [];
+};
+
 const fetchExplorePackages = async (req) => {
     const { category, destination } = req.query;
     let query = "SELECT * FROM tour_packages WHERE status = 'Published'";
@@ -126,7 +149,7 @@ const getExplorePackages = async (req, res) => {
 
         res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
         res.set('X-Cache', 'Redis');
-        return sendSuccess(res, 'Published tour packages retrieved successfully', { packages, total: packages.length });
+        return sendSuccess(res, 'Published tour packages retrieved successfully', { packages: normalizedPackages, total: normalizedPackages.length });
     } catch (error) {
         console.error('Error fetching explore tour packages:', error);
         return sendError(res, 'Failed to retrieve tour packages', error.message, 500);

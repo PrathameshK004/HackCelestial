@@ -232,6 +232,7 @@ const initializeDatabase = async () => {
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS approvals JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS required_approvals INT DEFAULT 1;
         ALTER TABLE expenses ADD COLUMN IF NOT EXISTS raw_sms_proof TEXT;
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS idempotency_hash TEXT;
         ALTER TABLE expenses ALTER COLUMN paid_by DROP NOT NULL;
     `);
 

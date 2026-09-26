@@ -4,17 +4,32 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { WifiOff, AlertTriangle } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { useSync } from '../../context/SyncContext';
 
 export const SyncBanner: React.FC = () => {
-  const { isOnline, isSyncing, pendingCount, syncNow } = useSync();
+  const { isOnline, isSyncing, pendingCount, failedCount, syncNow, retryFailed } = useSync();
 
-  if (isOnline && pendingCount === 0) {
+  if (isOnline && pendingCount === 0 && failedCount === 0) {
     return null;
   }
+
+  const handlePress = () => {
+    if (failedCount > 0) {
+      Alert.alert(
+        'Sync needs attention',
+        `${failedCount} change${failedCount === 1 ? '' : 's'} could not be synced. Retry them now?`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Retry', onPress: () => retryFailed() }
+        ]
+      );
+      return;
+    }
+    void syncNow();
+  };
 
   return (
     <View style={styles.container}>
@@ -24,7 +39,7 @@ export const SyncBanner: React.FC = () => {
           !isOnline && styles.bannerOffline,
           isSyncing && styles.bannerSyncing,
         ]}
-        onPress={() => syncNow()}
+        onPress={handlePress}
         activeOpacity={0.8}
       >
         {isSyncing ? (
@@ -43,10 +58,14 @@ export const SyncBanner: React.FC = () => {
             ]}
           >
             {!isOnline
-              ? pendingCount > 0
-                ? `Offline • ${pendingCount} changes saved locally (will sync online)`
-                : "Offline mode • You can view and edit cached trips"
-              : `${pendingCount} changes waiting to sync • Tap to retry`}
+              ? failedCount > 0
+                ? `Offline • ${failedCount} changes need attention`
+                : pendingCount > 0
+                  ? `Offline • ${pendingCount} changes saved locally (will sync online)`
+                  : 'Offline mode • You can view and edit cached trips'
+              : failedCount > 0
+                ? `${failedCount} changes need attention • Tap to retry`
+                : `${pendingCount} changes waiting to sync • Tap to retry`}
           </Text>
         )}
       </TouchableOpacity>

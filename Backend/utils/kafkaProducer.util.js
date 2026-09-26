@@ -6,6 +6,7 @@ let isConnected = false;
 let isConnecting = false;
 
 const KAFKA_TOPIC = process.env.KAFKA_TOPIC || 'notification-events';
+const SUPPORT_CHAT_TOPIC = process.env.SUPPORT_CHAT_TOPIC || 'support-chat-topic';
 
 /**
  * Initialize Kafka Producer connection
@@ -91,6 +92,40 @@ async function publishNotificationEvent(eventType, payload = {}) {
   return { success: true, eventId, mode: 'DIRECT_FALLBACK' };
 }
 
+async function publishSupportChatEvent(payload = {}) {
+  const eventType = 'SUPPORT_CHAT_MESSAGE';
+  const eventId = crypto.randomUUID();
+  const timestamp = new Date().toISOString();
+  const eventMessage = { eventId, eventType, timestamp, payload };
+
+  try {
+    const prod = await initKafkaProducer();
+    if (prod && isConnected) {
+      await prod.send({
+        topic: SUPPORT_CHAT_TOPIC,
+        messages: [{
+          key: payload.ticketNumber || eventType,
+          value: JSON.stringify(eventMessage),
+          headers: { eventType, timestamp },
+        }],
+      });
+      console.log(`[Kafka Producer] Support chat event published (ID: ${eventId}) to topic '${SUPPORT_CHAT_TOPIC}'`);
+      return { success: true, eventId, mode: 'KAFKA' };
+    }
+  } catch (err) {
+    console.warn('[Kafka Producer] Support chat event publish failed:', err.message);
+  }
+
+  console.log('[Kafka Fallback] Processing support chat event through the direct pipeline');
+  const { processNotificationEvent } = require('./kafkaConsumer.util');
+  setImmediate(() => {
+    processNotificationEvent(eventMessage).catch((err) => {
+      console.error('[Kafka Fallback] Support chat event processing failed:', err.message);
+    });
+  });
+  return { success: true, eventId, mode: 'DIRECT_FALLBACK' };
+}
+
 /**
  * Disconnect Kafka Producer
  */
@@ -109,5 +144,6 @@ async function disconnectKafkaProducer() {
 module.exports = {
   initKafkaProducer,
   publishNotificationEvent,
+  publishSupportChatEvent,
   disconnectKafkaProducer,
 };

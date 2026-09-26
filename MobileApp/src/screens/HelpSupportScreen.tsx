@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Dimensions, Image, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, UIManager, View } from 'react-native';
-import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Clock3, Headphones, ImagePlus, Paperclip, Plus, Search, Send, SlidersHorizontal, Ticket } from 'lucide-react-native';
+import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Clock3, Headphones, ImagePlus, MessageCircle, Paperclip, Plus, Search, Send, SlidersHorizontal, Ticket } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { colors, radii, shadows } from '../theme/colors';
 import { backgrounds, borders, cardRadius, fontSize as themeFontSize, fontWeight as fw, screenHeader, spacing } from '../theme/theme';
-import { createSupportTicket, getTicketAttachmentUrl, getTicketMessages, listSupportTickets, sendTicketMessage, SupportAttachment, SupportTicketSummary, TicketMessage, updateSupportTicketStatus } from '../api/support.service';
+import { askSupportAssistant, createSupportTicket, getTicketAttachmentUrl, getTicketMessages, listSupportTickets, sendTicketMessage, SupportAssistantMessage, SupportAttachment, SupportTicketSummary, TicketMessage, updateSupportTicketStatus } from '../api/support.service';
 import { socketService } from '../services/socketService';
 
 const fs = { ...themeFontSize, modalTitle: themeFontSize.sectionTitle, modalSubtitle: themeFontSize.inputText };
@@ -54,8 +54,10 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
   const [urgent, setUrgent] = useState(false);
   const [attachment, setAttachment] = useState<SupportAttachment | null>(null);
   const [draft, setDraft] = useState('');
+  const [isSupportTyping, setIsSupportTyping] = useState(false);
   const [sending, setSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const typingTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { const subscription = BackHandler.addEventListener('hardwareBackPress', () => { if (screen !== 'tickets') { setScreen('tickets'); return true; } onBack?.(); return Boolean(onBack); }); return () => subscription.remove(); }, [onBack, screen]);
   const loadTickets = async () => { setLoading(true); setError(''); try { setTickets(await listSupportTickets()); } catch (err: any) { setError(err?.message || 'Could not load your support tickets.'); } finally { setLoading(false); } };
@@ -64,36 +66,77 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
   useEffect(() => {
     if (screen !== 'chat' || !selectedTicket) return;
     const ticketNumber = selectedTicket.ticketNumber;
-    void socketService.connect();
-    socketService.joinTicket(ticketNumber);
-    const unsubscribe = socketService.on('ticket:message', (payload) => {
-      if (payload?.ticketNumber !== ticketNumber) return;
-      const incoming = payload.message as TicketMessage | undefined;
-      if (!incoming?.id) return;
-      setMessages((current) => current.some((item) => item.id === incoming.id) ? current : [...current, incoming]);
-    });
-    const unsubscribeStatus = socketService.on('ticket:status_change', (payload) => {
-      if (payload?.ticketNumber !== ticketNumber || !payload.status) return;
-      setSelectedTicket((current) => current?.ticketNumber === ticketNumber ? { ...current, status: payload.status } : current);
-      setTickets((current) => current.map((item) => item.ticketNumber === ticketNumber ? { ...item, status: payload.status } : item));
-    });
-    const unsubscribeReconnect = socketService.onConnected(() => {
-      getTicketMessages(ticketNumber).then((result) => {
-        setSelectedTicket((current) => current?.ticketNumber === ticketNumber ? result.ticket : current);
+    let isActive = true;
+    let isRefreshing = false;
+
+    const refreshConversation = async () => {
+      if (isRefreshing) return;
+      isRefreshing = true;
+      try {
+        const result = await getTicketMessages(ticketNumber);
+        if (!isActive) return;
+        if (result.ticket) {
+          setSelectedTicket((current) => current?.ticketNumber === ticketNumber ? { ...current, ...result.ticket } : current);
+          setTickets((current) => current.map((item) => item.ticketNumber === ticketNumber ? { ...item, ...result.ticket } : item));
+        }
         setMessages((current) => {
           const byId = new Map((result.messages || []).map((message) => [message.id, message]));
           current.forEach((message) => byId.set(message.id, message));
           return [...byId.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         });
-      }).catch((err) => console.warn('Could not resync support chat after reconnect:', err));
+      } catch (err) {
+        console.warn('Could not refresh support chat:', err);
+      } finally {
+        isRefreshing = false;
+      }
+    };
+
+    const unsubscribeMessage = socketService.on('ticket:message', (payload) => {
+      if (payload?.ticketNumber !== ticketNumber || !payload.message?.id) return;
+      setMessages((current) => current.some((item) => item.id === payload.message.id)
+        ? current
+        : [...current, payload.message as TicketMessage].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
     });
+    const unsubscribeStatus = socketService.on('ticket:status_change', (payload) => {
+      if (payload?.ticketNumber !== ticketNumber || !payload.status) return;
+      setSelectedTicket((current) => current?.ticketNumber === ticketNumber ? { ...current, status: payload.status } : current);
+      setTickets((current) => current.map((ticket) => ticket.ticketNumber === ticketNumber ? { ...ticket, status: payload.status } : ticket));
+    });
+    const unsubscribeTyping = socketService.on('ticket:typing', (payload) => {
+      if (payload?.ticketNumber === ticketNumber && payload.senderRole === 'SUPPORT') {
+        setIsSupportTyping(Boolean(payload.isTyping));
+      }
+    });
+    const unsubscribeReconnect = socketService.onConnected(() => { void refreshConversation(); });
+    socketService.joinTicket(ticketNumber);
+    void socketService.connect();
+
+    const poll = setInterval(() => void refreshConversation(), 7000);
     return () => {
-      unsubscribe();
+      isActive = false;
+      clearInterval(poll);
+      unsubscribeMessage();
       unsubscribeStatus();
+      unsubscribeTyping();
       unsubscribeReconnect();
+      socketService.sendTicketTyping(ticketNumber, false);
       socketService.leaveTicket(ticketNumber);
+      setIsSupportTyping(false);
     };
   }, [screen, selectedTicket?.ticketNumber]);
+
+  const handleDraftChange = (value: string) => {
+    setDraft(value);
+    if (!selectedTicket) return;
+    const isTyping = Boolean(value.trim());
+    socketService.sendTicketTyping(selectedTicket.ticketNumber, isTyping);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (isTyping) {
+      typingTimeoutRef.current = setTimeout(() => {
+        socketService.sendTicketTyping(selectedTicket.ticketNumber, false);
+      }, 1200);
+    }
+  };
 
   const chooseAttachment = async () => {
     try {
@@ -174,7 +217,7 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
 
   if (screen === 'new') return <View style={styles.container}><StatusBar barStyle="dark-content" backgroundColor={backgrounds.card} /><Header title="New ticket" right={<Headphones size={27} color={colors.slate900} />} /><ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled"><Text style={styles.label}>Category</Text><Pressable style={[styles.select, categoryOpen && styles.selectActive]} onPress={() => setCategoryOpen((value) => !value)}><Text style={styles.inputText}>{category}</Text><ChevronDown size={21} color={colors.slate500} /></Pressable>{categoryOpen && <View style={styles.categoryMenu}>{CATEGORIES.map((item) => <Pressable key={item} style={styles.categoryOption} onPress={() => { setCategory(item); setCategoryOpen(false); }}><Text style={styles.inputText}>{item}</Text></Pressable>)}</View>}<Text style={styles.label}>Subject</Text><TextInput style={styles.input} placeholder="E.g. Payment not going through" placeholderTextColor={colors.slate400} value={subject} onChangeText={setSubject} /><Text style={styles.label}>Describe your issue</Text><TextInput style={[styles.input, styles.textArea]} placeholder="Please provide as much detail as possible" placeholderTextColor={colors.slate400} multiline textAlignVertical="top" value={description} onChangeText={setDescription} /><Text style={styles.label}>Upload file</Text><Pressable style={styles.uploadBox} onPress={chooseAttachment}><ImagePlus size={23} color={colors.slate900} /><Text style={styles.uploadText}>{attachment?.name || 'Add screenshot / file'}</Text><Text style={styles.uploadHint}>Max 10 Mb</Text></Pressable><View style={styles.formSpacer} /><View style={styles.urgentRow}><Text style={styles.label}>Mark as urgent</Text><Switch value={urgent} onValueChange={setUrgent} trackColor={{ false: colors.slate200, true: colors.primary200 }} thumbColor={urgent ? colors.primary600 : colors.slate50} /></View><Pressable style={[styles.primaryButton, submitting && styles.disabled]} onPress={submitTicket} disabled={submitting}><Text style={styles.primaryButtonText}>{submitting ? 'Submitting...' : 'Submit Ticket'}</Text><Send size={19} color="#FFFFFF" /></Pressable></ScrollView></View>;
 
-  if (screen === 'chat' && selectedTicket) return <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={keyboardOffset}><StatusBar barStyle="dark-content" backgroundColor={backgrounds.card} /><Header title={`Ticket #${selectedTicket.ticketNumber}`} subtitle={selectedTicket.subject} /><ScrollView style={styles.chatScroll} contentContainerStyle={[styles.chatContent, { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><View style={styles.datePill}><Text style={styles.dateText}>{formatDate(selectedTicket.createdAt)}</Text></View>{loadingMessages ? <ActivityIndicator color={colors.primary600} style={styles.loader} /> : messages.map((message) => <MessageBubble key={message.id} message={message} ticketNumber={selectedTicket.ticketNumber} />)}</ScrollView><View style={[styles.composer, { marginHorizontal: 0, marginBottom: 0, borderWidth: 1, borderColor: colors.slate200, borderRadius: 28, paddingHorizontal: 12, paddingVertical: 10, paddingBottom: Platform.OS === 'ios' ? insets.bottom + 8 : 12 }]}><Pressable onPress={chooseAttachment} style={styles.composerIcon}><Paperclip size={20} color={colors.slate500} /></Pressable><TextInput style={[styles.composerInput, { maxHeight: 84 }]} placeholder="Message" placeholderTextColor={colors.slate400} value={draft} onChangeText={setDraft} multiline /><Pressable onPress={sendMessage} style={[styles.sendButton, { width: 40, height: 40, borderRadius: 20 }]} disabled={sending}><Send size={17} color="#FFFFFF" /></Pressable></View></KeyboardAvoidingView>;
+  if (screen === 'chat' && selectedTicket) return <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={keyboardOffset}><StatusBar barStyle="dark-content" backgroundColor={backgrounds.card} /><Header title={`Ticket #${selectedTicket.ticketNumber}`} subtitle={isSupportTyping ? 'Support is typing...' : selectedTicket.subject} /><ScrollView style={styles.chatScroll} contentContainerStyle={[styles.chatContent, { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 24 }]} keyboardShouldPersistTaps="handled"><View style={styles.datePill}><Text style={styles.dateText}>{formatDate(selectedTicket.createdAt)}</Text></View>{loadingMessages ? <ActivityIndicator color={colors.primary600} style={styles.loader} /> : messages.map((message) => <MessageBubble key={message.id} message={message} ticketNumber={selectedTicket.ticketNumber} />)}</ScrollView><View style={[styles.composer, { marginHorizontal: 0, marginBottom: 0, borderWidth: 1, borderColor: colors.slate200, borderRadius: 28, paddingHorizontal: 12, paddingVertical: 10, paddingBottom: Platform.OS === 'ios' ? insets.bottom + 8 : 12 }]}><Pressable onPress={chooseAttachment} style={styles.composerIcon}><Paperclip size={20} color={colors.slate500} /></Pressable><TextInput style={[styles.composerInput, { maxHeight: 84 }]} placeholder="Message" placeholderTextColor={colors.slate400} value={draft} onChangeText={handleDraftChange} multiline /><Pressable onPress={sendMessage} style={[styles.sendButton, { width: 40, height: 40, borderRadius: 20 }]} disabled={sending}><Send size={17} color="#FFFFFF" /></Pressable></View></KeyboardAvoidingView>;
 
   const visibleTickets = tickets.filter((ticket) => `${ticket.ticketNumber} ${ticket.subject} ${ticket.message} ${ticket.category}`.toLowerCase().includes(search.toLowerCase()));
   return <View style={styles.container}><StatusBar barStyle="dark-content" backgroundColor={backgrounds.card} /><Header
@@ -194,12 +237,40 @@ const FaqView = () => {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<FaqCategory>('all');
   const [expanded, setExpanded] = useState('faq-1');
+  const [assistantMessages, setAssistantMessages] = useState<Array<SupportAssistantMessage & { sources?: string[] }>>([]);
+  const [assistantDraft, setAssistantDraft] = useState('');
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantError, setAssistantError] = useState('');
   const filtered = useMemo(() => FAQ_DATA.filter((item) => {
     const text = `${item.question} ${item.answer} ${item.tags.join(' ')}`.toLowerCase();
     return (category === 'all' || item.category === category) && text.includes(query.toLowerCase().trim());
   }), [category, query]);
 
+  const askQuestion = async () => {
+    const question = assistantDraft.trim();
+    if (!question || assistantBusy) return;
+    setAssistantBusy(true);
+    setAssistantError('');
+    try {
+      const history = [...assistantMessages, { role: 'user' as const, content: question }].slice(-8);
+      const reply = await askSupportAssistant(history);
+      setAssistantMessages([...history, { role: 'assistant', content: reply.answer, sources: reply.sources }]);
+      setAssistantDraft('');
+    } catch (error: any) {
+      setAssistantError(error?.message || 'The assistant is unavailable right now. Please create a support ticket.');
+    } finally {
+      setAssistantBusy(false);
+    }
+  };
+
   return <ScrollView style={styles.faqScroll} contentContainerStyle={[styles.faqContent, { paddingBottom: Math.max(insets.bottom + 18, 26) }]} showsVerticalScrollIndicator={false}>
+    <View style={styles.assistantSection}>
+      <View style={styles.assistantHeading}><MessageCircle size={19} color={colors.primary600} /><Text style={styles.assistantTitle}>Ask Triptual</Text></View>
+      {assistantMessages.length > 0 && <View accessibilityLiveRegion="polite" style={styles.assistantMessages}>{assistantMessages.map((message, index) => <View key={`${index}-${message.role}`} style={[styles.assistantBubble, message.role === 'user' ? styles.assistantUserBubble : styles.assistantReplyBubble]}><Text style={styles.assistantBubbleText}>{message.content}</Text>{message.sources && message.sources.length > 0 && <Text style={styles.assistantSource}>Guide: {message.sources.join(', ')}</Text>}</View>)}</View>}
+      {assistantBusy && <View accessibilityRole="progressbar" style={styles.assistantStatus}><ActivityIndicator size="small" color={colors.primary600} /><Text style={styles.assistantStatusText}>Thinking...</Text></View>}
+      {assistantError ? <Text accessibilityRole="alert" style={styles.assistantError}>{assistantError}</Text> : null}
+      <View style={styles.assistantComposer}><TextInput style={styles.assistantInput} placeholder="Ask about trips, expenses, or payments" placeholderTextColor={colors.slate400} value={assistantDraft} onChangeText={setAssistantDraft} maxLength={1000} returnKeyType="send" onSubmitEditing={askQuestion} accessibilityLabel="Ask a question about using Triptual" /><Pressable style={[styles.assistantSend, (!assistantDraft.trim() || assistantBusy) && styles.disabled]} onPress={askQuestion} disabled={!assistantDraft.trim() || assistantBusy} accessibilityLabel="Send question"><Send size={17} color="#FFFFFF" /></Pressable></View>
+    </View>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.faqCategoryRow}>
       {FAQ_CATEGORIES.map((item) => <Pressable key={item.key} style={[styles.faqCategory, category === item.key && styles.faqCategoryActive]} onPress={() => setCategory(item.key)}><Text style={[styles.faqCategoryText, category === item.key && styles.faqCategoryTextActive]}>{item.label}</Text></Pressable>)}
     </ScrollView>
@@ -328,6 +399,21 @@ const styles = StyleSheet.create({
   tabIndicator: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, backgroundColor: colors.primary600 },
   faqScroll: { flex: 1 },
   faqContent: { paddingHorizontal: spacing.screenHorizontal, paddingTop: 20, paddingBottom: 36 },
+  assistantSection: { paddingBottom: 18, marginBottom: 16, borderBottomWidth: 1, borderBottomColor: borders.header },
+  assistantHeading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  assistantTitle: { color: colors.slate900, fontSize: fs.modalTitle, fontWeight: fw.bold },
+  assistantMessages: { gap: 8, maxHeight: 260, marginBottom: 10 },
+  assistantBubble: { maxWidth: '92%', paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10 },
+  assistantUserBubble: { alignSelf: 'flex-end', backgroundColor: colors.primary100 },
+  assistantReplyBubble: { alignSelf: 'flex-start', backgroundColor: colors.slate100 },
+  assistantBubbleText: { color: colors.slate900, fontSize: fs.caption, lineHeight: 18 },
+  assistantSource: { color: colors.slate500, fontSize: 10, marginTop: 5 },
+  assistantStatus: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  assistantStatusText: { color: colors.slate500, fontSize: fs.caption },
+  assistantError: { color: '#A33A32', fontSize: fs.caption, marginBottom: 8 },
+  assistantComposer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  assistantInput: { flex: 1, minWidth: 0, minHeight: 44, borderWidth: 1, borderColor: colors.slate300, borderRadius: cardRadius.inner, backgroundColor: backgrounds.card, paddingHorizontal: 12, color: colors.slate900, fontSize: fs.caption },
+  assistantSend: { width: 44, height: 44, borderRadius: cardRadius.inner, backgroundColor: colors.primary600, alignItems: 'center', justifyContent: 'center' },
   faqCategoryRow: { gap: 8, paddingBottom: 16, paddingRight: 8 },
   faqCategory: { paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: colors.slate300, borderRadius: cardRadius.inner, backgroundColor: backgrounds.card },
   faqCategoryActive: { backgroundColor: colors.primary600, borderColor: colors.primary600 },

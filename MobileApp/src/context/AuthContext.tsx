@@ -25,6 +25,7 @@ import { authService } from '../api/auth.service';
 import { storage } from '../database/storage';
 import { notificationService } from '../services/notificationService';
 import { socketService } from '../services/socketService';
+import { setDatabaseUser } from '../database/sqlite';
 
 interface AuthContextType {
   user: User | null;
@@ -81,6 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const savedUser = await storage.getAuthUser();
 
         if (savedToken && savedUser) {
+          setDatabaseUser(String(savedUser.id || (savedUser as any).userId || ''));
           setToken(savedToken);
           setUser(savedUser);
 
@@ -156,6 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       avatarBg: '#059669',
     };
 
+    setDatabaseUser(String(resolvedUser.id || (resolvedUser as any).userId || ''));
     setUser(resolvedUser);
     await storage.setAuthUser(resolvedUser);
 
@@ -291,6 +294,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setUser(null);
       setToken(null);
+      setDatabaseUser(null);
       await storage.clearSession();
     }
   };

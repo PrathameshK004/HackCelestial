@@ -8,6 +8,7 @@ import { Platform, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { TripProvider, useTrips } from './src/context/TripContext';
+import { SyncProvider } from './src/context/SyncContext';
 import { SplashScreen } from './src/components/common/SplashScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -124,9 +125,11 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={false} />
       <AuthProvider>
-        <TripProvider>
-          <RootNavigator />
-        </TripProvider>
+        <SyncProvider>
+          <TripProvider>
+            <RootNavigator />
+          </TripProvider>
+        </SyncProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

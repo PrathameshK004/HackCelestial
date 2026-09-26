@@ -8,6 +8,7 @@ import { View, StyleSheet, BackHandler, ToastAndroid, Platform, Alert } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { Header } from '../components/common/Header';
+import { SyncBanner } from '../components/common/SyncBanner';
 import { BottomDock, DockTab } from '../components/common/BottomDock';
 import { ExploreTab } from '../components/home/ExploreTab';
 import { TripsTab } from '../components/home/TripsTab';
@@ -513,6 +514,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   return (
     <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
+        <SyncBanner />
         {/* Top Header */}
         {activeTab !== 'payments' && activeTab !== 'profile' && !isRestaurantMode && (
           <>

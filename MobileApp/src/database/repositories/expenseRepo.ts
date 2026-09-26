@@ -3,7 +3,8 @@
  */
 
 import { getDatabase } from '../sqlite';
-import { Expense, ExpenseParticipantSplit } from '../../types';
+import { Expense, ExpenseParticipantSplit, SyncQueueItem } from '../../types';
+import { syncQueueRepo } from './syncQueueRepo';
 
 export const expenseRepo = {
   getExpensesByTrip(tripId: string): Expense[] {
@@ -26,6 +27,10 @@ export const expenseRepo = {
       splitCount: Number(r.split_count || 1),
       paymentMethod: r.payment_method,
       paymentReference: r.payment_reference,
+      verificationStatus: r.verification_status || 'VERIFIED',
+      approvals: JSON.parse(r.approvals_json || '[]'),
+      requiredApprovals: Number(r.required_approvals || 0),
+      rawSmsProof: r.raw_sms_proof || undefined,
       date: r.date,
       time: r.time,
       syncStatus: r.sync_status,
@@ -42,12 +47,16 @@ export const expenseRepo = {
     }));
   },
 
-  addExpense(expense: Expense, splits: ExpenseParticipantSplit[] = []): void {
+  addExpense(
+    expense: Expense,
+    splits: ExpenseParticipantSplit[] = [],
+    queueItem?: Omit<SyncQueueItem, 'id' | 'retryCount' | 'maxRetries' | 'status' | 'createdAt' | 'updatedAt'>
+  ): void {
     const db = getDatabase();
     db.withTransactionSync(() => {
       db.runSync(`
-        INSERT INTO expenses (id, trip_id, title, description, amount, currency, category, paid_by_id, paid_by_name, split_model, split_count, payment_method, payment_reference, date, time, sync_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO expenses (id, trip_id, title, description, amount, currency, category, paid_by_id, paid_by_name, split_model, split_count, payment_method, payment_reference, verification_status, approvals_json, required_approvals, raw_sms_proof, date, time, sync_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           title=excluded.title,
           description=excluded.description,
@@ -60,6 +69,10 @@ export const expenseRepo = {
           split_count=excluded.split_count,
           payment_method=excluded.payment_method,
           payment_reference=excluded.payment_reference,
+          verification_status=excluded.verification_status,
+          approvals_json=excluded.approvals_json,
+          required_approvals=excluded.required_approvals,
+          raw_sms_proof=excluded.raw_sms_proof,
           date=excluded.date,
           time=excluded.time,
           sync_status=excluded.sync_status
@@ -77,6 +90,10 @@ export const expenseRepo = {
         expense.splitCount || 1,
         expense.paymentMethod || 'CASH',
         expense.paymentReference || null,
+        expense.verificationStatus || 'VERIFIED',
+        JSON.stringify(expense.approvals || []),
+        expense.requiredApprovals || 0,
+        expense.rawSmsProof || null,
         expense.date,
         expense.time,
         expense.syncStatus || 'PENDING'
@@ -109,6 +126,51 @@ export const expenseRepo = {
       );
       const newTotal = sumRow ? Number(sumRow.total || 0) : expense.amount;
       db.runSync('UPDATE trips SET total_spent = ? WHERE id = ?', [newTotal, expense.tripId]);
+
+      if (queueItem) {
+        syncQueueRepo.enqueue(queueItem);
+      }
+    });
+  },
+
+  upsertServerExpense(expense: Expense, splits: ExpenseParticipantSplit[] = []): void {
+    const db = getDatabase();
+    const local = db.getFirstSync<{ sync_status: string }>(
+      'SELECT sync_status FROM expenses WHERE id = ?',
+      [expense.id]
+    );
+    if (local && local.sync_status !== 'SYNCED') return;
+    this.addExpense({ ...expense, syncStatus: 'SYNCED' }, splits);
+  },
+
+  recalculateTripTotal(tripId: string): void {
+    const db = getDatabase();
+    const row = db.getFirstSync<{ total: number | null }>(
+      'SELECT SUM(amount) as total FROM expenses WHERE trip_id = ?',
+      [tripId]
+    );
+    db.runSync('UPDATE trips SET total_spent = ? WHERE id = ?', [Number(row?.total || 0), tripId]);
+  },
+
+  reconcileServerExpenses(tripId: string, serverExpenseIds: string[]): void {
+    const db = getDatabase();
+    db.withTransactionSync(() => {
+      const localRows = db.getAllSync<{ id: string }>(
+        "SELECT id FROM expenses WHERE trip_id = ? AND sync_status = 'SYNCED'",
+        [tripId]
+      );
+      const serverIds = new Set(serverExpenseIds);
+      for (const row of localRows) {
+        if (!serverIds.has(row.id)) {
+          db.runSync('DELETE FROM expense_participants WHERE expense_id = ?', [row.id]);
+          db.runSync('DELETE FROM expenses WHERE id = ?', [row.id]);
+        }
+      }
+      const total = db.getFirstSync<{ total: number | null }>(
+        'SELECT SUM(amount) as total FROM expenses WHERE trip_id = ?',
+        [tripId]
+      );
+      db.runSync('UPDATE trips SET total_spent = ? WHERE id = ?', [Number(total?.total || 0), tripId]);
     });
   },
 
@@ -128,7 +190,7 @@ export const expenseRepo = {
     });
   },
 
-  updateExpenseSyncStatus(localId: string, serverId: string, status: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY'): void {
+  updateExpenseSyncStatus(localId: string, serverId: string, status: 'SYNCED' | 'PENDING' | 'LOCAL_ONLY' | 'FAILED'): void {
     const db = getDatabase();
     if (serverId && serverId !== localId) {
       db.withTransactionSync(() => {
