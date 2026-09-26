@@ -325,10 +325,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await storage.setAuthUser(merged);
         return merged;
       }
-      return user;
+      return null;
     } catch (e) {
       console.warn('[AuthContext] refreshProfile error:', e);
-      return user;
+      return null;
     }
   };
 

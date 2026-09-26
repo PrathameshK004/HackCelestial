@@ -7,6 +7,8 @@ const cors = require('cors');
 require('dotenv').config();
 const { corsOrigin } = require('./utils/cors.util');
 const indexRouter = require('./routes/index');
+const requestIdMiddleware = require('./middleware/requestId.middleware');
+const { rateLimit } = require('./middleware/rateLimit.middleware');
 const { initializeDatabase, pool } = require('./utils/db.util');
 const { sendError } = require('./utils/response.util');
 
@@ -22,6 +24,8 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '20mb' }));
 app.use(cookieParser());
 app.use(bodyParser.urlencoded({ extended: false, limit: '20mb' }));
+app.use(requestIdMiddleware);
+app.use('/api/dine', rateLimit({ windowMs: 60000, maxRequests: 60 }));
 
 const healthController = require('./controllers/health.controller');
 

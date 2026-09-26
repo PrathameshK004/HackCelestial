@@ -9,6 +9,8 @@ const notificationRoutes = require('./notification.route');
 const packageRoutes = require('./package.route');
 const savedTripRoutes = require('./savedTrip.route');
 const supportRoutes = require('./support.route');
+const dineRoutes = require('./dine.route');
+const dineController = require('../controllers/dine.controller');
 const healthController = require('../controllers/health.controller');
 
 // Health Check Endpoint
@@ -27,6 +29,9 @@ router.use('/user-notifications', notificationRoutes);
 router.use('/packages', packageRoutes);
 router.use('/saved-trips', savedTripRoutes);
 router.use('/support', supportRoutes);
+router.use('/dine', dineRoutes);
+router.post('/trips/:tripId/dining', verifyToken, dineController.handleCreateDiningActivity);
+router.post('/groups/:groupId/dining', verifyToken, dineController.handleCreateDiningActivity);
 router.post('/user-push-tokens', verifyToken, userController.registerPushToken);
 router.delete('/user-push-tokens', verifyToken, userController.unregisterPushToken);
 

@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -15,6 +16,7 @@ import {
 } from 'react-native';
 import Svg, { Circle as SvgCircle, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { Region } from 'react-native-maps';
 import {
   ArrowLeft,
   ArrowRight,
@@ -33,10 +35,11 @@ import {
 } from 'lucide-react-native';
 import {
   dineFilterGroups,
-  dineMockTripOptions,
-  dineRestaurants,
   Restaurant,
 } from '../data/dineData';
+import { dineService, mapServerRestaurantToAppRestaurant } from '../api/dine.service';
+import { useTrips } from '../context/TripContext';
+import { RestaurantMapView } from '../components/map/RestaurantMapView';
 import {
   backgrounds,
   borders,
@@ -88,32 +91,142 @@ const initialFilters = {
   groupFriendly: false,
 };
 
+interface RestaurantTimeSlot {
+  startTime: string;
+  endTime: string;
+}
+
 export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline = false, onClose }) => {
   const insets = useSafeAreaInsets();
+  const { trips, refreshTrips } = useTrips();
   const [isLoading, setIsLoading] = useState(true);
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [restaurantLoadError, setRestaurantLoadError] = useState<string | null>(null);
+  const [restaurantRefreshKey, setRestaurantRefreshKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'map' | 'list'>('list');
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [isMenuLoading, setIsMenuLoading] = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
-  const [selectedTripId, setSelectedTripId] = useState(dineMockTripOptions[0].id);
-  const [selectedDate, setSelectedDate] = useState('12 Oct');
-  const [selectedTime, setSelectedTime] = useState('8:00 PM');
-  const [selectedParticipants, setSelectedParticipants] = useState<string[]>(['You', 'Rahul', 'Priya', 'Aniket', 'Rohan']);
+  const [bookingMode, setBookingMode] = useState<'activity' | 'book'>('activity');
+  const [selectedTripId, setSelectedTripId] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [selectedTime, setSelectedTime] = useState('20:00');
+  const [availableSlots, setAvailableSlots] = useState<RestaurantTimeSlot[]>([]);
+  const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [budget, setBudget] = useState('2500');
-  const [favorites, setFavorites] = useState<string[]>(['restaurant-001']);
+  const [mapRegion, setMapRegion] = useState<Region>({
+    latitude: 15.495,
+    longitude: 73.827,
+    latitudeDelta: 0.25,
+    longitudeDelta: 0.25,
+  });
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [filters, setFilters] = useState(initialFilters);
   const [showFilters, setShowFilters] = useState(false);
 
+  const tripOptions = useMemo(
+    () =>
+      trips.map((trip) => ({
+        id: trip.id,
+        name: trip.name,
+        dateRange: trip.startDate ? `${trip.startDate} to ${trip.endDate || 'Flexible'}` : 'Flexible dates',
+        members: trip.members?.length ?? 0,
+      })),
+    [trips],
+  );
+
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 650);
-    return () => clearTimeout(timer);
-  }, []);
+    if (tripOptions.length && !selectedTripId) {
+      setSelectedTripId(tripOptions[0].id);
+    }
+  }, [tripOptions, selectedTripId]);
+
+  useEffect(() => {
+    const trip = trips.find((item) => item.id === selectedTripId) ?? trips[0];
+    if (!selectedTripId && trip) setSelectedTripId(trip.id);
+    setSelectedParticipants((trip?.members ?? []).slice(0, 4).map((member) => String(member.id)));
+  }, [selectedTripId, trips]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadFavorites = async () => {
+      try {
+        const favoriteRestaurants = await dineService.getFavoriteRestaurants();
+        if (!isMounted) return;
+        setFavorites(favoriteRestaurants.map((restaurant: any) => String(restaurant.id)));
+      } catch {
+        if (isMounted) setFavorites([]);
+      }
+    };
+
+    const loadRestaurants = async () => {
+      setIsLoading(true);
+      try {
+        const query = searchQuery.trim();
+        const commonFilters = {
+          priceLevel: filters.price !== 'All' ? filters.price : undefined,
+          openNow: filters.openNow || undefined,
+          groupFriendly: filters.groupFriendly || undefined,
+          limit: 50,
+        };
+        const payload = viewMode === 'map' && !query
+          ? await dineService.getNearbyRestaurants({
+              latitude: mapRegion.latitude,
+              longitude: mapRegion.longitude,
+              radius: Math.min(25000, Math.max(1000, mapRegion.latitudeDelta * 55500)),
+              ...commonFilters,
+            })
+          : await dineService.searchRestaurants({
+              q: query || undefined,
+              latitude: viewMode === 'map' ? mapRegion.latitude : undefined,
+              longitude: viewMode === 'map' ? mapRegion.longitude : undefined,
+              radius: viewMode === 'map' ? Math.min(25000, Math.max(1000, mapRegion.latitudeDelta * 55500)) : undefined,
+              ...commonFilters,
+            });
+
+        const mapped = (payload || [])
+          .map((restaurant: any) => mapServerRestaurantToAppRestaurant(restaurant))
+          .filter(Boolean);
+
+        const deduped = mapped.reduce<Restaurant[]>((acc, restaurant) => {
+          if (!restaurant?.id || acc.some((item) => item.id === restaurant.id)) {
+            return acc;
+          }
+          acc.push(restaurant);
+          return acc;
+        }, []);
+
+        if (isMounted) {
+          setRestaurants(deduped);
+          setRestaurantLoadError(null);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setRestaurantLoadError((error as Error)?.message || 'Could not load restaurants. Check your connection and retry.');
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadFavorites();
+    const searchTimeout = setTimeout(() => { void loadRestaurants(); }, 350);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(searchTimeout);
+    };
+  }, [searchQuery, filters.groupFriendly, filters.openNow, filters.price, mapRegion.latitude, mapRegion.longitude, viewMode, restaurantRefreshKey]);
 
   const filteredRestaurants = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
-    return dineRestaurants.filter((restaurant) => {
+    return restaurants.filter((restaurant) => {
       const matchesSearch =
         !q ||
         restaurant.name.toLowerCase().includes(q) ||
@@ -130,37 +243,170 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
 
       const matchesDistance =
         filters.distance === 'All' ||
-        (filters.distance === '<1 km' && parseFloat(restaurant.distance) < 1) ||
-        (filters.distance === '<3 km' && parseFloat(restaurant.distance) < 3) ||
-        (filters.distance === '<5 km' && parseFloat(restaurant.distance) < 5);
+        (filters.distance === '<1 km' && Number.parseFloat(String(restaurant.distance).replace(/[^0-9.]/g, '')) < 1) ||
+        (filters.distance === '<3 km' && Number.parseFloat(String(restaurant.distance).replace(/[^0-9.]/g, '')) < 3) ||
+        (filters.distance === '<5 km' && Number.parseFloat(String(restaurant.distance).replace(/[^0-9.]/g, '')) < 5);
 
       const matchesOpen = !filters.openNow || restaurant.status === 'OPEN';
       const matchesGroup = !filters.groupFriendly || restaurant.groupFriendly;
 
       return matchesSearch && matchesCuisine && matchesPrice && matchesRating && matchesDistance && matchesOpen && matchesGroup;
     });
-  }, [searchQuery, filters]);
+  }, [restaurants, searchQuery, filters]);
 
-  const selectedTrip = dineMockTripOptions.find((trip) => trip.id === selectedTripId) ?? dineMockTripOptions[0];
+  const selectedTrip = useMemo(
+    () => trips.find((trip) => trip.id === selectedTripId) ?? trips[0] ?? null,
+    [selectedTripId, trips],
+  );
 
-  const toggleFavorite = (restaurantId: string) => {
-    setFavorites((prev) =>
-      prev.includes(restaurantId)
-        ? prev.filter((id) => id !== restaurantId)
-        : [...prev, restaurantId]
-    );
+  useEffect(() => {
+    if (!showAddSheet || bookingMode !== 'book' || !selectedRestaurant) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
+      setAvailableSlots([]);
+      setAvailabilityError(null);
+      setIsAvailabilityLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    setIsAvailabilityLoading(true);
+    setAvailabilityError(null);
+    dineService.getRestaurantAvailability(selectedRestaurant.id, selectedDate)
+      .then((availability) => {
+        if (!isMounted) return;
+        const slots = Array.isArray(availability?.slots) ? availability.slots : [];
+        setAvailableSlots(slots);
+        setSelectedTime((current) => slots.some((slot: RestaurantTimeSlot) => slot.startTime === current)
+          ? current
+          : slots[0]?.startTime || '');
+      })
+      .catch((error: any) => {
+        if (!isMounted) return;
+        setAvailableSlots([]);
+        setAvailabilityError(error?.message || 'Could not load booking times. Please retry.');
+      })
+      .finally(() => {
+        if (isMounted) setIsAvailabilityLoading(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [showAddSheet, bookingMode, selectedRestaurant?.id, selectedDate]);
+
+  const toggleFavorite = async (restaurantId: string) => {
+    const isFavorite = favorites.includes(restaurantId);
+
+    try {
+      if (isFavorite) {
+        await dineService.removeFavorite(restaurantId);
+      } else {
+        await dineService.toggleFavorite(restaurantId);
+      }
+
+      setFavorites((prev) =>
+        isFavorite ? prev.filter((id) => id !== restaurantId) : [...prev, restaurantId],
+      );
+    } catch (error) {
+      Alert.alert('Unable to update favorites', 'Please check your connection and try again.');
+    }
   };
 
-  const handleAddToTrip = () => {
-    Alert.alert(
-      'Dining activity added',
-      `${selectedRestaurant?.name ?? 'Restaurant'} has been added to ${selectedTrip.name}.`,
-      [{ text: 'Great', onPress: () => setShowAddSheet(false) }]
-    );
+  const handleAddToTrip = async () => {
+    if (!selectedRestaurant || !selectedTrip) {
+      Alert.alert('No trip selected', 'Choose a trip before adding a dining activity.');
+      return;
+    }
+
+    const tripMembers = selectedTrip.members ?? [];
+    const participantIds = tripMembers
+      .filter((member) => selectedParticipants.includes(String(member.id)))
+      .map((member) => String(member.id));
+    const parsedDate = new Date(`${selectedDate}T00:00:00`);
+    const estimatedBudget = Number(budget);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate) || Number.isNaN(parsedDate.getTime())) {
+      Alert.alert('Choose a valid date', 'Use the YYYY-MM-DD date format.');
+      return;
+    }
+    if (!/^\d{2}:\d{2}$/.test(selectedTime)) {
+      Alert.alert('Choose a valid time', 'Use the 24-hour HH:MM time format.');
+      return;
+    }
+    if (bookingMode === 'book' && !availableSlots.some((slot) => slot.startTime === selectedTime)) {
+      Alert.alert('Choose an available slot', 'Select one of the restaurant’s open booking times.');
+      return;
+    }
+    if (!participantIds.length) {
+      Alert.alert('Select participants', 'Choose at least one trip member for this dining activity.');
+      return;
+    }
+    if (!Number.isFinite(estimatedBudget) || estimatedBudget <= 0) {
+      Alert.alert('Enter a valid budget', 'Estimated budget must be greater than zero.');
+      return;
+    }
+
+    try {
+      if (bookingMode === 'book') {
+        await dineService.createRestaurantReservation(selectedRestaurant.id, selectedTrip.id, {
+          date: selectedDate,
+          startTime: selectedTime,
+          participants: participantIds,
+          guestCount: participantIds.length,
+          estimatedBudget,
+          currency: selectedTrip.currency || 'INR',
+          notes: `${selectedRestaurant.name} table booking`,
+        });
+      } else {
+        await dineService.createDiningActivity(selectedTrip.id, {
+          restaurantId: selectedRestaurant.id,
+          date: selectedDate,
+          startTime: selectedTime,
+          participants: participantIds,
+          estimatedBudget,
+          currency: selectedTrip.currency || 'INR',
+          notes: `${selectedRestaurant.name} dinner plan`,
+        });
+      }
+      await refreshTrips();
+
+      Alert.alert(
+        bookingMode === 'book' ? 'Booking request saved' : 'Dining activity added',
+        bookingMode === 'book'
+          ? `${selectedRestaurant.name} booking for ${participantIds.length} guests has been saved to ${selectedTrip.name}.`
+          : `${selectedRestaurant.name} has been added to ${selectedTrip.name}.`,
+        [{ text: 'Great', onPress: () => setShowAddSheet(false) }],
+      );
+    } catch (error: any) {
+      Alert.alert('Could not add dining activity', error?.message || 'Please try again.');
+    }
   };
 
   const clearSearch = () => setSearchQuery('');
   const resetFilters = () => setFilters(initialFilters);
+  const openRestaurantMenu = async () => {
+    if (!selectedRestaurant) return;
+    setShowMenu(true);
+    setIsMenuLoading(true);
+    try {
+      const menu = await dineService.getRestaurantMenu(selectedRestaurant.id);
+      setSelectedRestaurant((current) => current?.id === selectedRestaurant.id ? { ...current, menu } : current);
+    } catch {
+      Alert.alert('Menu unavailable', 'This restaurant menu could not be loaded. Please try again.');
+    } finally {
+      setIsMenuLoading(false);
+    }
+  };
+  const navigateToRestaurant = async () => {
+    if (!selectedRestaurant) return;
+    const destination = Number.isFinite(selectedRestaurant.latitude) && Number.isFinite(selectedRestaurant.longitude)
+      ? `${selectedRestaurant.latitude},${selectedRestaurant.longitude}`
+      : selectedRestaurant.address;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Navigation unavailable', 'Could not open a map app for this restaurant.');
+    }
+  };
   const headerTopPadding = (inline ? 0 : Math.max(insets.top, 0)) + screenHeader.topPadding;
 
   const screenContent = (
@@ -271,10 +517,30 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
           </View>
         )}
 
-        {isLoading ? (
+        {restaurantLoadError ? (
+          <View style={styles.restaurantErrorBanner} accessibilityRole="alert">
+            <Text style={styles.restaurantErrorText}>
+              {restaurants.length ? 'Showing previously loaded restaurants. ' : ''}{restaurantLoadError}
+            </Text>
+            <TouchableOpacity onPress={() => setRestaurantRefreshKey((key) => key + 1)} activeOpacity={0.8}>
+              <Text style={styles.restaurantRetryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {isLoading && restaurants.length === 0 ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color={palette.primary} />
             <Text style={styles.loadingText}>Finding restaurants for your trip</Text>
+          </View>
+        ) : restaurantLoadError && restaurants.length === 0 ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconWrap}><Compass size={28} color={palette.primary} /></View>
+            <Text style={styles.emptyTitle}>Restaurants couldn’t load</Text>
+            <Text style={styles.emptyText}>{restaurantLoadError}</Text>
+            <TouchableOpacity style={styles.primaryButton} onPress={() => setRestaurantRefreshKey((key) => key + 1)} activeOpacity={0.9}>
+              <Text style={styles.primaryButtonText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         ) : filteredRestaurants.length === 0 ? (
           <View style={styles.emptyState}>
@@ -288,50 +554,32 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
         ) : viewMode === 'map' ? (
           <View style={styles.mapWrap}>
             <View style={styles.mapSurface}>
-              <Svg width="100%" height="100%" viewBox="0 0 360 420" style={styles.mapImage}>
-                <Rect width="360" height="420" fill="#E4EBD8" />
-                <Path d="M280 -20 C244 68 322 126 278 214 C246 276 320 332 288 460" fill="none" stroke="#B9DFE5" strokeWidth="78" />
-                <Path d="M-40 92 L400 92 M-40 198 L400 198 M-40 310 L400 310" stroke="#FFFFFF" strokeWidth="10" />
-                <Path d="M48 -20 L48 440 M154 -20 L154 440 M244 -20 L244 440" stroke="#FFFFFF" strokeWidth="8" />
-                <Path d="M-20 360 C82 286 146 344 214 278 C264 230 294 238 382 170" fill="none" stroke="#F6C977" strokeWidth="7" />
-                <Path d="M28 370 C94 310 152 350 218 286 C270 236 304 242 372 184" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeDasharray="7 7" />
-                <SvgText x="18" y="48" fill="#66808A" fontSize="10" fontWeight="700">OLD TOWN</SvgText>
-                <SvgText x="182" y="76" fill="#66808A" fontSize="10" fontWeight="700">RIVERSIDE</SvgText>
-                <SvgText x="24" y="270" fill="#66808A" fontSize="10" fontWeight="700">MARKET QUARTER</SvgText>
-                <SvgText x="238" y="352" fill="#66808A" fontSize="10" fontWeight="700">CITY CENTRE</SvgText>
-                <SvgCircle cx="112" cy="146" r="8" fill="#059669" stroke="#FFFFFF" strokeWidth="3" />
-                <SvgCircle cx="207" cy="236" r="8" fill="#E11D48" stroke="#FFFFFF" strokeWidth="3" />
-              </Svg>
-              <View style={styles.mapGrid} />
-              <View style={styles.mapWater} />
-              <View style={[styles.mapRoad, styles.mapRoadDiagonalOne]} />
-              <View style={[styles.mapRoad, styles.mapRoadDiagonalTwo]} />
-              <View style={[styles.mapRoad, styles.mapRoadHorizontalOne]} />
-              <View style={[styles.mapRoad, styles.mapRoadHorizontalTwo]} />
-              <View style={[styles.mapRoad, styles.mapRoadVerticalOne]} />
-              <View style={[styles.mapRoad, styles.mapRoadVerticalTwo]} />
-              <Text style={[styles.mapDistrictLabel, { left: '12%', top: '18%' }]}>OLD TOWN</Text>
-              <Text style={[styles.mapDistrictLabel, { left: '57%', top: '12%' }]}>RIVERSIDE</Text>
-              <Text style={[styles.mapDistrictLabel, { left: '26%', top: '69%' }]}>MARKET QUARTER</Text>
-              <Text style={[styles.mapDistrictLabel, { left: '68%', top: '62%' }]}>CITY CENTRE</Text>
-              <Text style={styles.mapTitle}>Restaurant map preview</Text>
+              <RestaurantMapView
+                restaurants={filteredRestaurants.map((restaurant) => ({
+                  id: restaurant.id,
+                  name: restaurant.name,
+                  latitude: restaurant.latitude,
+                  longitude: restaurant.longitude,
+                  priceRange: restaurant.priceRange,
+                  rating: restaurant.rating,
+                  status: restaurant.status,
+                }))}
+                selectedRestaurantId={selectedRestaurant?.id}
+                onSelectRestaurant={(restaurant) => setSelectedRestaurant(restaurants.find((item) => item.id === restaurant.id) || null)}
+                region={mapRegion}
+                onRegionChangeComplete={setMapRegion}
+              />
 
-              <View style={styles.mapMarkerWrap}>
-                {filteredRestaurants.slice(0, 5).map((restaurant, index) => {
-                  const isSelected = selectedRestaurant?.id === restaurant.id;
-                  return (
-                    <TouchableOpacity
-                      key={restaurant.id}
-                      style={[styles.mapMarker, isSelected && styles.mapMarkerSelected, { left: `${12 + index * 16}%`, top: `${22 + (index % 3) * 19}%` }]}
-                      onPress={() => setSelectedRestaurant(restaurant)}
-                    >
-                      <Text style={[styles.mapMarkerText, isSelected && styles.mapMarkerTextSelected]}>{restaurant.priceRange}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <TouchableOpacity style={styles.recenterButton} activeOpacity={0.9}>
+              <TouchableOpacity
+                style={styles.recenterButton}
+                activeOpacity={0.9}
+                onPress={() => {
+                  const firstRestaurant = filteredRestaurants[0];
+                  if (firstRestaurant) {
+                    setMapRegion((region) => ({ ...region, latitude: firstRestaurant.latitude, longitude: firstRestaurant.longitude }));
+                  }
+                }}
+              >
                 <Compass size={16} color={palette.dark} />
                 <Text style={styles.recenterText}>Recenter</Text>
               </TouchableOpacity>
@@ -400,11 +648,9 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
         )}
 
         {selectedRestaurant ? (
-          <Modal visible={!!selectedRestaurant} animationType="slide" transparent onRequestClose={() => setSelectedRestaurant(null)}>
+          <Modal visible={!!selectedRestaurant} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setSelectedRestaurant(null)}>
             <View style={styles.detailsSheetWrap}>
-              <Pressable style={styles.sheetBackdrop} onPress={() => setSelectedRestaurant(null)} />
               <View style={styles.detailsSheet}>
-                <View style={styles.sheetHandle} />
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailsContent}>
                   <Image source={{ uri: selectedRestaurant.heroImage }} style={styles.detailsHeroImage} />
                   <View style={styles.detailsHeaderRow}>
@@ -434,8 +680,22 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                   </View>
 
                   <View style={styles.infoGrid}>
-                    <View style={styles.infoPill}><Text style={styles.infoPillText}>Opens {selectedRestaurant.openUntil}</Text></View>
                     <View style={styles.infoPill}><Text style={styles.infoPillText}>{selectedRestaurant.groupFriendly ? 'Group Friendly' : 'Private Dining'}</Text></View>
+                  </View>
+
+                  <Text style={styles.sectionTitle}>Opening hours · {selectedRestaurant.timezone || 'Asia/Kolkata'}</Text>
+                  <View style={styles.hoursList}>
+                    {(selectedRestaurant.hours || []).map((entry) => (
+                      <View key={`${selectedRestaurant.id}-${entry.day}`} style={styles.hoursRow}>
+                        <Text style={styles.hoursDay}>{entry.day}</Text>
+                        <Text style={styles.hoursValue}>
+                          {entry.isClosed || !entry.intervals?.length
+                            ? 'Closed'
+                            : entry.intervals.map((interval) => `${String(interval.open).slice(0, 5)}–${String(interval.close).slice(0, 5)}`).join(', ')}
+                        </Text>
+                      </View>
+                    ))}
+                    {!selectedRestaurant.hours?.length ? <Text style={styles.metaText}>Opening hours unavailable</Text> : null}
                   </View>
 
                   <Text style={styles.sectionTitle}>About</Text>
@@ -447,19 +707,24 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                   </View>
 
                   <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.secondaryButton} onPress={() => setShowMenu(true)} activeOpacity={0.9}>
+                    <TouchableOpacity style={styles.secondaryButton} onPress={() => void openRestaurantMenu()} activeOpacity={0.9}>
                       <Utensils size={16} color={palette.dark} />
                       <Text style={styles.secondaryButtonText}>View Menu</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.secondaryButton} onPress={() => Alert.alert('Navigation', 'Mock route planning for a restaurant visit.')} activeOpacity={0.9}>
+                    <TouchableOpacity style={styles.secondaryButton} onPress={() => void navigateToRestaurant()} activeOpacity={0.9}>
                       <Navigation size={16} color={palette.dark} />
                       <Text style={styles.secondaryButtonText}>Navigate</Text>
                     </TouchableOpacity>
                   </View>
 
-                  <TouchableOpacity style={styles.primaryButtonLarge} onPress={() => { setShowAddSheet(true); setSelectedRestaurant(selectedRestaurant); }} activeOpacity={0.9}>
-                    <Text style={styles.primaryButtonText}>Add to Trip</Text>
-                  </TouchableOpacity>
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity style={styles.primaryButtonLarge} onPress={() => { setBookingMode('activity'); setShowAddSheet(true); }} activeOpacity={0.9}>
+                      <Text style={styles.primaryButtonText}>Add to Trip</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.primaryButtonLarge, styles.bookTableButton]} onPress={() => { setBookingMode('book'); setShowAddSheet(true); }} activeOpacity={0.9}>
+                      <Text style={styles.primaryButtonText}>Book a Table</Text>
+                    </TouchableOpacity>
+                  </View>
                 </ScrollView>
               </View>
             </View>
@@ -476,25 +741,28 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.menuContent}>
-              {selectedRestaurant?.menu.map((category) => (
-                <View key={category.category} style={styles.menuSection}>
-                  <Text style={styles.menuSectionTitle}>{category.category.toUpperCase()}</Text>
-                  {category.items.map((item) => (
-                    <View key={item.id} style={styles.menuItemRow}>
-                      <Image source={{ uri: item.image ?? selectedRestaurant.image }} style={styles.menuItemImage} />
-                      <View style={styles.menuItemBody}>
-                        <Text style={styles.menuItemName}>{item.name}</Text>
-                        <Text style={styles.menuItemDescription}>{item.description}</Text>
-                        <Text style={styles.menuItemPrice}>{formatCurrency(item.price)}</Text>
-                        <Text style={[styles.menuItemAvailability, item.available ? styles.openText : styles.closedText]}>{item.available ? 'Available' : 'Unavailable'}</Text>
+              {isMenuLoading ? <ActivityIndicator size="large" color={palette.primary} /> : null}
+              {!isMenuLoading && !selectedRestaurant?.menu.length ? <Text style={styles.menuEmpty}>No menu is currently available.</Text> : null}
+              {!isMenuLoading && selectedRestaurant?.menu.map((category, categoryIndex) => {
+                const categoryName = String(category.category || (category as any).name || `Category ${categoryIndex + 1}`);
+                const items = Array.isArray(category.items) ? category.items : [];
+                return (
+                  <View key={`${categoryName}-${categoryIndex}`} style={styles.menuSection}>
+                    <Text style={styles.menuSectionTitle}>{categoryName.toUpperCase()}</Text>
+                    {items.map((item, itemIndex) => (
+                      <View key={item.id || `${categoryName}-${itemIndex}`} style={styles.menuItemRow}>
+                        <Image source={{ uri: item.image ?? selectedRestaurant.image }} style={styles.menuItemImage} />
+                        <View style={styles.menuItemBody}>
+                          <Text style={styles.menuItemName}>{item.name || 'Menu item'}</Text>
+                          <Text style={styles.menuItemDescription}>{item.description || ''}</Text>
+                          <Text style={styles.menuItemPrice}>{formatCurrency(Number(item.price || 0))}</Text>
+                          <Text style={[styles.menuItemAvailability, item.available ? styles.openText : styles.closedText]}>{item.available ? 'Available' : 'Unavailable'}</Text>
+                        </View>
                       </View>
-                      <TouchableOpacity style={styles.menuAddButton} activeOpacity={0.9}>
-                        <Text style={styles.menuAddText}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              ))}
+                    ))}
+                  </View>
+                );
+              })}
             </ScrollView>
           </View>
         </Modal>
@@ -504,15 +772,16 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
             <Pressable style={styles.sheetBackdrop} onPress={() => setShowAddSheet(false)} />
             <View style={styles.addSheet}>
               <View style={styles.sheetHandle} />
-              <Text style={styles.addTitle}>ADD TO TRIP</Text>
-              <Text style={styles.addSubTitle}>Where do you want to add this?</Text>
+              <Text style={styles.addTitle}>{bookingMode === 'book' ? 'BOOK A TABLE' : 'ADD TO TRIP'}</Text>
+              <Text style={styles.addSubTitle}>{bookingMode === 'book' ? 'Choose a trip and booking details.' : 'Where do you want to add this?'}</Text>
 
-              {dineMockTripOptions.map((trip) => (
+              {(tripOptions.length ? tripOptions : [{ id: 'no-trip', name: 'No trips available', dateRange: 'Create a trip first', members: 0 }]).map((trip) => (
                 <TouchableOpacity
                   key={trip.id}
                   style={[styles.tripOption, selectedTripId === trip.id && styles.tripOptionActive]}
-                  onPress={() => setSelectedTripId(trip.id)}
+                  onPress={() => trip.id !== 'no-trip' && setSelectedTripId(trip.id)}
                   activeOpacity={0.9}
+                  disabled={trip.id === 'no-trip'}
                 >
                   <View>
                     <Text style={styles.tripOptionTitle}>{trip.name}</Text>
@@ -523,28 +792,64 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
               ))}
 
               <Text style={styles.formLabel}>Select date</Text>
-              <View style={styles.formInput}><Text style={styles.formText}>{selectedDate}</Text></View>
+              <TextInput
+                value={selectedDate}
+                onChangeText={setSelectedDate}
+                keyboardType="numbers-and-punctuation"
+                style={styles.formInput}
+                placeholder="YYYY-MM-DD"
+              />
 
-              <Text style={styles.formLabel}>Select time</Text>
-              <View style={styles.formInput}><Text style={styles.formText}>{selectedTime}</Text></View>
+              <Text style={styles.formLabel}>{bookingMode === 'book' ? 'Available 60-minute start times' : 'Select time'}</Text>
+              {bookingMode === 'book' ? (
+                isAvailabilityLoading ? (
+                  <ActivityIndicator size="small" color={palette.primary} />
+                ) : availabilityError ? (
+                  <Text style={styles.availabilityMessage}>{availabilityError}</Text>
+                ) : availableSlots.length ? (
+                  <View style={styles.slotGrid}>
+                    {availableSlots.map((slot) => (
+                      <TouchableOpacity
+                        key={`${slot.startTime}-${slot.endTime}`}
+                        style={[styles.slotChip, selectedTime === slot.startTime && styles.slotChipActive]}
+                        onPress={() => setSelectedTime(slot.startTime)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.slotChipText, selectedTime === slot.startTime && styles.slotChipTextActive]}>{slot.startTime}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.availabilityMessage}>No slots are available for this date. Check the opening hours above.</Text>
+                )
+              ) : (
+                <TextInput
+                  value={selectedTime}
+                  onChangeText={setSelectedTime}
+                  keyboardType="numbers-and-punctuation"
+                  style={styles.formInput}
+                  placeholder="20:00"
+                />
+              )}
 
               <Text style={styles.formLabel}>Participants</Text>
               <View style={styles.pillRow}>
-                {['You', 'Rahul', 'Priya', 'Aniket', 'Sneha', 'Rohan'].map((name) => {
-                  const active = selectedParticipants.includes(name);
+                {(selectedTrip?.members ?? []).map((member) => {
+                  const memberId = String(member.id);
+                  const active = selectedParticipants.includes(memberId);
                   return (
                     <TouchableOpacity
-                      key={name}
+                      key={memberId}
                       style={[styles.participantChip, active && styles.participantChipActive]}
                       onPress={() => {
                         setSelectedParticipants((prev) =>
-                          prev.includes(name)
-                            ? prev.filter((p) => p !== name)
-                            : [...prev, name]
+                          prev.includes(memberId)
+                            ? prev.filter((id) => id !== memberId)
+                            : [...prev, memberId]
                         );
                       }}
                     >
-                      <Text style={[styles.participantChipText, active && styles.participantChipTextActive]}>{name}</Text>
+                      <Text style={[styles.participantChipText, active && styles.participantChipTextActive]}>{member.name}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -565,8 +870,8 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                 <Text style={styles.expenseMeta}>{selectedParticipants.length} people • ₹{Math.round(Number(budget || 0) / Math.max(selectedParticipants.length, 1))} per person</Text>
               </View>
 
-              <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleAddToTrip} activeOpacity={0.9}>
-                <Text style={styles.primaryButtonText}>Add Dining Activity</Text>
+              <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleAddToTrip} disabled={bookingMode === 'book' && (isAvailabilityLoading || availableSlots.length === 0)} activeOpacity={0.9}>
+                <Text style={styles.primaryButtonText}>{bookingMode === 'book' ? 'Save Restaurant Booking' : 'Add Dining Activity'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1090,6 +1395,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
+  restaurantErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F1C9C5',
+    backgroundColor: '#FFF7F5',
+  },
+  restaurantErrorText: {
+    flex: 1,
+    color: '#8F2D24',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  restaurantRetryText: {
+    color: '#464B29',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   primaryButton: {
     backgroundColor: palette.primary,
     borderRadius: 14,
@@ -1105,6 +1435,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 20,
+  },
+  bookTableButton: {
+    backgroundColor: palette.dark,
   },
   primaryButtonText: {
     color: '#FFFFFF',
@@ -1129,17 +1462,14 @@ const styles = StyleSheet.create({
   },
   detailsSheetWrap: {
     flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: '#FFFFFF',
   },
   sheetBackdrop: {
     ...StyleSheet.absoluteFill,
   },
   detailsSheet: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '85%',
     overflow: 'hidden',
   },
   sheetHandle: {
@@ -1203,6 +1533,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  hoursList: {
+    marginHorizontal: spacing.lg,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  hoursRow: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F0',
+  },
+  hoursDay: {
+    color: palette.dark,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  hoursValue: {
+    color: palette.darkMuted,
+    fontSize: 12,
   },
   infoPill: {
     backgroundColor: '#F3F4F6',
@@ -1269,6 +1626,11 @@ const styles = StyleSheet.create({
   menuContent: {
     padding: spacing.lg,
     paddingBottom: 120,
+  },
+  menuEmpty: {
+    paddingVertical: 24,
+    color: palette.darkMuted,
+    textAlign: 'center',
   },
   menuSection: {
     marginBottom: 18,
@@ -1401,6 +1763,39 @@ const styles = StyleSheet.create({
     borderColor: palette.line,
     paddingHorizontal: 12,
     paddingVertical: 12,
+  },
+  slotGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  slotChip: {
+    minWidth: 68,
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: '#FFFFFF',
+  },
+  slotChipActive: {
+    borderColor: palette.primary,
+    backgroundColor: palette.primarySoft,
+  },
+  slotChipText: {
+    color: palette.dark,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  slotChipTextActive: {
+    color: palette.primary,
+  },
+  availabilityMessage: {
+    paddingVertical: 8,
+    color: palette.darkMuted,
+    fontSize: 12,
+    lineHeight: 17,
   },
   formText: {
     color: palette.dark,

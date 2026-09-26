@@ -194,6 +194,30 @@ export interface Trip {
   members?: Participant[];
   expenses?: Expense[];
   settlements?: SettlementTransfer[];
+  packageReservations?: Array<{
+    id: string;
+    packageId: string;
+    packageName: string;
+    destination: string;
+    guestCount: number;
+    startDate: string;
+    endDate: string;
+    totalAmount: number;
+    currency: string;
+    status: string;
+  }>;
+  restaurantReservations?: Array<{
+    id: string;
+    restaurantId: string;
+    restaurantName: string;
+    date: string;
+    startTime: string;
+    guestCount: number;
+    estimatedBudget: number | null;
+    currency: string;
+    status: string;
+    notes?: string | null;
+  }>;
   settlementError?: boolean;
   createdAt?: string;
   updatedAt?: string;

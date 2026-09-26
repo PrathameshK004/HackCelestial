@@ -476,7 +476,219 @@ const initializeDatabase = async () => {
         CREATE INDEX IF NOT EXISTS idx_in_app_notifications_user_id ON in_app_notifications(user_id, created_at DESC);
     `);
 
-    // 12. Tour Packages Table
+    // 12. Restaurant Discovery & Dining Tables
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS dine_restaurants (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            provider VARCHAR(64) NOT NULL DEFAULT 'fallback',
+            provider_place_id VARCHAR(255) NOT NULL,
+            slug VARCHAR(255),
+            name TEXT NOT NULL,
+            latitude DOUBLE PRECISION NOT NULL,
+            longitude DOUBLE PRECISION NOT NULL,
+            city TEXT,
+            cuisines JSONB NOT NULL DEFAULT '[]'::jsonb,
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            is_partner BOOLEAN NOT NULL DEFAULT FALSE,
+            status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+            last_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            description TEXT,
+            rating NUMERIC(3,2) DEFAULT 0,
+            review_count INTEGER DEFAULT 0,
+            price_level VARCHAR(16) DEFAULT '₹₹',
+            phone VARCHAR(64),
+            website TEXT,
+            primary_image TEXT,
+            address TEXT,
+            state VARCHAR(255),
+            country VARCHAR(255) DEFAULT 'India',
+            postal_code VARCHAR(64),
+            timezone VARCHAR(80) DEFAULT 'Asia/Kolkata',
+            is_group_friendly BOOLEAN DEFAULT TRUE,
+            is_active BOOLEAN DEFAULT TRUE,
+            provider_last_synced_at TIMESTAMPTZ,
+            UNIQUE (provider, provider_place_id)
+        );
+
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS provider VARCHAR(64) NOT NULL DEFAULT 'fallback';
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS provider_place_id VARCHAR(255);
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS slug VARCHAR(255);
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS name TEXT;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS description TEXT;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'OPEN';
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS rating NUMERIC(3,2) DEFAULT 0;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS review_count INTEGER DEFAULT 0;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS price_level VARCHAR(16) DEFAULT '₹₹';
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS phone VARCHAR(64);
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS website TEXT;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS primary_image TEXT;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS address TEXT;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS city TEXT;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS state VARCHAR(255);
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS country VARCHAR(255) DEFAULT 'India';
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS postal_code VARCHAR(64);
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS timezone VARCHAR(80) DEFAULT 'Asia/Kolkata';
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS is_group_friendly BOOLEAN DEFAULT TRUE;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS provider_last_synced_at TIMESTAMPTZ;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS cuisines JSONB NOT NULL DEFAULT '[]'::jsonb;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS payload JSONB NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS is_partner BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+        ALTER TABLE dine_restaurants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        CREATE TABLE IF NOT EXISTS dine_restaurant_cuisines (
+            restaurant_id UUID NOT NULL REFERENCES dine_restaurants(id) ON DELETE CASCADE,
+            cuisine VARCHAR(100) NOT NULL,
+            PRIMARY KEY (restaurant_id, cuisine)
+        );
+
+        CREATE TABLE IF NOT EXISTS dine_restaurant_hours (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            restaurant_id UUID NOT NULL REFERENCES dine_restaurants(id) ON DELETE CASCADE,
+            day_of_week VARCHAR(8) NOT NULL,
+            open_time TIME,
+            close_time TIME,
+            is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+            timezone VARCHAR(80) DEFAULT 'Asia/Kolkata',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS dine_restaurant_menu_categories (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            restaurant_id UUID NOT NULL REFERENCES dine_restaurants(id) ON DELETE CASCADE,
+            name VARCHAR(160) NOT NULL,
+            description TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (restaurant_id, name)
+        );
+
+        CREATE TABLE IF NOT EXISTS dine_restaurant_menu_items (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            category_id UUID NOT NULL REFERENCES dine_restaurant_menu_categories(id) ON DELETE CASCADE,
+            name VARCHAR(200) NOT NULL,
+            description TEXT,
+            price NUMERIC(12,2) NOT NULL DEFAULT 0,
+            currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+            image_url TEXT,
+            is_vegetarian BOOLEAN NOT NULL DEFAULT FALSE,
+            is_vegan BOOLEAN NOT NULL DEFAULT FALSE,
+            is_available BOOLEAN NOT NULL DEFAULT TRUE,
+            dietary_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (category_id, name)
+        );
+
+        CREATE TABLE IF NOT EXISTS dine_restaurant_photos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            restaurant_id UUID NOT NULL REFERENCES dine_restaurants(id) ON DELETE CASCADE,
+            image_url TEXT NOT NULL,
+            is_primary BOOLEAN DEFAULT FALSE,
+            caption TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS dine_restaurant_offers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            restaurant_id UUID NOT NULL REFERENCES dine_restaurants(id) ON DELETE CASCADE,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            discount_type VARCHAR(32) NOT NULL DEFAULT 'PERCENTAGE',
+            discount_value NUMERIC(10,2) NOT NULL DEFAULT 0,
+            starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ends_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 days',
+            eligibility JSONB NOT NULL DEFAULT '{}'::jsonb,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE dine_restaurant_offers ADD COLUMN IF NOT EXISTS discount_type VARCHAR(32) NOT NULL DEFAULT 'PERCENTAGE';
+        ALTER TABLE dine_restaurant_offers ADD COLUMN IF NOT EXISTS discount_value NUMERIC(10,2) NOT NULL DEFAULT 0;
+        ALTER TABLE dine_restaurant_offers ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+        ALTER TABLE dine_restaurant_offers ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 days';
+        ALTER TABLE dine_restaurant_offers ADD COLUMN IF NOT EXISTS eligibility JSONB NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE dine_restaurant_offers ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+        ALTER TABLE dine_restaurant_offers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        CREATE TABLE IF NOT EXISTS dine_restaurant_favorites (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            restaurant_id UUID NOT NULL REFERENCES dine_restaurants(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (user_id, restaurant_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS dine_activities (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            restaurant_id UUID NOT NULL REFERENCES dine_restaurants(id) ON DELETE RESTRICT,
+            created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+            activity_date DATE NOT NULL,
+            start_time TIME,
+            end_time TIME,
+            participants JSONB NOT NULL DEFAULT '[]'::jsonb,
+            estimated_budget NUMERIC(12,2),
+            currency VARCHAR(10) DEFAULT 'INR',
+            notes TEXT,
+            status VARCHAR(32) NOT NULL DEFAULT 'PLANNED',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS dine_restaurant_reservations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            restaurant_id UUID NOT NULL REFERENCES dine_restaurants(id) ON DELETE RESTRICT,
+            activity_id UUID REFERENCES dine_activities(id) ON DELETE SET NULL,
+            created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+            reservation_date DATE NOT NULL,
+            start_time TIME NOT NULL,
+            end_time TIME,
+            guest_count INTEGER NOT NULL CHECK (guest_count BETWEEN 1 AND 40),
+            participants JSONB NOT NULL DEFAULT '[]'::jsonb,
+            estimated_budget NUMERIC(12,2),
+            currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+            notes TEXT,
+            status VARCHAR(32) NOT NULL DEFAULT 'PENDING_CONFIRMATION',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE dine_restaurant_reservations ADD COLUMN IF NOT EXISTS end_time TIME;
+
+        CREATE TABLE IF NOT EXISTS dine_provider_sync_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            provider VARCHAR(64) NOT NULL,
+            restaurant_id UUID REFERENCES dine_restaurants(id) ON DELETE SET NULL,
+            sync_status VARCHAR(32) NOT NULL DEFAULT 'SUCCESS',
+            provider_payload JSONB,
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dine_restaurants_provider_place ON dine_restaurants(provider, provider_place_id) WHERE provider_place_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_dine_restaurants_provider ON dine_restaurants(provider, provider_place_id);
+        CREATE INDEX IF NOT EXISTS idx_dine_restaurants_active_status ON dine_restaurants(is_active, status);
+        CREATE INDEX IF NOT EXISTS idx_dine_restaurants_city ON dine_restaurants(city);
+        CREATE INDEX IF NOT EXISTS idx_dine_restaurants_location ON dine_restaurants(latitude, longitude);
+        CREATE INDEX IF NOT EXISTS idx_dine_restaurants_rating ON dine_restaurants(rating DESC);
+        CREATE INDEX IF NOT EXISTS idx_dine_restaurants_slug ON dine_restaurants(slug);
+        CREATE INDEX IF NOT EXISTS idx_dine_restaurant_hours_restaurant ON dine_restaurant_hours(restaurant_id, day_of_week);
+        CREATE INDEX IF NOT EXISTS idx_dine_menu_categories_restaurant ON dine_restaurant_menu_categories(restaurant_id, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_dine_menu_items_category ON dine_restaurant_menu_items(category_id, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_dine_restaurant_favorites_user ON dine_restaurant_favorites(user_id, restaurant_id);
+        CREATE INDEX IF NOT EXISTS idx_dine_activities_group ON dine_activities(group_id, activity_date);
+        CREATE INDEX IF NOT EXISTS idx_dine_reservations_group ON dine_restaurant_reservations(group_id, reservation_date);
+    `);
+
+    // 13. Tour Packages Table
     await pool.query(`
         CREATE TABLE IF NOT EXISTS tour_packages (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -506,6 +718,36 @@ const initializeDatabase = async () => {
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
+    `);
+
+    await pool.query(`
+        ALTER TABLE tour_packages ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'INR';
+        UPDATE tour_packages SET currency = 'INR' WHERE currency IS DISTINCT FROM 'INR';
+
+        CREATE TABLE IF NOT EXISTS tour_package_reservations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            package_id UUID NOT NULL REFERENCES tour_packages(id) ON DELETE RESTRICT,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            group_id UUID REFERENCES groups(id) ON DELETE SET NULL,
+            guest_count INTEGER NOT NULL CHECK (guest_count > 0),
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            total_amount NUMERIC(12, 2) NOT NULL CHECK (total_amount >= 0),
+            currency VARCHAR(3) NOT NULL DEFAULT 'INR',
+            status VARCHAR(32) NOT NULL DEFAULT 'PENDING_CONFIRMATION',
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (end_date >= start_date)
+        );
+
+        ALTER TABLE tour_package_reservations
+            ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES groups(id) ON DELETE SET NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_package_reservations_user_created
+            ON tour_package_reservations(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_package_reservations_group
+            ON tour_package_reservations(group_id, created_at DESC);
     `);
 
     const countRes = await pool.query('SELECT COUNT(*) FROM tour_packages');

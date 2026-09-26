@@ -19,19 +19,12 @@ export const groupService = {
   },
 
   async getMyGroups(): Promise<{ message: string; data: any[] }> {
-    try {
-      return await apiRequest<{ message: string; data: any[] }>(
-        "/groups/my-groups",
-        {
-          method: "GET",
-        },
-      );
-    } catch (err: any) {
-      if (err?.status === 401 || err?.status === 403) {
-        return { message: "Unauthenticated", data: [] };
-      }
-      throw err;
-    }
+    return apiRequest<{ message: string; data: any[] }>(
+      "/groups/my-groups",
+      {
+        method: "GET",
+      },
+    );
   },
 
   async getGroupById(groupId: string): Promise<{ message: string; data: any }> {

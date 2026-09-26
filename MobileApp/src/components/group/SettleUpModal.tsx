@@ -13,11 +13,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  Linking,
-  Platform,
-  NativeModules,
 } from 'react-native';
-import { X, Smartphone, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react-native';
+import { X, Smartphone, CheckCircle2, AlertCircle, ArrowRight, Banknote } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
 import { Participant } from '../../types';
 
@@ -38,6 +35,8 @@ interface SettleUpModalProps {
     toUpiId?: string;
     amount: number;
     remarks?: string;
+    paymentMethod?: 'CASH' | 'UPI';
+    paymentReference?: string;
   }) => Promise<void>;
 }
 
@@ -66,57 +65,21 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   );
   const [amount, setAmount] = useState(initialAmount ? String(initialAmount) : '');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI'>('UPI');
+  const [upiPaymentSimulated, setUpiPaymentSimulated] = useState(false);
 
   const fromMember = members.find((m) => m.id === fromId) || members[0];
   const toMember = members.find((m) => m.id === toId) || members[1] || members[0];
   const numAmount = parseFloat(amount) || 0;
   const targetUpi = (toMember as any)?.upiId || `${toMember?.name.toLowerCase().replace(/\s+/g, '')}@okaxis`;
 
-  const handleLaunchUpi = () => {
-    if (!isOnline) {
-      Alert.alert(
-        'Offline',
-        'Live UPI payment apps require active internet connection. You can still record manual settlement locally.'
-      );
+  const handleSimulateUpiPayment = () => {
+    if (numAmount <= 0) {
+      Alert.alert('Invalid Amount', 'Enter a settlement amount before simulating payment.');
       return;
     }
-
-    const upiUrl = `upi://pay?pa=${targetUpi}&pn=${encodeURIComponent(
-      toMember?.name || 'Receiver'
-    )}&am=${numAmount}&cu=INR&tn=${encodeURIComponent(`Settlement for ${tripName}`)}`;
-
-    if (Platform.OS === 'android' && NativeModules.UpiPayment?.startPayment) {
-      NativeModules.UpiPayment.startPayment(upiUrl, null)
-        .then((res: any) => {
-          if (res && (res.status === 'SUCCESS' || res.status?.toLowerCase() === 'success')) {
-            const bankRef = res.approvalRefNo || 'CONFIRMED';
-            Alert.alert(
-              'Payment Verified by Bank',
-              `Transaction was confirmed by bank! Ref: ${bankRef}. Tap Record to commit to group balance.`,
-              [{ text: 'Record Settlement', onPress: () => handleRecordSettlement() }]
-            );
-          }
-        })
-        .catch((err: any) => {
-          console.warn('Native Settle UPI error:', err);
-        });
-      return;
-    }
-
-    Linking.canOpenURL(upiUrl)
-      .then((supported) => {
-        if (supported) {
-          Linking.openURL(upiUrl);
-        } else {
-          Alert.alert(
-            'UPI App Not Found',
-            `No compatible UPI app detected. You can pay manually to VPA:\n${targetUpi}\nAmount: ₹${numAmount}`
-          );
-        }
-      })
-      .catch(() => {
-        Alert.alert('Payment Error', 'Could not open UPI app.');
-      });
+    setUpiPaymentSimulated(true);
+    Alert.alert('UPI payment simulated', `₹${numAmount.toLocaleString('en-IN')} is ready to be recorded in the trip ledger.`);
   };
 
   const handleRecordSettlement = async () => {
@@ -138,10 +101,12 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
         toMemberName: toMember?.name || 'Receiver',
         toUpiId: targetUpi,
         amount: numAmount,
+        paymentMethod,
+        paymentReference: paymentMethod === 'UPI' ? `SIM-UPI-${Date.now()}` : undefined,
         remarks: `Trip ledger settlement for ${tripName}`,
       });
       onClose();
-      Alert.alert('Recorded', `Settlement of ₹${numAmount.toLocaleString()} recorded in local ledger.`);
+      Alert.alert('Recorded', `₹${numAmount.toLocaleString('en-IN')} settlement recorded as ${paymentMethod === 'UPI' ? 'simulated UPI' : 'cash'} in the trip ledger.`);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to record settlement');
     } finally {
@@ -240,26 +205,49 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
               )}
             </View>
 
-            {/* UPI VPA Info */}
-            <View style={styles.vpaCard}>
-              <View style={styles.vpaIconBox}>
-                <Smartphone size={16} color="#059669" strokeWidth={2.2} />
-              </View>
-              <View style={styles.vpaInfo}>
-                <Text style={styles.vpaLabel}>RECEIVER UPI VPA</Text>
-                <Text style={styles.vpaAddress}>{targetUpi}</Text>
-              </View>
+            <Text style={styles.sectionLabel}>Payment method</Text>
+            <View style={styles.paymentMethodRow}>
+              <TouchableOpacity
+                style={[styles.paymentMethodOption, paymentMethod === 'CASH' && styles.paymentMethodOptionActive]}
+                onPress={() => { setPaymentMethod('CASH'); setUpiPaymentSimulated(false); }}
+                activeOpacity={0.8}
+              >
+                <Banknote size={16} color={paymentMethod === 'CASH' ? '#047857' : '#64748B'} />
+                <Text style={[styles.paymentMethodText, paymentMethod === 'CASH' && styles.paymentMethodTextActive]}>Cash</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.paymentMethodOption, paymentMethod === 'UPI' && styles.paymentMethodOptionActive]}
+                onPress={() => { setPaymentMethod('UPI'); setUpiPaymentSimulated(false); }}
+                activeOpacity={0.8}
+              >
+                <Smartphone size={16} color={paymentMethod === 'UPI' ? '#047857' : '#64748B'} />
+                <Text style={[styles.paymentMethodText, paymentMethod === 'UPI' && styles.paymentMethodTextActive]}>UPI (Simulate)</Text>
+              </TouchableOpacity>
             </View>
 
-            {/* UPI Launch */}
-            <TouchableOpacity
-              style={styles.upiBtn}
-              onPress={handleLaunchUpi}
-              activeOpacity={0.85}
-            >
-              <Smartphone size={16} color="#ffffff" strokeWidth={2.2} />
-              <Text style={styles.upiBtnText}>Pay via UPI App</Text>
-            </TouchableOpacity>
+            {paymentMethod === 'UPI' ? (
+              <>
+                <View style={styles.vpaCard}>
+                  <View style={styles.vpaIconBox}>
+                    <Smartphone size={16} color="#059669" strokeWidth={2.2} />
+                  </View>
+                  <View style={styles.vpaInfo}>
+                    <Text style={styles.vpaLabel}>RECEIVER UPI VPA</Text>
+                    <Text style={styles.vpaAddress}>{targetUpi}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.upiBtn} onPress={handleSimulateUpiPayment} activeOpacity={0.85}>
+                  <Smartphone size={16} color="#ffffff" strokeWidth={2.2} />
+                  <Text style={styles.upiBtnText}>{upiPaymentSimulated ? 'UPI Payment Simulated' : 'Simulate UPI Payment'}</Text>
+                </TouchableOpacity>
+                <Text style={styles.simulationNote}>Demo mode records a simulated UPI reference in the ledger.</Text>
+              </>
+            ) : (
+              <View style={styles.cashNote}>
+                <Banknote size={16} color="#047857" />
+                <Text style={styles.cashNoteText}>Record the cash payment in the trip ledger.</Text>
+              </View>
+            )}
 
             {/* Offline Banner */}
             {!isOnline && (
@@ -279,13 +267,15 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
             <TouchableOpacity
               style={[styles.settleBtn, isSubmitting && { opacity: 0.7 }]}
               onPress={handleRecordSettlement}
-              disabled={isSubmitting}
+              disabled={isSubmitting || (paymentMethod === 'UPI' && !upiPaymentSimulated)}
               activeOpacity={0.85}
             >
               <CheckCircle2 size={17} color="#ffffff" strokeWidth={2.2} />
               <Text style={styles.settleBtnText}>
                 {isSubmitting
                   ? 'Recording...'
+                  : paymentMethod === 'UPI' && !upiPaymentSimulated
+                  ? 'Simulate UPI to continue'
                   : numAmount > 0
                   ? `Mark as Settled  •  ₹${numAmount.toLocaleString('en-IN')}`
                   : 'Mark as Settled'}
@@ -510,6 +500,53 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#059669',
+  },
+  paymentMethodRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  paymentMethodOption: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  paymentMethodOptionActive: {
+    borderColor: '#059669',
+    backgroundColor: '#ECFDF5',
+  },
+  paymentMethodText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  paymentMethodTextActive: {
+    color: '#047857',
+  },
+  simulationNote: {
+    color: '#64748B',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  cashNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    padding: 13,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
+  },
+  cashNoteText: {
+    flex: 1,
+    color: '#065F46',
+    fontSize: 12,
+    lineHeight: 17,
   },
   // VPA Card
   vpaCard: {
