@@ -1,10 +1,172 @@
 const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken');
 const { verifyToken: verifyJWT } = require('./jwt.util');
 const { pool } = require('./db.util');
 
 let io = null;
+let supportEventsClient = null;
+let supportEventsConnecting = false;
+let supportEventsRetry = null;
+let supportEventsPolling = null;
+let supportEventsDispatching = false;
+const supportEventConsumer = `customer-api:${process.env.RENDER_INSTANCE_ID || process.env.HOSTNAME || 'local'}`;
 const ticketRoom = (ticketNumber) => `ticket:${String(ticketNumber).trim()}`;
+
+async function handleSupportDatabaseEvent(payload) {
+  if (!io || !payload?.type) return;
+  const ticketNumber = String(payload.ticketNumber || '').trim();
+  if (payload.type === 'ticket:created') {
+    io.to('support:admins').emit('ticket:created', { ticketNumber });
+    return;
+  }
+  if (!ticketNumber) return;
+
+  if (payload.type === 'ticket:message' && payload.messageId) {
+    const result = await pool.query(
+      `SELECT m.id, m.ticket_id AS "ticketId", m.sender_id AS "senderId", m.sender_name AS "senderName",
+              m.sender_role AS "senderRole", m.message, m.attachment_url AS "attachmentUrl",
+              m.attachment_name AS "attachmentName", m.attachment_type AS "attachmentType",
+              m.attachment_size AS "attachmentSize", m.created_at AS "createdAt"
+       FROM support_ticket_messages m
+       JOIN support_tickets t ON t.id = m.ticket_id
+       WHERE t.ticket_number = $1 AND m.id = $2
+       LIMIT 1`,
+      [ticketNumber, payload.messageId]
+    );
+    if (result.rowCount) {
+      emitToTicket(ticketNumber, 'ticket:message', { message: result.rows[0] });
+    }
+    return;
+  }
+
+  if (payload.type === 'ticket:status_change') {
+    io.to(ticketRoom(ticketNumber)).emit('ticket:status_change', {
+      ticketNumber,
+      status: payload.status,
+    });
+  }
+}
+
+async function dispatchPendingSupportEvents() {
+  if (supportEventsDispatching) return;
+  supportEventsDispatching = true;
+  const consumerName = supportEventConsumer;
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query(
+      `INSERT INTO support_ticket_event_consumers (consumer_name, last_event_id)
+       SELECT $1, COALESCE(MAX(event_id), 0) FROM support_ticket_event_outbox
+       ON CONFLICT (consumer_name) DO NOTHING`,
+      [consumerName]
+    );
+    while (io) {
+      await client.query('BEGIN');
+      const cursor = await client.query(
+        'SELECT last_event_id FROM support_ticket_event_consumers WHERE consumer_name = $1 FOR UPDATE',
+        [consumerName]
+      );
+      const events = await client.query(
+        `SELECT event_id AS "eventId", event_type AS type, ticket_number AS "ticketNumber", payload
+         FROM support_ticket_event_outbox
+         WHERE event_id > $1
+         ORDER BY event_id ASC
+         LIMIT 100`,
+        [cursor.rows[0].last_event_id]
+      );
+      for (const event of events.rows) {
+        await handleSupportDatabaseEvent({ ...event.payload, type: event.type, ticketNumber: event.ticketNumber });
+      }
+      if (events.rowCount) {
+        await client.query(
+          'UPDATE support_ticket_event_consumers SET last_event_id = $1, updated_at = NOW() WHERE consumer_name = $2',
+          [events.rows[events.rowCount - 1].eventId, consumerName]
+        );
+      }
+      await client.query('COMMIT');
+      if (events.rowCount < 100) break;
+    }
+  } catch (error) {
+    await client?.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client?.release();
+    supportEventsDispatching = false;
+  }
+}
+
+function scheduleSupportEventsPoll(delayMs = 30000) {
+  if (!io) return;
+  if (supportEventsPolling) {
+    if (delayMs !== 0) return;
+    clearTimeout(supportEventsPolling);
+    supportEventsPolling = null;
+  }
+  supportEventsPolling = setTimeout(async () => {
+    supportEventsPolling = null;
+    try {
+      await dispatchPendingSupportEvents();
+    } catch (error) {
+      console.error('[Support Events] Outbox delivery failed:', error.message);
+    }
+    scheduleSupportEventsPoll();
+  }, delayMs);
+  supportEventsPolling.unref?.();
+}
+
+function scheduleSupportEventsReconnect() {
+  if (supportEventsRetry) return;
+  supportEventsRetry = setTimeout(() => {
+    supportEventsRetry = null;
+    connectSupportEventsListener();
+  }, 3000);
+  supportEventsRetry.unref?.();
+}
+
+async function connectSupportEventsListener() {
+  if (supportEventsClient || supportEventsConnecting) return;
+  supportEventsConnecting = true;
+  let client;
+  let released = false;
+  const releaseAndRetry = (error) => {
+    if (released) return;
+    released = true;
+    if (supportEventsClient === client) supportEventsClient = null;
+    client?.release(error);
+    scheduleSupportEventsReconnect();
+  };
+
+  try {
+    client = await pool.connect();
+    await client.query('LISTEN triptual_support_events');
+    supportEventsClient = client;
+    console.log('[Support Events] Listening for committed ticket updates');
+    scheduleSupportEventsPoll(0);
+    client.on('notification', (notification) => {
+      if (notification.channel !== 'triptual_support_events' || !notification.payload) return;
+      try {
+        const ephemeralEvent = JSON.parse(notification.payload);
+        if (ephemeralEvent.type === 'ticket:typing') {
+          const room = ticketRoom(ephemeralEvent.ticketNumber);
+          io.to(room).emit('ticket:typing', ephemeralEvent);
+          return;
+        }
+      } catch {
+        // Durable outbox wake notifications carry an integer event ID.
+      }
+      scheduleSupportEventsPoll(0);
+    });
+    client.on('error', (error) => {
+      console.error('[Support Events] Listener connection failed:', error.message);
+      releaseAndRetry(error);
+    });
+    client.on('end', () => releaseAndRetry());
+  } catch (error) {
+    console.error('[Support Events] Listener startup failed:', error.message);
+    releaseAndRetry(error);
+  } finally {
+    supportEventsConnecting = false;
+  }
+}
 
 async function canAccessTicket(socket, ticketNumber) {
   if (!socket.userId || !ticketNumber) return false;
@@ -43,6 +205,7 @@ function initSocketServer(httpServer) {
     pingTimeout: 20000,
     pingInterval: 25000,
   });
+  connectSupportEventsListener();
 
   io.use(async (socket, next) => {
     try {
@@ -56,21 +219,10 @@ function initSocketServer(httpServer) {
         return next();
       }
 
-      try {
-        const decoded = verifyJWT(token);
-        if (!decoded?.key) return next(new Error('unauthorized'));
-        socket.userId = String(decoded.key);
-        socket.actorRole = 'USER';
-      } catch (userTokenError) {
-        const adminSecret = process.env.JWT_SECRET;
-        if (!adminSecret) return next(new Error('unauthorized'));
-        const decoded = jwt.verify(token, adminSecret);
-        if (decoded?.type !== 'access' || !decoded.sub) return next(new Error('unauthorized'));
-        const admin = await pool.query('SELECT id FROM triptual_admin_users WHERE id = $1 LIMIT 1', [decoded.sub]);
-        if (!admin.rowCount) return next(new Error('unauthorized'));
-        socket.userId = String(admin.rows[0].id);
-        socket.actorRole = 'SUPPORT';
-      }
+      const decoded = verifyJWT(token);
+      if (!decoded?.key) return next(new Error('unauthorized'));
+      socket.userId = String(decoded.key);
+      socket.actorRole = 'USER';
 
       socket.data.actorRole = socket.actorRole;
       return next();
@@ -101,15 +253,6 @@ function initSocketServer(httpServer) {
       }
     });
 
-    socket.on('admin:join', (ack) => {
-      if (socket.actorRole !== 'SUPPORT') {
-        if (typeof ack === 'function') ack({ ok: false, error: 'unauthorized' });
-        return;
-      }
-      socket.join('support:admins');
-      if (typeof ack === 'function') ack({ ok: true });
-    });
-
     socket.on('join:ticket', async (ticketNumber, ack) => {
       const cleanTicketNumber = String(ticketNumber || '').trim();
       try {
@@ -131,7 +274,7 @@ function initSocketServer(httpServer) {
       const cleanTicketNumber = String(ticketNumber || '').trim();
       const room = ticketRoom(cleanTicketNumber);
       await socket.leave(room);
-      await emitTicketPresence(room, cleanTicketNumber).catch(() => {});
+      await emitTicketPresence(room, cleanTicketNumber).catch(() => { });
     });
 
     socket.on('ticket:typing', async (payload) => {
@@ -143,80 +286,6 @@ function initSocketServer(httpServer) {
         isTyping: Boolean(payload?.isTyping),
         senderRole: socket.actorRole,
       });
-    });
-
-    socket.on('ticket:send_message', async (payload, ack) => {
-      const cleanTicketNumber = String(payload?.ticketNumber || '').trim();
-      if (socket.actorRole !== 'SUPPORT' || !payload?.id) {
-        if (typeof ack === 'function') ack({ ok: false, error: 'unauthorized' });
-        return;
-      }
-      try {
-        const result = await pool.query(
-          `SELECT m.id, m.ticket_id AS "ticketId", m.sender_id AS "senderId", m.sender_name AS "senderName",
-                  m.sender_role AS "senderRole", m.message, m.attachment_url AS "attachmentUrl",
-                  m.attachment_name AS "attachmentName", m.attachment_type AS "attachmentType",
-                  m.attachment_size AS "attachmentSize", m.created_at AS "createdAt"
-           FROM support_ticket_messages m
-           JOIN support_tickets t ON t.id = m.ticket_id
-           WHERE t.ticket_number = $1 AND m.id = $2 AND m.sender_role = 'SUPPORT'
-           LIMIT 1`,
-          [cleanTicketNumber, payload.id]
-        );
-        if (!result.rowCount) {
-          if (typeof ack === 'function') ack({ ok: false, error: 'message_not_found' });
-          return;
-        }
-        emitToTicket(cleanTicketNumber, 'ticket:message', { message: result.rows[0] });
-        if (typeof ack === 'function') ack({ ok: true });
-      } catch (error) {
-        console.error('[Socket.io] Support message relay failed:', error.message);
-        if (typeof ack === 'function') ack({ ok: false, error: 'relay_failed' });
-      }
-    });
-
-    socket.on('ticket:status_change', async (payload, ack) => {
-      const cleanTicketNumber = String(payload?.ticketNumber || '').trim();
-      if (socket.actorRole !== 'SUPPORT') {
-        if (typeof ack === 'function') ack({ ok: false, error: 'unauthorized' });
-        return;
-      }
-      try {
-        const result = await pool.query(
-          `SELECT t.status, (
-             SELECT json_build_object(
-               'id', m.id,
-               'ticketId', m.ticket_id,
-               'senderId', m.sender_id,
-               'senderName', m.sender_name,
-               'senderRole', m.sender_role,
-               'message', m.message,
-               'createdAt', m.created_at
-             )
-             FROM support_ticket_messages m
-             WHERE m.ticket_id = t.id AND m.sender_role = 'SYSTEM'
-             ORDER BY m.created_at DESC
-             LIMIT 1
-           ) AS "systemMessage"
-           FROM support_tickets t WHERE t.ticket_number = $1 LIMIT 1`,
-          [cleanTicketNumber]
-        );
-        if (!result.rowCount || result.rows[0].status !== payload.status) {
-          if (typeof ack === 'function') ack({ ok: false, error: 'status_mismatch' });
-          return;
-        }
-        emitToTicket(cleanTicketNumber, 'ticket:status_change', {
-          ticketNumber: cleanTicketNumber,
-          status: result.rows[0].status,
-        });
-        if (result.rows[0].systemMessage) {
-          emitToTicket(cleanTicketNumber, 'ticket:message', { message: result.rows[0].systemMessage });
-        }
-        if (typeof ack === 'function') ack({ ok: true });
-      } catch (error) {
-        console.error('[Socket.io] Ticket status relay failed:', error.message);
-        if (typeof ack === 'function') ack({ ok: false, error: 'relay_failed' });
-      }
     });
 
     // Join specific trip workspace room
@@ -279,7 +348,7 @@ function initSocketServer(httpServer) {
       const ticketRooms = [...socket.rooms].filter((room) => room.startsWith('ticket:'));
       setImmediate(() => {
         ticketRooms.forEach((room) => {
-          emitTicketPresence(room, room.slice('ticket:'.length)).catch(() => {});
+          emitTicketPresence(room, room.slice('ticket:'.length)).catch(() => { });
         });
       });
     });
@@ -354,12 +423,6 @@ function emitToTicket(ticketNumber, event, data) {
   return true;
 }
 
-function emitToSupportAdmins(event, data) {
-  if (!io) return false;
-  io.to('support:admins').emit(event, data);
-  return true;
-}
-
 /**
  * Global Broadcast Dispatcher (To All Connected Users)
  */
@@ -390,6 +453,5 @@ module.exports = {
   sendRealTimeNotification,
   emitToGroup,
   emitToTicket,
-  emitToSupportAdmins,
   broadcastNotification
 };

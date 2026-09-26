@@ -1,5 +1,5 @@
 /**
- * API client for the local development backend.
+ * API client for the live backend.
  * Features: Silent Token Rotation, Request Replay, Network Timeout Handling
  */
 
@@ -8,7 +8,7 @@ import { storage } from "../database/storage";
 
 declare const process: any;
 
-const LOCAL_API_BASE = "http://10.91.46.70:4000/api";
+const LIVE_API_BASE = "https://triptual-api.onrender.com/api";
 
 export const getApiBase = (): string => {
   const envUrl =
@@ -20,7 +20,7 @@ export const getApiBase = (): string => {
     return envUrl.trim().replace(/\/+$/, "");
   }
 
-  return LOCAL_API_BASE;
+  return LIVE_API_BASE;
 };
 
 export const API_BASE = getApiBase();

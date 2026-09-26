@@ -35,7 +35,7 @@ import {
   SupportTicketSummary,
   TicketMessage
 } from '../services/support.service';
-import { joinSupportTicket, onSupportTicketMessage, onSupportTicketStatus } from '../services/supportSocket';
+import { joinSupportTicket, onSupportSocketReconnect, onSupportTicketMessage, onSupportTicketStatus } from '../services/supportSocket';
 
 interface HelpSupportPageProps {
   onBack: () => void;
@@ -164,9 +164,20 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
       setActiveChatTicket((current) => current?.ticketNumber === ticketNumber ? { ...current, status: payload.status } : current);
       setMyTickets((current) => current.map((ticket) => ticket.ticketNumber === ticketNumber ? { ...ticket, status: payload.status } : ticket));
     });
+    const unsubscribeReconnect = onSupportSocketReconnect(() => {
+      getTicketMessages(ticketNumber).then((response) => {
+        setActiveChatTicket((current) => current?.ticketNumber === ticketNumber ? response.ticket : current);
+        setChatMessages((current) => {
+          const byId = new Map((response.messages || []).map((message) => [message.id, message]));
+          current.forEach((message) => byId.set(message.id, message));
+          return [...byId.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        });
+      }).catch((error) => console.warn('Could not resync support chat after reconnect:', error));
+    });
     return () => {
       unsubscribeMessage();
       unsubscribeStatus();
+      unsubscribeReconnect();
       leaveRoom();
     };
   }, [activeChatTicket?.ticketNumber]);

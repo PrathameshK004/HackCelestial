@@ -47,6 +47,13 @@ class SocketService {
     return Boolean(this.socket && this.socket.connected);
   }
 
+  onConnected(callback: () => void): () => void {
+    const unsubscribe = this.on("connect", callback);
+    void this.connect();
+    if (this.socket?.connected) callback();
+    return unsubscribe;
+  }
+
   /**
    * Connect to Socket.io Server using active user token and userId
    */
@@ -129,16 +136,28 @@ class SocketService {
     // Configure resilient Socket.io connection for React Native
     this.socket = io(serverUrl, {
       auth: (callback) => {
-        void Promise.all([storage.getAuthToken(), storage.getAuthUser()]).then(([storedToken, storedUser]) => {
-          this.activeToken = storedToken;
-          this.activeUserId = storedUser?.id || (storedUser as any)?.userId || userId;
-          callback({ token: storedToken || token || undefined, userId: this.activeUserId || undefined });
-        }).catch(() => callback({ token: token || undefined, userId: userId || undefined }));
+        void Promise.all([storage.getAuthToken(), storage.getAuthUser()])
+          .then(([storedToken, storedUser]) => {
+            this.activeToken = storedToken;
+            this.activeUserId =
+              storedUser?.id || (storedUser as any)?.userId || userId;
+            callback({
+              token: storedToken || token || undefined,
+              userId: this.activeUserId || undefined,
+            });
+          })
+          .catch(() =>
+            callback({
+              token: token || undefined,
+              userId: userId || undefined,
+            }),
+          );
       },
       transports: ["websocket", "polling"], // Prefer websocket transport in React Native
       reconnection: true,
-      reconnectionAttempts: 15,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
       timeout: 10000,
     });
 
@@ -292,7 +311,8 @@ class SocketService {
     const cleanTicketNumber = String(ticketNumber || "").trim();
     if (!cleanTicketNumber) return;
     this.joinedTicketNumbers.add(cleanTicketNumber);
-    if (this.socket?.connected) this.socket.emit("join:ticket", cleanTicketNumber);
+    if (this.socket?.connected)
+      this.socket.emit("join:ticket", cleanTicketNumber);
   }
 
   leaveTicket(ticketNumber: string) {
