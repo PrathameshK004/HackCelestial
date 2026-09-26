@@ -27,7 +27,6 @@ import {
 } from 'lucide-react';
 import {
   joinTicketRoom,
-  joinTicketRooms,
   leaveTicketRoom,
   subscribeTicketMessages,
   subscribeTicketStatus
@@ -137,11 +136,6 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     try {
       const tickets = await listSupportTickets();
       setMyTickets(tickets);
-      joinTicketRooms(
-        tickets
-          .filter((ticket) => !['RESOLVED', 'CLOSED'].includes(ticket.status))
-          .map((ticket) => ticket.ticketNumber)
-      );
     } catch (err) {
       console.warn('Could not load support tickets:', err);
     } finally {
@@ -239,7 +233,11 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     setChatMessages([]);
     try {
       const res = await getTicketMessages(ticket.ticketNumber);
-      setChatMessages(res.messages || []);
+      setChatMessages((current) => {
+        const byId = new Map((res.messages || []).map((message) => [message.id, message]));
+        current.forEach((message) => byId.set(message.id, message));
+        return [...byId.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      });
       if (res.ticket) {
         setActiveChatTicket(res.ticket);
       }
@@ -262,7 +260,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
 
     try {
       const newMsg = await sendTicketMessage(activeChatTicket.ticketNumber, pendingText, pendingFile);
-      setChatMessages((prev) => [...prev, newMsg]);
+      setChatMessages((prev) => prev.some((message) => message.id === newMsg.id) ? prev : [...prev, newMsg]);
       setChatDraftText('');
       setChatAttachment(null);
 

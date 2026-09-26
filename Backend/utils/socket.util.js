@@ -1,6 +1,8 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { verifyToken: verifyJWT } = require('./jwt.util');
+const { pool } = require('./db.util');
+const { verifyAdminAccessToken } = require('../middleware/adminAuth.middleware');
 
 let io = null;
 
@@ -28,16 +30,32 @@ function initSocketServer(httpServer) {
       const token = socket.handshake.auth?.token || 
                     socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '') ||
                     socket.handshake.query?.token;
+      const requestedRole = String(socket.handshake.auth?.role || socket.handshake.query?.role || 'USER').toUpperCase();
+
+      if (requestedRole === 'ADMIN' || requestedRole === 'SUPPORT') {
+        if (!token) return next(new Error('Admin authentication required'));
+        try {
+          const admin = verifyAdminAccessToken(token);
+          socket.userId = String(admin.sub);
+          socket.role = requestedRole;
+          socket.adminId = String(admin.sub);
+          return next();
+        } catch {
+          return next(new Error('Invalid admin access token'));
+        }
+      }
 
       let explicitUserId = socket.handshake.auth?.userId || socket.handshake.query?.userId;
 
       if (!token && !explicitUserId) {
         // Guest / anonymous socket connection allowed
         socket.userId = null;
+        socket.userAuthenticated = false;
         return next();
       }
 
       let resolvedUserId = explicitUserId ? String(explicitUserId).trim() : null;
+      socket.userAuthenticated = false;
 
       if (token) {
         try {
@@ -45,6 +63,7 @@ function initSocketServer(httpServer) {
           const decoded = verifyJWT(token);
           if (decoded) {
             resolvedUserId = decoded.key || decoded.id || decoded.userId || decoded.userKey || decoded.sub || resolvedUserId;
+            socket.userAuthenticated = true;
           }
         } catch (verifyErr) {
           // 2. Second attempt: direct verify with secret fallbacks
@@ -53,15 +72,10 @@ function initSocketServer(httpServer) {
             const decoded = jwt.verify(token, secret);
             if (decoded) {
               resolvedUserId = decoded.key || decoded.id || decoded.userId || decoded.userKey || decoded.sub || resolvedUserId;
+              socket.userAuthenticated = true;
             }
           } catch (secErr) {
-            // 3. Third attempt: decode without verification if token is a valid JWT payload
-            try {
-              const decoded = jwt.decode(token);
-              if (decoded && (decoded.key || decoded.id || decoded.userId || decoded.userKey || decoded.sub)) {
-                resolvedUserId = decoded.key || decoded.id || decoded.userId || decoded.userKey || decoded.sub || resolvedUserId;
-              }
-            } catch (_) {}
+            console.warn('[Socket.io] User socket token could not be verified:', secErr.message);
           }
         }
       }
@@ -72,7 +86,7 @@ function initSocketServer(httpServer) {
       }
 
       socket.userId = resolvedUserId;
-      socket.role = String(socket.handshake.auth?.role || socket.handshake.query?.role || 'USER').toUpperCase();
+      socket.role = requestedRole;
       return next();
     } catch (err) {
       return next();
@@ -81,7 +95,7 @@ function initSocketServer(httpServer) {
 
   io.on('connection', (socket) => {
     const userId = socket.userId;
-    if (userId) {
+    if (userId && socket.userAuthenticated) {
       socket.join(`user:${userId}`);
       socket.join(`user_${userId}`);
       socket.join(String(userId));
@@ -92,9 +106,8 @@ function initSocketServer(httpServer) {
 
     // Explicit room registration from mobile/web client
     socket.on('join:user', (userKey) => {
-      if (userKey) {
+      if (socket.userAuthenticated && socket.userId && userKey && String(userKey).trim() === String(socket.userId)) {
         const cleanKey = String(userKey).trim();
-        socket.userId = cleanKey;
         socket.join(`user:${cleanKey}`);
         socket.join(`user_${cleanKey}`);
         socket.join(cleanKey);
@@ -157,14 +170,30 @@ function initSocketServer(httpServer) {
     // Real-Time Support Ticket & Concierge Chat
     // ==========================================
 
-    // Join specific support ticket room (traveler or admin)
-    socket.on('join:ticket', (ticketNumber) => {
-      if (ticketNumber) {
-        const cleanTicket = String(ticketNumber).trim();
-        socket.join('ticket:' + cleanTicket);
-        socket.join(cleanTicket);
+    // A ticket room is private to its owner and authenticated support staff.
+    socket.on('join:ticket', async (ticketNumber, acknowledge) => {
+      const respond = typeof acknowledge === 'function' ? acknowledge : () => {};
+      const cleanTicket = String(ticketNumber || '').trim();
+      if (!cleanTicket || (!socket.adminId && (!socket.userAuthenticated || !socket.userId))) {
+        return respond({ success: false, error: 'Ticket access denied' });
+      }
+
+      try {
+        if (!socket.adminId) {
+          const result = await pool.query(
+            'SELECT 1 FROM support_tickets WHERE ticket_number = $1 AND user_id::text = $2 LIMIT 1',
+            [cleanTicket, String(socket.userId)]
+          );
+          if (!result.rowCount) return respond({ success: false, error: 'Ticket access denied' });
+        }
+
+        await socket.join('ticket:' + cleanTicket);
         emitTicketPresence(cleanTicket);
+        respond({ success: true, ticketNumber: cleanTicket });
         console.log('[Socket.io] Socket ' + socket.id + ' joined room ticket:' + cleanTicket);
+      } catch (error) {
+        console.error('[Socket.io] Ticket room authorization failed:', error.message);
+        respond({ success: false, error: 'Unable to join ticket room' });
       }
     });
 
@@ -173,36 +202,8 @@ function initSocketServer(httpServer) {
       if (ticketNumber) {
         const cleanTicket = String(ticketNumber).trim();
         socket.leave('ticket:' + cleanTicket);
-        socket.leave(cleanTicket);
         emitTicketPresence(cleanTicket);
         console.log('[Socket.io] Socket ' + socket.id + ' left room ticket:' + cleanTicket);
-      }
-    });
-
-    // Handle real-time ticket message dispatched from Admin or Traveler
-    socket.on('ticket:send_message', (data) => {
-      if (data && data.ticketNumber) {
-        const cleanTicket = String(data.ticketNumber).trim();
-        console.log('[Socket.io] Message for ticket:' + cleanTicket + ' from ' + socket.id + ' (' + (data.senderRole || 'UNKNOWN') + ')');
-
-        const messagePayload = {
-          id: data.id || require('crypto').randomUUID(),
-          ticketId: data.ticketId,
-          ticketNumber: cleanTicket,
-          senderId: data.senderId || null,
-          senderName: data.senderName || 'Support Desk',
-          senderRole: data.senderRole || 'SUPPORT',
-          message: typeof data.message === 'string' ? data.message : (data.text || ''),
-          attachmentUrl: data.attachmentUrl || null,
-          attachmentName: data.attachmentName || null,
-          attachmentType: data.attachmentType || null,
-          attachmentSize: data.attachmentSize || null,
-          createdAt: data.createdAt || new Date().toISOString()
-        };
-
-        // Broadcast to ticket room (both user and admin listening)
-        io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:message', messagePayload);
-        io.emit('ticket:new_message', messagePayload);
       }
     });
 
@@ -210,16 +211,19 @@ function initSocketServer(httpServer) {
     socket.on('ticket:typing', (data) => {
       if (data && data.ticketNumber) {
         const cleanTicket = String(data.ticketNumber).trim();
-        socket.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:typing', data);
+        if (socket.rooms.has('ticket:' + cleanTicket)) {
+          socket.to('ticket:' + cleanTicket).emit('ticket:typing', data);
+        }
       }
     });
 
     // Handle ticket status change broadcast
     socket.on('ticket:status_change', (data) => {
-      if (data && data.ticketNumber) {
+      if (data && data.ticketNumber && (socket.role === 'ADMIN' || socket.role === 'SUPPORT')) {
         const cleanTicket = String(data.ticketNumber).trim();
-        io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:status_change', data);
-        io.emit('ticket:status_change', data);
+        if (socket.rooms.has('ticket:' + cleanTicket)) {
+          socket.to('ticket:' + cleanTicket).emit('ticket:status_change', data);
+        }
       }
     });
 
@@ -322,8 +326,7 @@ function emitTicketMessage(ticketNumber, messageData) {
   if (!io || !ticketNumber) return false;
   const cleanTicket = String(ticketNumber).trim();
   const payload = Object.assign({ ticketNumber: cleanTicket }, messageData);
-  io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:message', payload);
-  io.emit('ticket:new_message', payload);
+  io.to('ticket:' + cleanTicket).emit('ticket:message', payload);
   console.log('[Socket.io] Emitted "ticket:message" to ticket room: ' + cleanTicket);
   return true;
 }
@@ -353,7 +356,6 @@ function emitTicketPresence(ticketNumber) {
     timestamp: new Date().toISOString()
   };
   io.to('ticket:' + cleanTicket).emit('ticket:presence', payload);
-  io.emit('ticket:presence', payload);
   return true;
 }
 
@@ -364,8 +366,7 @@ function emitTicketStatus(ticketNumber, status) {
   if (!io || !ticketNumber) return false;
   const cleanTicket = String(ticketNumber).trim();
   const payload = { ticketNumber: cleanTicket, status: status };
-  io.to('ticket:' + cleanTicket).to(cleanTicket).emit('ticket:status_change', payload);
-  io.emit('ticket:status_change', payload);
+  io.to('ticket:' + cleanTicket).emit('ticket:status_change', payload);
   console.log('[Socket.io] Emitted "ticket:status_change" for ' + cleanTicket + ' to ' + status);
   return true;
 }
