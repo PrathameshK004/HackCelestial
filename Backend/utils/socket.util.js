@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const { verifyToken: verifyJWT } = require('./jwt.util');
 const { pool } = require('./db.util');
 const { verifyAdminAccessToken } = require('../middleware/adminAuth.middleware');
+const { corsOrigin } = require('./cors.util');
 
 let io = null;
 let supportEventsClient = null;
@@ -195,10 +196,7 @@ async function emitTicketPresence(room, ticketNumber) {
 function initSocketServer(httpServer) {
   io = new Server(httpServer, {
     cors: {
-      origin: (origin, callback) => {
-        // Allow mobile apps (no origin/exp://) or any allowed domain
-        return callback(null, true);
-      },
+      origin: corsOrigin,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     },
