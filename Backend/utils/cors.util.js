@@ -4,8 +4,8 @@ const configuredOrigins = (process.env.ADMIN_FRONTEND_URL || '')
   .filter(Boolean);
 
 const fixedOrigins = [
-  'https://hack-celestial-one.vercel.app',
-  'https://triptual-x.vercel.app',
+  'https://hack-celestial-one.vercel.app',,
+  'https://triptual-web.vercel.app',
 ];
 
 function isAllowedOrigin(origin) {
