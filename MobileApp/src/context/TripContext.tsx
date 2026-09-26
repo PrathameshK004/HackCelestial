@@ -13,6 +13,7 @@ interface TripContextType {
   trips: Trip[];
   selectedTrip: Trip | null;
   isLoading: boolean;
+  loadError: string | null;
   selectTrip: (tripId: string) => void;
   clearSelectedTrip: () => void;
   refreshTrips: () => Promise<void>;
@@ -51,6 +52,8 @@ interface TripContextType {
       toUpiId?: string;
       amount: number;
       remarks?: string;
+      paymentMethod?: 'CASH' | 'UPI';
+      paymentReference?: string;
     }
   ) => Promise<void>;
   createTrip: (tripData: Partial<Trip> & { travelers?: Array<{ name: string; email: string; role?: string }> }) => Promise<string>;
@@ -59,17 +62,27 @@ interface TripContextType {
 const TripContext = createContext<TripContextType | undefined>(undefined);
 
 export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Fetch live groups directly from authoritative backend PostgreSQL database
   const loadTrips = useCallback(async (): Promise<void> => {
+    if (isAuthLoading) return;
+    if (!isAuthenticated) {
+      setTrips([]);
+      setLoadError(null);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
+      setLoadError(null);
       const res = await groupService.getMyGroups();
-      const rawServerGroups = res?.data || [];
+      const rawServerGroups = Array.isArray(res?.data) ? res.data : [];
       
       const seenGroupIds = new Set<string>();
       const serverGroups = rawServerGroups.filter((g: any) => {
@@ -84,8 +97,8 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         serverGroups.map(async (g: any) => {
           const tripId = String(g.id || g.group_id);
           const [detailRes, expRes, settleRes] = await Promise.all([
-            groupService.getGroupById(tripId).catch(() => null),
-            groupService.getExpenses(tripId).catch(() => null),
+            groupService.getGroupById(tripId),
+            groupService.getExpenses(tripId),
             groupService.getSettlement(tripId).catch(() => ({ data: null, settlementError: true })),
           ]);
 
@@ -107,11 +120,14 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setTrips(populatedTrips);
     } catch (e) {
       console.warn('Error fetching live trips from server:', e);
-      setTrips([]);
+      const error = e as Error & { status?: number };
+      setLoadError(error.status === 401 || error.status === 403
+        ? 'Your session could not be verified. Please sign in again to load your trips.'
+        : error.message || 'Could not connect to the server. Check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, isAuthenticated, isAuthLoading]);
 
   useEffect(() => {
     loadTrips();
@@ -208,14 +224,19 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       toUpiId?: string;
       amount: number;
       remarks?: string;
+      paymentMethod?: 'CASH' | 'UPI';
+      paymentReference?: string;
     }
   ): Promise<void> => {
+    const currency = trips.find((trip) => trip.id === tripId)?.currency || 'INR';
     await groupService.recordSettlement(tripId, {
       fromMemberId: s.fromMemberId,
       paidTo: s.toMemberId,
       amount: s.amount,
+      currency,
       remarks: s.remarks,
-      paymentMethod: 'UPI',
+      paymentMethod: s.paymentMethod || 'UPI',
+      paymentReference: s.paymentReference,
     });
     await loadTrips();
   };
@@ -246,6 +267,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         trips,
         selectedTrip,
         isLoading,
+        loadError,
         selectTrip,
         clearSelectedTrip,
         refreshTrips: loadTrips,
@@ -395,6 +417,8 @@ function mapServerGroupToTrip(g: any, detail: any, expData: any[], settleData: a
     members,
     expenses,
     settlements,
+    packageReservations: detail?.packageReservations || [],
+    restaurantReservations: detail?.restaurantReservations || [],
     settlementError,
   };
 }

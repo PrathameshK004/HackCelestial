@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { Plus, Share2, Compass, ArrowRight } from 'lucide-react-native';
 import { colors, radii, shadows } from '../../theme/colors';
@@ -26,7 +27,7 @@ export const TripsTab: React.FC<TripsTabProps> = ({
   searchQuery = '',
   onRefresh,
 }) => {
-  const { trips, refreshTrips } = useTrips();
+  const { trips, refreshTrips, loadError, isLoading } = useTrips();
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -87,6 +88,16 @@ export const TripsTab: React.FC<TripsTabProps> = ({
       </View>
 
       {/* Action Buttons */}
+      {loadError ? (
+        <View style={styles.errorCard} accessibilityRole="alert">
+          <Text style={styles.errorTitle}>Trip data is unavailable</Text>
+          <Text style={styles.errorSubtitle}>{loadError}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={handleRefresh} disabled={isLoading} activeOpacity={0.85}>
+            <Text style={styles.retryBtnText}>{isLoading ? 'Retrying...' : 'Retry connection'}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={styles.createBtn}
@@ -163,25 +174,35 @@ export const TripsTab: React.FC<TripsTabProps> = ({
             </TouchableOpacity>
           );
         })}
-        {filteredTrips.length === 0 && (
+        {filteredTrips.length === 0 && isLoading ? (
+          <View style={styles.emptyCard}>
+            <ActivityIndicator size="small" color="#464B29" />
+            <Text style={styles.emptyTitle}>Loading your trips</Text>
+            <Text style={styles.emptySubtitle}>Syncing your account data from the server.</Text>
+          </View>
+        ) : filteredTrips.length === 0 && (
           <View style={styles.emptyCard}>
             <Compass size={40} color={colors.slate400} />
             <Text style={styles.emptyTitle}>
-              {q ? 'No matching trips' : 'No trips yet'}
+              {loadError ? 'Unable to load trips' : q ? 'No matching trips' : 'No trips yet'}
             </Text>
             <Text style={styles.emptySubtitle}>
-              {q
+              {loadError
+                ? 'Trip data could not be refreshed. Retry the connection above to fetch your account data.'
+                : q
                 ? `No trips found matching "${searchQuery}".`
                 : 'Create a new trip or join an existing one using an invitation code.'}
             </Text>
-            <TouchableOpacity
-              style={styles.emptyJoinBtn}
-              onPress={onJoinTrip}
-              activeOpacity={0.85}
-            >
-              <Share2 size={16} color="#ffffff" strokeWidth={2.2} />
-              <Text style={styles.emptyJoinBtnText}>Join Trip with Code</Text>
-            </TouchableOpacity>
+            {!loadError ? (
+              <TouchableOpacity
+                style={styles.emptyJoinBtn}
+                onPress={onJoinTrip}
+                activeOpacity={0.85}
+              >
+                <Share2 size={16} color="#ffffff" strokeWidth={2.2} />
+                <Text style={styles.emptyJoinBtnText}>Join Trip with Code</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
       </View>
@@ -221,6 +242,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginBottom: 24,
+  },
+  errorCard: {
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: '#F1C9C5',
+    backgroundColor: '#FFF7F5',
+  },
+  errorTitle: {
+    color: '#8F2D24',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  errorSubtitle: {
+    marginTop: 5,
+    color: '#69423E',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  retryBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: radii.full,
+    backgroundColor: '#464B29',
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   createBtn: {
     flex: 1,

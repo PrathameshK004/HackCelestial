@@ -46,6 +46,7 @@ import { savedTripService, SavedTrip } from '../services/savedTrip.service';
 import { SecuritySettingsPage } from './SecuritySettingsPage';
 import { HelpSupportPage } from './HelpSupportPage';
 import { apiRequest } from '../services/apiClient';
+import { packageService } from '../services/package.service';
 import { AboutPage } from './AboutPage';
 import { QuickExpenseModal } from '../components/home/QuickExpenseModal';
 import { JoinGroupModal } from '../components/home/JoinGroupModal';
@@ -65,7 +66,7 @@ import { RoundtableGroupsIcon } from '../components/common/RoundtableGroupsIcon'
 import { IllustrationAvatar } from '../components/IllustrationAvatar';
 
 interface HomePageProps {
-  onCreateGroup: () => void;
+  onCreateGroup: (prefill?: { groupName: string; destination: string; description: string }) => void;
   initialSelectedGroupId?: string;
   onClearInitialSelectedGroup?: () => void;
 }
@@ -85,6 +86,8 @@ interface CuratedStay {
   matchScore: number;
   rating: number;
   pricePerNight: number;
+  basePrice: number;
+  currency: string;
   totalNights: number;
   style: string;
   distance: string;
@@ -103,6 +106,12 @@ interface CuratedStay {
   }[];
 }
 
+const formatInr = (amount: number) => new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  maximumFractionDigits: 0,
+}).format(amount);
+
 export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelectedGroupId, onClearInitialSelectedGroup }) => {
   const { user, logout } = useAuth();
 
@@ -111,6 +120,14 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
   const [viewMode, setViewMode] = useState<ViewMode>('gallery');
   const [activeCategory, setActiveCategory] = useState<StayCategory>('all');
   const [selectedStay, setSelectedStay] = useState<CuratedStay | null>(null);
+  const [isReservationOpen, setIsReservationOpen] = useState(false);
+  const [reservationStartDate, setReservationStartDate] = useState('');
+  const [reservationEndDate, setReservationEndDate] = useState('');
+  const [reservationGuestCount, setReservationGuestCount] = useState(2);
+  const [reservationNotes, setReservationNotes] = useState('');
+  const [reservationError, setReservationError] = useState('');
+  const [reservationConfirmation, setReservationConfirmation] = useState<any>(null);
+  const [isSubmittingReservation, setIsSubmittingReservation] = useState(false);
   const [savedStays, setSavedStays] = useState<SavedTrip[]>([]);
   const savedStayIds = savedStays.map((stay) => stay.id);
   const [exploreStays, setExploreStays] = useState<CuratedStay[]>([]);
@@ -738,6 +755,41 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
     );
   }
 
+  const openReservationForm = () => {
+    if (!selectedStay) return;
+    const startDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const endDate = new Date(startDate.getTime() + Math.max(1, selectedStay.totalNights) * 24 * 60 * 60 * 1000);
+    setReservationStartDate(startDate.toISOString().slice(0, 10));
+    setReservationEndDate(endDate.toISOString().slice(0, 10));
+    setReservationGuestCount(Math.max(1, selectedStay.guests));
+    setReservationNotes('');
+    setReservationError('');
+    setReservationConfirmation(null);
+    setIsReservationOpen(true);
+  };
+
+  const submitReservation = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedStay || isSubmittingReservation) return;
+    setReservationError('');
+    setIsSubmittingReservation(true);
+    try {
+      const response: any = await packageService.reserve(selectedStay.id, {
+        guestCount: reservationGuestCount,
+        startDate: reservationStartDate,
+        endDate: reservationEndDate,
+        notes: reservationNotes,
+      });
+      const reservation = response?.data?.reservation || response?.reservation;
+      if (!reservation?.id) throw new Error(response?.message || 'Reservation request could not be saved.');
+      setReservationConfirmation(reservation);
+    } catch (error: any) {
+      setReservationError(error?.message || 'Reservation request could not be saved. Please try again.');
+    } finally {
+      setIsSubmittingReservation(false);
+    }
+  };
+
   // ---------------- VIEW: STAY DETAIL VIEW (Screenshots 4 & 5) ----------------
   if (selectedStay) {
     return (
@@ -948,7 +1000,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                     <tr>
                       <td>Price</td>
                       <td className="active-col" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        ₹{selectedStay.pricePerNight}
+                        {formatInr(selectedStay.pricePerNight)}
                       </td>
                       <td>₹132</td>
                       <td>₹120</td>
@@ -1003,11 +1055,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
               <div className="sticky-action-header-row">
                 <div className="sticky-price-col">
                   <div className="price-main">
-                    ₹{selectedStay.pricePerNight}
+                    {formatInr(selectedStay.pricePerNight)}
                     <span className="price-period">/night</span>
                   </div>
                   <div className="price-sub">
-                    ₹{selectedStay.pricePerNight * selectedStay.totalNights} total · {selectedStay.totalNights} nights
+                    {formatInr(selectedStay.basePrice || selectedStay.pricePerNight * selectedStay.totalNights)} total · {selectedStay.totalNights} nights
                   </div>
                 </div>
 
@@ -1023,7 +1075,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 <button
                   type="button"
                   className="btn-pill-action btn-pill-ledger"
-                  onClick={() => onCreateGroup()}
+                  onClick={() => onCreateGroup({
+                    groupName: `${selectedStay.name} Trip`,
+                    destination: selectedStay.destination,
+                    description: `Package ${selectedStay.id} selected: ${selectedStay.name}. Estimated package total ${formatInr(selectedStay.basePrice || selectedStay.pricePerNight * selectedStay.totalNights)}.`,
+                  })}
                 >
                   <Users size={15} />
                   <span>Create Trip Ledger</span>
@@ -1031,9 +1087,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 <button
                   type="button"
                   className="btn-pill-action btn-pill-reserve"
-                  onClick={() => {
-                    alert(`Booking reservation confirmed for ${selectedStay.name}!`);
-                  }}
+                  onClick={openReservationForm}
                 >
                   <span>Reserve</span>
                   <ArrowRight size={15} />
@@ -1041,6 +1095,66 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
               </div>
             </div>
           </div>
+
+          {isReservationOpen && (
+            <div className="modal-backdrop-blur package-reservation-backdrop" role="presentation" onClick={() => setIsReservationOpen(false)}>
+              <section
+                className="package-reservation-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="package-reservation-title"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="package-reservation-heading">
+                  <div>
+                    <span className="package-reservation-kicker">PACKAGE REQUEST</span>
+                    <h2 id="package-reservation-title">Reserve {selectedStay.name}</h2>
+                    <p>{selectedStay.destination} · {formatInr(selectedStay.basePrice || selectedStay.pricePerNight * selectedStay.totalNights)} package total</p>
+                  </div>
+                  <button type="button" className="btn-icon-circle" onClick={() => setIsReservationOpen(false)} aria-label="Close reservation form">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {reservationConfirmation ? (
+                  <div className="package-reservation-confirmation" role="status">
+                    <Check size={22} />
+                    <div>
+                      <strong>Request saved</strong>
+                      <p>Reference {reservationConfirmation.id}. Status: pending confirmation.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <form className="package-reservation-form" onSubmit={submitReservation}>
+                    <label>
+                      Check in
+                      <input type="date" value={reservationStartDate} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setReservationStartDate(event.target.value)} required />
+                    </label>
+                    <label>
+                      Check out
+                      <input type="date" value={reservationEndDate} min={reservationStartDate || new Date().toISOString().slice(0, 10)} onChange={(event) => setReservationEndDate(event.target.value)} required />
+                    </label>
+                    <label>
+                      Guests
+                      <input type="number" min="1" max="40" value={reservationGuestCount} onChange={(event) => setReservationGuestCount(Number(event.target.value))} required />
+                    </label>
+                    <label className="package-reservation-notes">
+                      Notes for the host
+                      <textarea value={reservationNotes} maxLength={500} onChange={(event) => setReservationNotes(event.target.value)} rows={3} placeholder="Arrival time or accessibility requests" />
+                    </label>
+                    {reservationError && <p className="package-reservation-error" role="alert">{reservationError}</p>}
+                    <button type="submit" className="btn-pill-action btn-pill-reserve" disabled={isSubmittingReservation}>
+                      {isSubmittingReservation ? 'Submitting...' : 'Send reservation request'}
+                      <ArrowRight size={15} />
+                    </button>
+                  </form>
+                )}
+                {reservationConfirmation && (
+                  <button type="button" className="btn-pill-action btn-pill-reserve" onClick={() => setIsReservationOpen(false)}>Done</button>
+                )}
+              </section>
+            </div>
+          )}
         </div>
 
         {/* Bottom Floating Navigation Dock */}
@@ -1534,7 +1648,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                           {featuredStay.name}
                         </div>
                         <div className="hero-card-sub">
-                          {featuredStay.destination} · {featuredStay.type} · ${featuredStay.pricePerNight}/night
+                          {featuredStay.destination} · {featuredStay.type} · {formatInr(featuredStay.pricePerNight)}/night
                         </div>
                       </div>
                     </div>
@@ -1590,7 +1704,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                               textShadow: '0 1px 3px rgba(0,0,0,0.6)'
                             }}
                           >
-                            ${stay.pricePerNight}/night
+                            {formatInr(stay.pricePerNight)}/night
                           </div>
                         </div>
                       </div>
@@ -1670,7 +1784,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                               Guests {stay.guests}
                             </span>
                             <span>·</span>
-                            <span>Price ${stay.pricePerNight > 150 ? '$$$' : '$$'}</span>
+                            <span>Price {formatInr(stay.pricePerNight)}/night</span>
                           </div>
                         </div>
                       </div>
@@ -1732,7 +1846,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 <button
                   type="button"
                   className="secondary-action-btn"
-                  onClick={onCreateGroup}
+                  onClick={() => onCreateGroup()}
                 >
                   <Plus size={14} />
                   <span>New Group</span>
@@ -1850,7 +1964,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                   <button
                     type="button"
                     className="btn-primary"
-                    onClick={onCreateGroup}
+                    onClick={() => onCreateGroup()}
                     style={{ padding: '10px 24px', borderRadius: '9999px', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: '0 auto', background: 'var(--accent-olive)', color: '#FFFFFF', fontWeight: 600, boxShadow: '0 4px 14px rgba(70, 75, 41, 0.25)' }}
                   >
                     <Plus size={16} strokeWidth={2.4} />
@@ -2279,7 +2393,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
                 type="button"
                 className="btn-primary-luxury"
                 style={{ width: 'auto', flex: 1 }}
-                onClick={onCreateGroup}
+                onClick={() => onCreateGroup()}
               >
                 <Plus size={16} />
                 <span>Create New Trip</span>
@@ -2372,7 +2486,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
             <button
               type="button"
               className="dock-fab-btn"
-              onClick={onCreateGroup}
+              onClick={() => onCreateGroup()}
               title="Create New Trip"
             >
               <Plus size={24} strokeWidth={2.6} />

@@ -41,6 +41,14 @@ function safeParseJson(value) {
   }
 
   if (typeof value === 'object') {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value, 'value') && Object.keys(value).length === 1) {
+      return safeParseJson(value.value);
+    }
+
     return value;
   }
 
@@ -49,7 +57,11 @@ function safeParseJson(value) {
   }
 
   try {
-    return JSON.parse(value);
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === 'object' && Object.prototype.hasOwnProperty.call(parsed, 'value') && Object.keys(parsed).length === 1) {
+      return safeParseJson(parsed.value);
+    }
+    return parsed;
   } catch (error) {
     return value;
   }
@@ -65,7 +77,20 @@ async function getCache(key) {
     return null;
   }
 
-  const parsed = safeParseJson(result.result);
+  return unwrapRedisCacheValue(result.result);
+}
+
+function unwrapRedisCacheValue(value) {
+  const parsed = safeParseJson(value);
+  if (
+    parsed &&
+    typeof parsed === 'object' &&
+    !Array.isArray(parsed) &&
+    typeof parsed.value === 'string' &&
+    Number.isFinite(Number(parsed.ex))
+  ) {
+    return safeParseJson(parsed.value);
+  }
   return parsed;
 }
 
@@ -75,8 +100,7 @@ async function setCache(key, value, ttlSeconds = 300, namespace = null) {
   }
 
   const normalizedValue = typeof value === 'string' ? value : JSON.stringify(value);
-  const redisResponse = await redisRequest('/set', 'POST', {
-    key: String(key),
+  const redisResponse = await redisRequest(`/set/${encodeURIComponent(String(key))}`, 'POST', {
     value: normalizedValue,
     ex: Math.max(30, Number(ttlSeconds) || 300)
   });
@@ -110,9 +134,7 @@ async function deleteCache(key) {
     return false;
   }
 
-  const response = await redisRequest('/del', 'POST', {
-    key: String(key)
-  });
+  const response = await redisRequest(`/del/${encodeURIComponent(String(key))}`, 'POST');
 
   return Boolean(response && response.result !== null && response.result !== undefined);
 }
@@ -171,6 +193,7 @@ async function invalidatePackageCache() {
 module.exports = {
   isRedisEnabled,
   getCache,
+  unwrapRedisCacheValue,
   setCache,
   deleteCache,
   invalidateNamespace,

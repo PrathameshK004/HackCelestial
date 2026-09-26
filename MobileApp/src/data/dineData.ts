@@ -31,6 +31,12 @@ export interface Restaurant {
   offer?: string;
   phone: string;
   openUntil: string;
+  timezone?: string;
+  hours?: Array<{
+    day: string;
+    isClosed?: boolean;
+    intervals: Array<{ open: string; close: string }>;
+  }>;
   description: string;
   tags: string[];
   menu: {

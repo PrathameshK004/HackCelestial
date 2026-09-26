@@ -23,8 +23,14 @@ module.exports = {
     recordSettlement,
     settleGroup,
     getAuditLog,
-    reviewExpenseApproval
+    reviewExpenseApproval,
+    normalizeSettlementPaymentMethod
 };
+
+function normalizeSettlementPaymentMethod(method = 'UPI') {
+    const normalized = String(method || 'UPI').trim().toUpperCase();
+    return ['CASH', 'UPI'].includes(normalized) ? normalized : null;
+}
 
 /**
  * 1. Add a new group expense with participation splits and audit log
@@ -818,6 +824,11 @@ async function recordSettlement(req, res) {
             paymentReference = null,
             remarks = 'Debt settlement'
         } = req.body;
+        const normalizedPaymentMethod = normalizeSettlementPaymentMethod(paymentMethod);
+
+        if (!['CASH', 'UPI'].includes(normalizedPaymentMethod)) {
+            return sendError(res, 'Payment method must be CASH or UPI', null, 400);
+        }
 
         if (!userId) {
             client.release();
@@ -889,7 +900,7 @@ async function recordSettlement(req, res) {
         `, [
             settlementId, groupId, fromMember.id, toMember.id,
             fromMember.user_id || null, toMember.user_id || null,
-            numAmount, currency, paymentMethod, paymentReference, remarks
+            numAmount, currency, normalizedPaymentMethod, paymentReference, remarks
         ]);
 
         // 2. Append to Immutable Ledger Audit Log
@@ -903,13 +914,13 @@ async function recordSettlement(req, res) {
             'SETTLEMENT_RECORDED',
             userId || null,
             fromMember.name,
-            `${fromMember.name} paid ${currency} ${numAmount.toFixed(2)} to ${toMember.name} via ${paymentMethod}`,
+            `${fromMember.name} paid ${currency} ${numAmount.toFixed(2)} to ${toMember.name} via ${normalizedPaymentMethod}`,
             JSON.stringify({
                 settlementId,
                 from: { id: fromMember.id, name: fromMember.name },
                 to: { id: toMember.id, name: toMember.name },
                 amount: numAmount,
-                paymentMethod
+                paymentMethod: normalizedPaymentMethod
             })
         ]);
 
@@ -924,7 +935,7 @@ async function recordSettlement(req, res) {
             toUserId: toMember.user_id,
             amount: numAmount,
             currency,
-            paymentMethod
+            paymentMethod: normalizedPaymentMethod
         }).catch(() => { });
 
         return sendSuccess(res, "Settlement recorded successfully", {

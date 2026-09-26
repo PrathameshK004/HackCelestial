@@ -8,6 +8,7 @@ const AppContent: React.FC = () => {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [isAuthModeForInvite, setIsAuthModeForInvite] = useState(false);
   const [activeView, setActiveView] = useState<'create-group' | 'dashboard'>('dashboard');
+  const [packageTripPrefill, setPackageTripPrefill] = useState<{ groupName: string; destination: string; description: string } | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(undefined);
   const [showSplash, setShowSplash] = useState(true);
   const [isSplashExiting, setIsSplashExiting] = useState(false);
@@ -93,7 +94,10 @@ const AppContent: React.FC = () => {
   if (activeView === 'dashboard') {
     return (
       <HomePage 
-        onCreateGroup={() => setActiveView('create-group')} 
+        onCreateGroup={(prefill) => {
+          setPackageTripPrefill(prefill || null);
+          setActiveView('create-group');
+        }}
         initialSelectedGroupId={selectedGroupId}
         onClearInitialSelectedGroup={() => setSelectedGroupId(undefined)}
       />
@@ -102,8 +106,10 @@ const AppContent: React.FC = () => {
 
   return (
     <CreateGroupPage 
+      packagePrefill={packageTripPrefill || undefined}
       onNavigateDashboard={(newGroupId) => {
         if (newGroupId) setSelectedGroupId(newGroupId);
+        setPackageTripPrefill(null);
         setActiveView('dashboard');
       }} 
     />

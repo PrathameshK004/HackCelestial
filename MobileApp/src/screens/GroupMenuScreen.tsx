@@ -601,7 +601,25 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
           {/* TAB 1: EXPENSES */}
         {activeTab === 'expenses' && (
           <View>
-
+              {(trip.packageReservations?.length || trip.restaurantReservations?.length) ? (
+                <View style={{ marginHorizontal: 16, marginTop: 16, marginBottom: 8 }}>
+                  <Text style={styles.sectionHeader}>Bookings for this trip</Text>
+                  {trip.packageReservations?.map((reservation) => (
+                    <View key={reservation.id} style={{ padding: 14, marginBottom: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.bgCard }}>
+                      <Text style={{ color: colors.slate900, fontSize: 14, fontWeight: '800' }}>{reservation.packageName}</Text>
+                      <Text style={{ marginTop: 4, color: colors.slate500, fontSize: 12 }}>{reservation.destination} · {reservation.startDate} to {reservation.endDate} · {reservation.guestCount} guests</Text>
+                      <Text style={{ marginTop: 5, color: colors.primary700, fontSize: 12, fontWeight: '700' }}>₹{Number(reservation.totalAmount).toLocaleString('en-IN')} · {reservation.status.replaceAll('_', ' ')}</Text>
+                    </View>
+                  ))}
+                  {trip.restaurantReservations?.map((reservation) => (
+                    <View key={reservation.id} style={{ padding: 14, marginBottom: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.bgCard }}>
+                      <Text style={{ color: colors.slate900, fontSize: 14, fontWeight: '800' }}>{reservation.restaurantName}</Text>
+                      <Text style={{ marginTop: 4, color: colors.slate500, fontSize: 12 }}>{reservation.date} at {String(reservation.startTime).slice(0, 5)} · {reservation.guestCount} guests</Text>
+                      <Text style={{ marginTop: 5, color: colors.primary700, fontSize: 12, fontWeight: '700' }}>{reservation.status.replaceAll('_', ' ')}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
 
             {expenses.length === 0 ? (
               <View style={styles.emptyWrap}>
@@ -921,7 +939,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
                           activeOpacity={0.8}
                         >
                           <Smartphone size={13} color="#ffffff" />
-                          <Text style={styles.debtUpiBtnText}>Pay / Settle via UPI</Text>
+                          <Text style={styles.debtUpiBtnText}>Pay / Settle</Text>
                         </TouchableOpacity>
                         </View>
                       )}
