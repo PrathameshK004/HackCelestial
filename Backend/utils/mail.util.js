@@ -258,7 +258,7 @@ const sendOfficialInviteEmail = async ({
         }
     }
 
-    const liveDomain = (process.env.APP_URL || process.env.FRONTEND_URL || 'https://hack-celestial-one.vercel.app').trim().replace(/\/+$/, '');
+    const liveDomain = (process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').trim().replace(/\/+$/, '');
     const cleanInviteUrl = (inviteUrl || `${liveDomain}/join/${inviteCode || ''}`)
         .replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, liveDomain)
         .replace(/^capacitor:\/\/localhost/i, liveDomain);
@@ -399,7 +399,7 @@ const sendWelcomeEmail = async (emailId, username) => {
                         <p style="font-size: 16px;">Hi <strong>${username}</strong>,</p>
                         <p>Your account has been successfully created. You're all set to start planning trips, logging shared expenses, and settling balances effortlessly.</p>
                         <div style="text-align: center; margin: 25px 0;">
-                            <a href="${process.env.FRONTEND_URL || 'https://hack-celestial-one.vercel.app'}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Go to Your Dashboard</a>
+                            <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Go to Your Dashboard</a>
                         </div>
                         <p style="color: gray; font-size: 13px;">
                             If you have questions or feedback, reply directly to this email.<br>
@@ -423,7 +423,7 @@ const sendWelcomeEmail = async (emailId, username) => {
  */
 const sendTicketCreatedEmail = async ({ to, username, ticketNumber, subject, category }) => {
     try {
-        const liveDomain = (process.env.APP_URL || process.env.FRONTEND_URL || 'https://triptual-web.vercel.app').trim().replace(/\/+$/, '');
+        const liveDomain = (process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').trim().replace(/\/+$/, '');
         const recipientName = username || 'Traveler';
         const formattedTicket = ticketNumber || 'TICKET';
 

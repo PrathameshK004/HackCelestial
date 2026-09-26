@@ -147,7 +147,7 @@ export const AuthScreen: React.FC = () => {
 
     try {
       const clientId = '324729375491-nl1j4657c42169gptkb1tm8ttoqkce8q.apps.googleusercontent.com';
-      const redirectUri = 'https://triptual-x.vercel.app';
+      const redirectUri = 'http://localhost:5173';
       const nonce = Math.random().toString(36).substring(2, 15);
 
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +

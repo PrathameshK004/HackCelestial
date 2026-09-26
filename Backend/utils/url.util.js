@@ -1,47 +1,44 @@
 /**
  * URL Utilities for GroupTrip Ledger
- * Guarantees that all links sent via Email, WhatsApp, Telegram, SMS, and share links
- * always use the real live production web app URL (https://hack-celestial-one.vercel.app),
- * never unroutable localhost or capacitor schemes.
+ * Resolves links sent via Email, WhatsApp, Telegram, SMS, and share links
+ * against the local web app during development.
  */
 
-const LIVE_APP_URL = 'https://triptual-x.vercel.app';
+const LOCAL_APP_URL = 'http://localhost:5173';
 
 /**
  * Resolves the real live public application URL for public sharing and emails.
  * @param {import('express').Request} [req] - Optional express request object
- * @returns {string} Fully qualified base URL (e.g. "https://hack-celestial-one.vercel.app")
+ * @returns {string} Fully qualified local base URL
  */
 function getLiveAppUrl(req) {
-    // 1. Check explicit environment variable (e.g. Render / Production config)
+    // 1. Check explicit environment variable
     const envAppUrl = (process.env.APP_URL || process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
-    if (envAppUrl && !envAppUrl.includes('localhost') && !envAppUrl.includes('127.0.0.1')) {
+    if (envAppUrl) {
         return envAppUrl;
     }
 
-    // 2. Check request origin / referer, strictly ignoring localhost / capacitor schemes
+    // 2. Check request origin / referer
     if (req) {
         const origin = (req.get('origin') || '').trim().replace(/\/+$/, '');
-        if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1') && origin.startsWith('http')) {
+        if (origin && origin.startsWith('http')) {
             return origin;
         }
 
         const referer = (req.get('referer') || '').trim();
-        if (referer && !referer.includes('localhost') && !referer.includes('127.0.0.1') && referer.startsWith('http')) {
+        if (referer && referer.startsWith('http')) {
             try {
                 const parsed = new URL(referer);
-                if (!parsed.hostname.includes('localhost') && !parsed.hostname.includes('127.0.0.1')) {
-                    return parsed.origin;
-                }
-            } catch {}
+                return parsed.origin;
+            } catch { }
         }
     }
 
-    // 3. Guaranteed Live Fallback (Vercel Production Domain)
-    return LIVE_APP_URL;
+    // 3. Local fallback
+    return LOCAL_APP_URL;
 }
 
 module.exports = {
     getLiveAppUrl,
-    LIVE_APP_URL
+    LOCAL_APP_URL
 };

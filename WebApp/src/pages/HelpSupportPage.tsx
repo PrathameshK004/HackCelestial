@@ -29,7 +29,9 @@ import {
   joinTicketRoom,
   leaveTicketRoom,
   subscribeTicketMessages,
-  subscribeTicketStatus
+  subscribeTicketStatus,
+  subscribeTicketCreated,
+  sendSocketTicketMessage
 } from '../services/socket.service';
 import {
   createSupportTicket,
@@ -41,6 +43,7 @@ import {
   SupportTicketSummary,
   TicketMessage
 } from '../services/support.service';
+import { joinSupportTicket, onSupportSocketReconnect, onSupportTicketMessage, onSupportTicketStatus } from '../services/supportSocket';
 
 interface HelpSupportPageProps {
   onBack: () => void;
@@ -120,6 +123,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
   const [chatDraftText, setChatDraftText] = useState('');
   const [chatAttachment, setChatAttachment] = useState<File | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const sendInFlightRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Document Viewer Lightbox State
@@ -147,6 +151,20 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     fetchTickets();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = subscribeTicketCreated((payload) => {
+      const rawUser = localStorage.getItem('triptual_auth_user');
+      let currentUserId = '';
+      try {
+        const user = rawUser ? JSON.parse(rawUser) : null;
+        currentUserId = String(user?.id || user?.key || user?.userId || '');
+      } catch (_) {}
+
+      if (payload?.userId && String(payload.userId) === currentUserId) fetchTickets();
+    });
+    return unsubscribe;
+  }, []);
+
   // Scroll to bottom when messages update
   useEffect(() => {
     if (activeChatTicket && messagesEndRef.current) {
@@ -154,45 +172,36 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     }
   }, [chatMessages, activeChatTicket]);
 
-  // Real-time socket message & status listener for active ticket chat
   useEffect(() => {
     if (!activeChatTicket) return;
-
-    joinTicketRoom(activeChatTicket.ticketNumber);
-
-    const unsubMsg = subscribeTicketMessages((payload) => {
-      // Unpack message safely whether nested or top-level
-      const msg = (payload && typeof payload.message === 'object' && payload.message !== null && payload.message.id)
-        ? payload.message
-        : (payload && typeof payload === 'object' && payload.id)
-        ? payload
-        : null;
-
-      if (!msg || !msg.id) return;
-
-      const targetTicketNum = payload.ticketNumber || msg.ticketNumber;
-      if (targetTicketNum && targetTicketNum !== activeChatTicket.ticketNumber) return;
-
-      setChatMessages((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        return [...prev, msg];
-      });
+    const ticketNumber = activeChatTicket.ticketNumber;
+    const leaveRoom = joinSupportTicket(ticketNumber);
+    const unsubscribeMessage = onSupportTicketMessage((payload) => {
+      if (payload?.ticketNumber !== ticketNumber || !payload.message?.id) return;
+      setChatMessages((current) => current.some((message) => message.id === payload.message.id)
+        ? current
+        : [...current, payload.message]);
     });
-
-    const unsubStatus = subscribeTicketStatus((payload) => {
-      if (payload && payload.ticketNumber === activeChatTicket.ticketNumber) {
-        const nextStatus = payload.status;
-        setActiveChatTicket((prev) => (prev ? { ...prev, status: nextStatus } : null));
-        setMyTickets((prev) =>
-          prev.map((t) => (t.ticketNumber === payload.ticketNumber ? { ...t, status: nextStatus } : t))
-        );
-      }
+    const unsubscribeStatus = onSupportTicketStatus((payload) => {
+      if (payload?.ticketNumber !== ticketNumber || !payload.status) return;
+      setActiveChatTicket((current) => current?.ticketNumber === ticketNumber ? { ...current, status: payload.status } : current);
+      setMyTickets((current) => current.map((ticket) => ticket.ticketNumber === ticketNumber ? { ...ticket, status: payload.status } : ticket));
     });
-
+    const unsubscribeReconnect = onSupportSocketReconnect(() => {
+      getTicketMessages(ticketNumber).then((response) => {
+        setActiveChatTicket((current) => current?.ticketNumber === ticketNumber ? response.ticket : current);
+        setChatMessages((current) => {
+          const byId = new Map((response.messages || []).map((message) => [message.id, message]));
+          current.forEach((message) => byId.set(message.id, message));
+          return [...byId.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        });
+      }).catch((error) => console.warn('Could not resync support chat after reconnect:', error));
+    });
     return () => {
-      leaveTicketRoom(activeChatTicket.ticketNumber);
-      unsubMsg();
-      unsubStatus();
+      unsubscribeMessage();
+      unsubscribeStatus();
+      unsubscribeReconnect();
+      leaveRoom();
     };
   }, [activeChatTicket?.ticketNumber]);
 
@@ -200,24 +209,12 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
   const handleMarkAsSolved = async (ticketNumber: string) => {
     setUpdatingTicketNumber(ticketNumber);
     try {
-      const updated = await updateSupportTicketStatus(ticketNumber, 'RESOLVED');
+      await updateSupportTicketStatus(ticketNumber, 'RESOLVED');
       setMyTickets((prev) =>
         prev.map((t) => (t.ticketNumber === ticketNumber ? { ...t, status: 'RESOLVED' } : t))
       );
       if (activeChatTicket && activeChatTicket.ticketNumber === ticketNumber) {
         setActiveChatTicket((prev) => (prev ? { ...prev, status: 'RESOLVED' } : null));
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: `sys-${Date.now()}`,
-            ticketId: updated.id || '',
-            senderId: 'sys',
-            senderName: 'System',
-            senderRole: 'SYSTEM',
-            message: 'Ticket was marked as solved.',
-            createdAt: new Date().toISOString()
-          }
-        ]);
       }
     } catch (err: any) {
       alert(err.message || 'Could not mark ticket as solved. Please try again.');
@@ -253,7 +250,9 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
     e.preventDefault();
     if (!activeChatTicket) return;
     if (!chatDraftText.trim() && !chatAttachment) return;
+    if (sendInFlightRef.current) return;
 
+    sendInFlightRef.current = true;
     setIsSendingMessage(true);
     const pendingText = chatDraftText.trim();
     const pendingFile = chatAttachment;
@@ -272,10 +271,10 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
         );
       }
 
-      // Real-time live socket chat active with Admin Console
     } catch (err: any) {
       alert(err.message || 'Failed to send message. Please try again.');
     } finally {
+      sendInFlightRef.current = false;
       setIsSendingMessage(false);
     }
   };

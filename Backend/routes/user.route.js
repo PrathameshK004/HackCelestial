@@ -76,7 +76,9 @@ const handleUploadMiddleware = (req, res, next) => {
         { name: 'picture', maxCount: 1 },
         { name: 'avatar', maxCount: 1 },
         { name: 'file', maxCount: 1 },
-        { name: 'image', maxCount: 1 }
+        { name: 'image', maxCount: 1 },
+        { name: 'profilePicture', maxCount: 1 },
+        { name: 'profile_image', maxCount: 1 }
     ])(req, res, (err) => {
         if (err) {
             if (err.code === 'LIMIT_FILE_SIZE') {
@@ -86,10 +88,12 @@ const handleUploadMiddleware = (req, res, next) => {
         }
         if (req.files) {
             req.file = (req.files.picture && req.files.picture[0]) ||
-                       (req.files.avatar && req.files.avatar[0]) ||
-                       (req.files.image && req.files.image[0]) ||
-                       (req.files.file && req.files.file[0]) ||
-                       null;
+                (req.files.avatar && req.files.avatar[0]) ||
+                (req.files.image && req.files.image[0]) ||
+                (req.files.file && req.files.file[0]) ||
+                (req.files.profilePicture && req.files.profilePicture[0]) ||
+                (req.files.profile_image && req.files.profile_image[0]) ||
+                null;
         }
         next();
     });

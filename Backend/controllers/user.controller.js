@@ -129,7 +129,7 @@ async function sendOTP(req, res) {
         });
 
         console.log(`[OTP Dispatched] To: ${cleanEmail} | Purpose: ${purpose || "Verification"} | Code: ${otp}`);
-        
+
         return sendSuccess(res, "OTP sent successfully", {
             emailId: cleanEmail,
             otp,
@@ -337,10 +337,10 @@ async function createTempUser(req, res) {
         console.log(`[Registration OTP Dispatched] To: ${emailId} | Code: ${otp}`);
 
         // 5. Response to client with fallback OTP
-        return sendSuccess(res, "Temporary user created and OTP sent", { 
+        return sendSuccess(res, "Temporary user created and OTP sent", {
             emailId,
             otp,
-            expiresIn: 300 
+            expiresIn: 300
         }, 200);
     } catch (error) {
         console.error("Error creating temp user:", error);
@@ -367,8 +367,8 @@ async function updateProfile(req, res) {
         }
 
         // 1. Name / Username update (supports 'name', 'username', 'fullName')
-        const rawName = req.body.name !== undefined 
-            ? req.body.name 
+        const rawName = req.body.name !== undefined
+            ? req.body.name
             : (req.body.username !== undefined ? req.body.username : req.body.fullName);
 
         if (rawName !== undefined) {
@@ -383,10 +383,10 @@ async function updateProfile(req, res) {
         }
 
         // 2. UPI ID update (supports 'upiId', 'upi_id', 'uiId', 'ui_id')
-        const rawUpiId = req.body.upiId !== undefined 
-            ? req.body.upiId 
-            : (req.body.upi_id !== undefined 
-                ? req.body.upi_id 
+        const rawUpiId = req.body.upiId !== undefined
+            ? req.body.upiId
+            : (req.body.upi_id !== undefined
+                ? req.body.upi_id
                 : (req.body.uiId !== undefined ? req.body.uiId : req.body.ui_id));
 
         if (rawUpiId !== undefined) {
@@ -402,8 +402,8 @@ async function updateProfile(req, res) {
         }
 
         // 3. Phone number update (supports 'phone', 'phoneNumber', 'phone_number')
-        const rawPhone = req.body.phone !== undefined 
-            ? req.body.phone 
+        const rawPhone = req.body.phone !== undefined
+            ? req.body.phone
             : (req.body.phoneNumber !== undefined ? req.body.phoneNumber : req.body.phone_number);
 
         if (rawPhone !== undefined) {
@@ -419,8 +419,8 @@ async function updateProfile(req, res) {
         }
 
         // 4. DOB (Date of Birth) update (supports 'dob', 'dateOfBirth', 'date_of_birth')
-        const rawDob = req.body.dob !== undefined 
-            ? req.body.dob 
+        const rawDob = req.body.dob !== undefined
+            ? req.body.dob
             : (req.body.dateOfBirth !== undefined ? req.body.dateOfBirth : req.body.date_of_birth);
 
         if (rawDob !== undefined) {
@@ -768,7 +768,7 @@ async function validateLogin(req, res) {
         const token = createToken(user._id);
         const refreshToken = createRefreshToken(user._id);
         await storeRefreshToken(user._id, refreshToken);
-        
+
         setAuthCookies(res, token, refreshToken);
 
         const responseData = {
@@ -1011,9 +1011,9 @@ async function registerPushToken(req, res) {
             return sendError(res, "Failed to save push token", null, 500);
         }
 
-        return sendSuccess(res, "Push token registered successfully", { 
-            token: String(token).trim(), 
-            deviceType 
+        return sendSuccess(res, "Push token registered successfully", {
+            token: String(token).trim(),
+            deviceType
         });
     } catch (err) {
         console.error("Register push token error:", err.message);
@@ -1181,11 +1181,43 @@ async function uploadProfilePicture(req, res) {
         return sendError(res, "Unauthorized", null, 401);
     }
 
-    if (!req.file) {
-        return sendError(res, "No image file provided. Please attach an image file with key 'picture' or 'avatar'.", null, 400);
-    }
-
     try {
+        let imageData = req.body?.image || req.body?.picture || req.body?.avatar || req.body?.file || req.body?.profilePicture || req.body?.profile_image;
+        let fileBuffer = req.file?.buffer || null;
+        let mimeType = req.file?.mimetype || null;
+        let originalName = req.file?.originalname || 'profile-picture';
+
+        if (!fileBuffer && req.files) {
+            const uploadedFiles = Object.values(req.files).flat();
+            const firstUploadedFile = uploadedFiles[0];
+            if (firstUploadedFile) {
+                fileBuffer = firstUploadedFile.buffer || null;
+                mimeType = firstUploadedFile.mimetype || mimeType;
+                originalName = firstUploadedFile.originalname || originalName;
+            }
+        }
+
+        if (!fileBuffer && typeof imageData === 'object' && imageData && imageData.buffer) {
+            fileBuffer = Buffer.isBuffer(imageData.buffer) ? imageData.buffer : Buffer.from(imageData.buffer);
+            mimeType = imageData.mimetype || mimeType;
+            originalName = imageData.originalname || originalName;
+        }
+
+        if (!fileBuffer && typeof imageData === 'string') {
+            const dataUrlMatch = imageData.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/i);
+            if (!dataUrlMatch) {
+                return sendError(res, "Invalid image format. Send a valid image file or data URL.", null, 400);
+            }
+            mimeType = dataUrlMatch[1];
+            const base64Content = dataUrlMatch[2];
+            fileBuffer = Buffer.from(base64Content, 'base64');
+            originalName = `profile-${Date.now()}.` + (mimeType.split('/')[1] || 'jpg');
+        }
+
+        if (!fileBuffer) {
+            return sendError(res, "No image file provided. Please attach a valid image file with key 'picture', 'avatar', 'image', or 'file'.", null, 400);
+        }
+
         if (!isS3Configured()) {
             return sendError(
                 res,
@@ -1195,7 +1227,6 @@ async function uploadProfilePicture(req, res) {
             );
         }
 
-        // Fetch current user to check for existing S3 avatar to replace
         const userRes = await pool.query('SELECT avatar, username FROM users WHERE id = $1', [userId]);
         if (userRes.rows.length === 0) {
             return sendError(res, "User not found", null, 404);
@@ -1203,11 +1234,10 @@ async function uploadProfilePicture(req, res) {
 
         const oldAvatar = userRes.rows[0].avatar;
 
-        // Upload new picture to S3
         const { url: avatarUrl } = await uploadProfilePictureToS3({
-            buffer: req.file.buffer,
-            mimeType: req.file.mimetype,
-            originalName: req.file.originalname,
+            buffer: fileBuffer,
+            mimeType,
+            originalName,
             userId,
         });
 
@@ -1233,9 +1263,9 @@ async function uploadProfilePicture(req, res) {
         try {
             const { syncUserWithGroups } = require('./invite.controller');
             if (typeof syncUserWithGroups === 'function') {
-                syncUserWithGroups(userId, updatedUser.username, avatarUrl).catch(() => {});
+                syncUserWithGroups(userId, updatedUser.username, avatarUrl).catch(() => { });
             }
-        } catch (_) {}
+        } catch (_) { }
 
         return sendSuccess(res, "Profile picture uploaded successfully to S3", {
             avatar: avatarUrl,
@@ -1274,7 +1304,7 @@ async function removeProfilePicture(req, res) {
         await pool.query('UPDATE users SET avatar = NULL, updated_at = NOW() WHERE id = $1', [userId]);
 
         if (oldAvatar && (oldAvatar.includes('amazonaws.com') || oldAvatar.includes('profile-pictures/'))) {
-            deleteS3Object(oldAvatar).catch(() => {});
+            deleteS3Object(oldAvatar).catch(() => { });
         }
 
         return sendSuccess(res, "Profile picture removed successfully", { avatar: null });

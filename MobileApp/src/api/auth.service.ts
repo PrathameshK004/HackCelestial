@@ -10,16 +10,27 @@
  *   login() → POST /users/login — email + password → JWT + refresh token
  */
 
-import { apiRequest } from './apiClient';
-import { AuthResponse, LoginPayload, RegisterTempPayload, VerifyRegisterPayload, RegisterUserPayload, User } from '../types';
+import * as FileSystem from "expo-file-system/legacy";
+import { cacheDirectory, copyAsync } from "expo-file-system/legacy";
+import * as ImageManipulator from "expo-image-manipulator";
+import { Blob } from "expo-blob";
+import { apiRequest } from "./apiClient";
+import {
+  AuthResponse,
+  LoginPayload,
+  RegisterTempPayload,
+  VerifyRegisterPayload,
+  RegisterUserPayload,
+  User,
+} from "../types";
 
 export const authService = {
   /**
    * Step 1 of signup: Create a temporary (pending) account and trigger OTP email
    */
   async registerTemp(payload: RegisterTempPayload): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/registerTempUser', {
-      method: 'POST',
+    return apiRequest<AuthResponse>("/users/registerTempUser", {
+      method: "POST",
       body: JSON.stringify({
         username: payload.username.trim(),
         emailId: payload.emailId.trim().toLowerCase(),
@@ -32,9 +43,11 @@ export const authService = {
    * Step 2 of signup: Submit OTP code to verify email and fully activate account.
    * On success backend returns accessToken + refreshToken (instant login).
    */
-  async verifyAndRegister(payload: VerifyRegisterPayload): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/registerUser', {
-      method: 'POST',
+  async verifyAndRegister(
+    payload: VerifyRegisterPayload,
+  ): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>("/users/registerUser", {
+      method: "POST",
       body: JSON.stringify({
         username: payload.username.trim(),
         emailId: payload.emailId.trim().toLowerCase(),
@@ -48,8 +61,8 @@ export const authService = {
    * Login with email + password
    */
   async login(payload: LoginPayload): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/login', {
-      method: 'POST',
+    return apiRequest<AuthResponse>("/users/login", {
+      method: "POST",
       body: JSON.stringify({
         emailId: payload.emailId.trim().toLowerCase(),
         password: payload.password,
@@ -60,12 +73,15 @@ export const authService = {
   /**
    * Resend OTP to an existing temp user (e.g. after 30s timer)
    */
-  async sendOtp(payload: { emailId: string; purpose?: string }): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/sendOtp', {
-      method: 'POST',
+  async sendOtp(payload: {
+    emailId: string;
+    purpose?: string;
+  }): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>("/users/sendOtp", {
+      method: "POST",
       body: JSON.stringify({
         emailId: payload.emailId.trim().toLowerCase(),
-        purpose: payload.purpose || 'Sign Up',
+        purpose: payload.purpose || "Sign Up",
       }),
     });
   },
@@ -74,8 +90,8 @@ export const authService = {
    * Legacy register — kept for backward compat (same as verifyAndRegister)
    */
   async register(payload: RegisterUserPayload): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/registerUser', {
-      method: 'POST',
+    return apiRequest<AuthResponse>("/users/registerUser", {
+      method: "POST",
       body: JSON.stringify({
         username: payload.username.trim(),
         emailId: payload.emailId.trim().toLowerCase(),
@@ -86,41 +102,44 @@ export const authService = {
   },
 
   async checkAuth(token: string): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/checkAuth', {
-      method: 'GET',
+    return apiRequest<AuthResponse>("/users/checkAuth", {
+      method: "GET",
       token,
     });
   },
 
   async logout(): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/logout', {
-      method: 'GET',
+    return apiRequest<AuthResponse>("/users/logout", {
+      method: "GET",
     });
   },
 
   async getProfile(): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/profile', {
-      method: 'GET',
+    return apiRequest<AuthResponse>("/users/profile", {
+      method: "GET",
     });
   },
 
   async updateProfile(payload: Partial<User>): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/profile', {
-      method: 'PUT',
+    return apiRequest<AuthResponse>("/users/profile", {
+      method: "PUT",
       body: JSON.stringify(payload),
     });
   },
 
   async forgotPassword(emailId: string): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/forgot-password', {
-      method: 'POST',
+    return apiRequest<AuthResponse>("/users/forgot-password", {
+      method: "POST",
       body: JSON.stringify({ emailId: emailId.trim().toLowerCase() }),
     });
   },
 
-  async verifyResetOtp(payload: { emailId: string; code: string }): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/verify-reset-otp', {
-      method: 'POST',
+  async verifyResetOtp(payload: {
+    emailId: string;
+    code: string;
+  }): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>("/users/verify-reset-otp", {
+      method: "POST",
       body: JSON.stringify({
         emailId: payload.emailId.trim().toLowerCase(),
         code: payload.code.trim(),
@@ -128,76 +147,123 @@ export const authService = {
     });
   },
 
-  async resetPassword(payload: { emailId: string; code: string; newPassword: string }): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/reset-password', {
-      method: 'POST',
+  async resetPassword(payload: {
+    emailId: string;
+    code: string;
+    newPassword: string;
+  }): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>("/users/reset-password", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
-  async changePassword(payload: { currentPassword: string; newPassword: string }): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/change-password', {
-      method: 'POST',
+  async changePassword(payload: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>("/users/change-password", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async toggleTwoFactor(enable?: boolean): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/2fa/toggle', {
-      method: 'POST',
+    return apiRequest<AuthResponse>("/users/2fa/toggle", {
+      method: "POST",
       body: JSON.stringify({ enable }),
     });
   },
 
   async verifyTwoFactorOtp(code: string): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/2fa/verify', {
-      method: 'POST',
+    return apiRequest<AuthResponse>("/users/2fa/verify", {
+      method: "POST",
       body: JSON.stringify({ code }),
     });
   },
 
-  async verifyTwoFactorLogin(payload: { emailId: string; code: string }): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/2fa/verify-login', {
-      method: 'POST',
+  async verifyTwoFactorLogin(payload: {
+    emailId: string;
+    code: string;
+  }): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>("/users/2fa/verify-login", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async revokeAllSessions(): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/revoke-sessions', {
-      method: 'POST',
+    return apiRequest<AuthResponse>("/users/revoke-sessions", {
+      method: "POST",
     });
   },
 
   /**
-   * Upload profile picture directly to AWS S3 via backend
+   * Production-safe mobile upload:
+   * convert the selected image to a Blob and append it to FormData exactly like
+   * support ticket attachments, which is the RN-safe pattern that works reliably.
    */
-  async uploadProfilePicture(file: { uri: string; name?: string; type?: string }): Promise<AuthResponse> {
+  async uploadProfilePicture(file: {
+    uri: string;
+    name?: string;
+    type?: string;
+  }): Promise<AuthResponse> {
     const fileName = file.name || `photo_${Date.now()}.jpg`;
-    const extension = fileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const extension = fileName.split(".").pop()?.toLowerCase() || "jpg";
     const mimeTypeFromName: Record<string, string> = {
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      png: 'image/png',
-      webp: 'image/webp',
-      gif: 'image/gif',
-      heic: 'image/heic',
-      heif: 'image/heif',
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+      gif: "image/gif",
+      heic: "image/heic",
+      heif: "image/heif",
     };
-    const resolvedMime = (file.type && file.type.startsWith('image/')) ? file.type : (mimeTypeFromName[extension] || 'image/jpeg');
 
-    const formData = new FormData();
-    const fileResponse = await fetch(file.uri);
-    const fileBlob = await fileResponse.blob();
-    const safeBlob = fileBlob && fileBlob.size > 0
-      ? fileBlob.slice(0, fileBlob.size, resolvedMime)
-      : new Blob([await fileResponse.arrayBuffer()], { type: resolvedMime });
+    const resolvedMime =
+      file.type && file.type.startsWith("image/")
+        ? file.type
+        : mimeTypeFromName[extension] || "image/jpeg";
 
-    formData.append('picture', safeBlob, fileName);
+    const resizedImage = await ImageManipulator.manipulateAsync(
+      file.uri,
+      [{ resize: { width: 1000, height: 1000 } }],
+      {
+        compress: 0.55,
+        format:
+          resolvedMime === "image/png"
+            ? ImageManipulator.SaveFormat.PNG
+            : ImageManipulator.SaveFormat.JPEG,
+        base64: false,
+      },
+    );
 
-    return apiRequest<AuthResponse>('/users/profile/picture', {
-      method: 'POST',
-      body: formData,
+    const normalizedUri =
+      !cacheDirectory || resizedImage.uri.startsWith(cacheDirectory)
+        ? resizedImage.uri
+        : (() => {
+            const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+            const targetUri = `${cacheDirectory}profile-${Date.now()}-${safeName}`;
+            return copyAsync({ from: resizedImage.uri, to: targetUri })
+              .then(() => targetUri)
+              .catch(() => resizedImage.uri);
+          })();
+
+    const uploadUri = await normalizedUri;
+    const base64 = await FileSystem.readAsStringAsync(uploadUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const dataUrl = `data:${resolvedMime};base64,${base64}`;
+
+    return apiRequest<AuthResponse>("/users/profile/picture", {
+      method: "POST",
+      body: JSON.stringify({
+        image: dataUrl,
+        picture: dataUrl,
+        avatar: dataUrl,
+        file: dataUrl,
+        profilePicture: dataUrl,
+      }),
     });
   },
 
@@ -205,17 +271,20 @@ export const authService = {
    * Remove current profile picture from S3 and reset avatar
    */
   async removeProfilePicture(): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/users/profile/picture', {
-      method: 'DELETE',
+    return apiRequest<AuthResponse>("/users/profile/picture", {
+      method: "DELETE",
     });
   },
 
-  async loginWithGoogle(credentialOrPayload: string | { credential?: string; accessToken?: string }): Promise<AuthResponse> {
-    const body = typeof credentialOrPayload === 'string'
-      ? { credential: credentialOrPayload }
-      : credentialOrPayload;
-    return apiRequest<AuthResponse>('/users/google-login', {
-      method: 'POST',
+  async loginWithGoogle(
+    credentialOrPayload: string | { credential?: string; accessToken?: string },
+  ): Promise<AuthResponse> {
+    const body =
+      typeof credentialOrPayload === "string"
+        ? { credential: credentialOrPayload }
+        : credentialOrPayload;
+    return apiRequest<AuthResponse>("/users/google-login", {
+      method: "POST",
       body: JSON.stringify(body),
     });
   },

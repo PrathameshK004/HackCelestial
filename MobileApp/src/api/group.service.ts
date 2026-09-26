@@ -3,24 +3,32 @@
  * Reuses existing backend API contracts
  */
 
-import { apiRequest } from './apiClient';
+import { apiRequest } from "./apiClient";
 
 export const groupService = {
-  async checkRegisteredUser(emailOrUsername: string): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>('/users/check-registered', {
-      method: 'POST',
-      body: JSON.stringify({ email: emailOrUsername.trim().toLowerCase() }),
-    });
+  async checkRegisteredUser(
+    emailOrUsername: string,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      "/users/check-registered",
+      {
+        method: "POST",
+        body: JSON.stringify({ email: emailOrUsername.trim().toLowerCase() }),
+      },
+    );
   },
 
   async getMyGroups(): Promise<{ message: string; data: any[] }> {
     try {
-      return await apiRequest<{ message: string; data: any[] }>('/groups/my-groups', {
-        method: 'GET',
-      });
+      return await apiRequest<{ message: string; data: any[] }>(
+        "/groups/my-groups",
+        {
+          method: "GET",
+        },
+      );
     } catch (err: any) {
       if (err?.status === 401 || err?.status === 403) {
-        return { message: 'Unauthenticated', data: [] };
+        return { message: "Unauthenticated", data: [] };
       }
       throw err;
     }
@@ -28,7 +36,7 @@ export const groupService = {
 
   async getGroupById(groupId: string): Promise<{ message: string; data: any }> {
     return apiRequest<{ message: string; data: any }>(`/groups/${groupId}`, {
-      method: 'GET',
+      method: "GET",
     });
   },
 
@@ -41,32 +49,45 @@ export const groupService = {
     currency?: string;
     expenseSplit?: string;
     description?: string;
-    travelers?: Array<{ name: string; email: string; role?: string; avatarBg?: string; isRegistered?: boolean; status?: string }>;
+    travelers?: Array<{
+      name: string;
+      email: string;
+      role?: string;
+      avatarBg?: string;
+      isRegistered?: boolean;
+      status?: string;
+    }>;
     payment?: any;
   }): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>('/groups', {
-      method: 'POST',
+    return apiRequest<{ message: string; data: any }>("/groups", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
-  async addExpense(groupId: string, payload: {
-    description: string;
-    amount: number | string;
-    category?: string;
-    currency?: string;
-    splitModel?: string;
-    paidByMemberId?: string;
-    participants?: any[];
-    paymentMethod?: string;
-    paymentReference?: string;
-    verificationStatus?: string;
-    rawSmsProof?: string;
-  }): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/groups/${groupId}/expenses`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+  async addExpense(
+    groupId: string,
+    payload: {
+      description: string;
+      amount: number | string;
+      category?: string;
+      currency?: string;
+      splitModel?: string;
+      paidByMemberId?: string;
+      participants?: any[];
+      paymentMethod?: string;
+      paymentReference?: string;
+      verificationStatus?: string;
+      rawSmsProof?: string;
+    },
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/groups/${groupId}/expenses`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   /**
@@ -76,101 +97,159 @@ export const groupService = {
   async reviewExpenseApproval(
     groupId: string,
     expenseId: string,
-    action: 'APPROVE' | 'DISPUTE'
+    action: "APPROVE" | "DISPUTE",
   ): Promise<{ message: string; data: any }> {
     return apiRequest<{ message: string; data: any }>(
       `/groups/${groupId}/expenses/${expenseId}/review`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ action }),
-      }
+      },
     );
   },
 
-  async getExpenses(groupId: string): Promise<{ message: string; data: any[] }> {
-    return apiRequest<{ message: string; data: any[] }>(`/groups/${groupId}/expenses`, {
-      method: 'GET',
-    });
+  async getExpenses(
+    groupId: string,
+  ): Promise<{ message: string; data: any[] }> {
+    return apiRequest<{ message: string; data: any[] }>(
+      `/groups/${groupId}/expenses`,
+      {
+        method: "GET",
+      },
+    );
   },
 
-  async deleteExpense(groupId: string, expenseId: string): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/groups/${groupId}/expenses/${expenseId}`, {
-      method: 'DELETE',
-    });
+  async deleteExpense(
+    groupId: string,
+    expenseId: string,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/groups/${groupId}/expenses/${expenseId}`,
+      {
+        method: "DELETE",
+      },
+    );
   },
 
-  async getSettlement(groupId: string): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/groups/${groupId}/settlement`, {
-      method: 'GET',
-    });
+  async getSettlement(
+    groupId: string,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/groups/${groupId}/settlement`,
+      {
+        method: "GET",
+      },
+    );
   },
 
-  async recordSettlement(groupId: string, payload: {
-    fromMemberId?: string;
-    paidTo: string;
-    amount: number | string;
-    currency?: string;
-    remarks?: string;
-    paymentMethod?: string;
-    paymentReference?: string;
-  }): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/groups/${groupId}/settlements`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+  async recordSettlement(
+    groupId: string,
+    payload: {
+      fromMemberId?: string;
+      paidTo: string;
+      amount: number | string;
+      currency?: string;
+      remarks?: string;
+      paymentMethod?: string;
+      paymentReference?: string;
+    },
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/groups/${groupId}/settlements`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
-  async addGroupMember(groupId: string, member: {
-    name: string;
-    email: string;
-    role?: string;
-    avatarBg?: string;
-  }): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/groups/${groupId}/members`, {
-      method: 'POST',
-      body: JSON.stringify(member),
-    });
+  async addGroupMember(
+    groupId: string,
+    member: {
+      name: string;
+      email: string;
+      role?: string;
+      avatarBg?: string;
+    },
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/groups/${groupId}/members`,
+      {
+        method: "POST",
+        body: JSON.stringify(member),
+      },
+    );
   },
 
-  async removeGroupMember(groupId: string, memberId: string): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/groups/${groupId}/members/${memberId}`, {
-      method: 'DELETE',
-    });
+  async removeGroupMember(
+    groupId: string,
+    memberId: string,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/groups/${groupId}/members/${memberId}`,
+      {
+        method: "DELETE",
+      },
+    );
   },
 
-  async createInvite(groupId: string, email?: string): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/groups/${groupId}/invites`, {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
+  async createInvite(
+    groupId: string,
+    email?: string,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/groups/${groupId}/invites`,
+      {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      },
+    );
   },
 
-  async getInviteDetails(inviteCode: string): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/invites/${inviteCode}`, {
-      method: 'GET',
-    });
+  async getInviteDetails(
+    inviteCode: string,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/invites/${inviteCode}`,
+      {
+        method: "GET",
+      },
+    );
   },
 
-  async acceptInvite(inviteCode: string): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/invites/${inviteCode}/accept`, {
-      method: 'POST',
-    });
+  async acceptInvite(
+    inviteCode: string,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/invites/${inviteCode}/accept`,
+      {
+        method: "POST",
+      },
+    );
   },
 
-  async rejectInvite(inviteCode: string): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(`/invites/${inviteCode}/reject`, {
-      method: 'POST',
-    });
+  async rejectInvite(
+    inviteCode: string,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      `/invites/${inviteCode}/reject`,
+      {
+        method: "POST",
+      },
+    );
   },
 
   async getMyPendingInvitations(): Promise<{ message: string; data: any[] }> {
     try {
-      return await apiRequest<{ message: string; data: any[] }>('/invites/my-pending', {
-        method: 'GET',
-      });
+      return await apiRequest<{ message: string; data: any[] }>(
+        "/invites/my-pending",
+        {
+          method: "GET",
+        },
+      );
     } catch (err: any) {
       if (err?.status === 401 || err?.status === 403) {
-        return { message: 'Unauthenticated', data: [] };
+        return { message: "Unauthenticated", data: [] };
       }
       throw err;
     }
@@ -178,12 +257,18 @@ export const groupService = {
 
   async getUserPayments(): Promise<{ message: string; data: any }> {
     try {
-      return await apiRequest<{ message: string; data: any }>('/payments/my-payments', {
-        method: 'GET',
-      });
+      return await apiRequest<{ message: string; data: any }>(
+        "/payments/my-payments",
+        {
+          method: "GET",
+        },
+      );
     } catch (err: any) {
       if (err?.status === 401 || err?.status === 403) {
-        return { message: 'Unauthenticated', data: { totalSpent: 0, totalReceived: 0, count: 0, transactions: [] } };
+        return {
+          message: "Unauthenticated",
+          data: { totalSpent: 0, totalReceived: 0, count: 0, transactions: [] },
+        };
       }
       throw err;
     }
@@ -199,10 +284,13 @@ export const groupService = {
     memberCount?: number;
     paymentType?: string;
   }): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>('/payments/razorpay/create-order', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    return apiRequest<{ message: string; data: any }>(
+      "/payments/razorpay/create-order",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   async verifyRazorpayPayment(payload: {
@@ -221,10 +309,12 @@ export const groupService = {
     note?: string;
     metadata?: any;
   }): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>('/payments/razorpay/verify-payment', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  }
+    return apiRequest<{ message: string; data: any }>(
+      "/payments/razorpay/verify-payment",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
 };
-

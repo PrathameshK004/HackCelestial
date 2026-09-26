@@ -111,12 +111,29 @@ export function leaveTicketRoom(ticketNumber: string) {
   }
 }
 
+export function sendSocketTicketMessage(ticketNumber: string, messageData: any) {
+  const s = getSocket();
+  if (!ticketNumber || !messageData?.id) return;
+  s.emit('ticket:send_message', {
+    ticketNumber: String(ticketNumber).trim(),
+    ...messageData,
+    senderRole: messageData.senderRole || 'USER'
+  });
+}
+
 /**
  * Subscribe to real-time incoming messages for current ticket
  */
 export function subscribeTicketMessages(callback: (messageData: any) => void) {
   const s = getSocket();
+  const seenMessageIds = new Set<string>();
   const handler = (data: any) => {
+    const message = data?.message && typeof data.message === 'object' ? data.message : data;
+    if (message?.id) {
+      if (seenMessageIds.has(String(message.id))) return;
+      seenMessageIds.add(String(message.id));
+      if (seenMessageIds.size > 2000) seenMessageIds.clear();
+    }
     callback(data);
   };
   s.on('ticket:message', handler);
@@ -136,5 +153,14 @@ export function subscribeTicketStatus(callback: (statusData: any) => void) {
   s.on('ticket:status_change', handler);
   return () => {
     s.off('ticket:status_change', handler);
+  };
+}
+
+export function subscribeTicketCreated(callback: (ticketData: any) => void) {
+  const s = getSocket();
+  const handler = (data: any) => callback(data);
+  s.on('ticket:created', handler);
+  return () => {
+    s.off('ticket:created', handler);
   };
 }
