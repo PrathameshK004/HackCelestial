@@ -718,6 +718,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onCreateGroup, initialSelect
       <GroupMenuPage
         group={selectedGroup}
         settlement={settlement}
+        user={user}
         onBack={() => {
           onClearInitialSelectedGroup?.();
           setSelectedGroup(null);
