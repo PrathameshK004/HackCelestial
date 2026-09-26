@@ -12,6 +12,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   Image,
   Platform,
   Alert,
@@ -43,7 +44,15 @@ import {
 import { colors, radii, shadows } from '../../theme/colors';
 import { useTrips } from '../../context/TripContext';
 import { apiRequest } from '../../api/apiClient';
+import { packageService } from '../../api/package.service';
 import { DineScreen } from '../../screens/DineScreen';
+
+const formatInr = (value: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 
 export interface CuratedStay {
   id: string;
@@ -56,6 +65,8 @@ export interface CuratedStay {
   matchScore: number;
   rating: number;
   pricePerNight: number;
+  basePrice?: number;
+  currency?: string;
   totalNights: number;
   style: string;
   distance: string;
@@ -336,21 +347,24 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [exploreStays, setExploreStays] = useState<CuratedStay[]>([]);
   const [isLoadingStays, setIsLoadingStays] = useState<boolean>(true);
+  const [packageLoadError, setPackageLoadError] = useState<string | null>(null);
 
   const loadExplorePackages = async () => {
+    setIsLoadingStays(true);
     try {
       const res: any = await apiRequest('/packages/explore');
-      const rawPackages = res?.data?.packages ?? res?.packages ?? [];
+      const rawPackages = res?.data?.packages || res?.packages;
       let pkgs: any[] = [];
 
       if (Array.isArray(rawPackages)) {
         pkgs = rawPackages;
       } else if (rawPackages && typeof rawPackages === 'object') {
-        if (Array.isArray(rawPackages.value)) {
-          pkgs = rawPackages.value;
-        } else if (typeof rawPackages.value === 'string') {
+        const nestedValue = rawPackages.value;
+        if (Array.isArray(nestedValue)) {
+          pkgs = nestedValue;
+        } else if (typeof nestedValue === 'string') {
           try {
-            const parsed = JSON.parse(rawPackages.value);
+            const parsed = JSON.parse(nestedValue);
             pkgs = Array.isArray(parsed) ? parsed : [];
           } catch {
             pkgs = [];
@@ -359,9 +373,10 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
       }
 
       setExploreStays(pkgs);
+      setPackageLoadError(null);
     } catch (err) {
       console.warn('Failed to load Redis-backed tour packages:', err);
-      setExploreStays([]);
+      setPackageLoadError((err as Error)?.message || 'Could not connect to the packages service.');
     } finally {
       setIsLoadingStays(false);
     }
@@ -401,7 +416,15 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [selectedStay, setSelectedStay] = useState<CuratedStay | null>(null);
   const [savedStayIds, setSavedStayIds] = useState<string[]>([]);
-  const [isReserved, setIsReserved] = useState(false);
+  const [isReservationOpen, setIsReservationOpen] = useState(false);
+  const [reservationTripId, setReservationTripId] = useState('new');
+  const [reservationStartDate, setReservationStartDate] = useState('');
+  const [reservationEndDate, setReservationEndDate] = useState('');
+  const [reservationGuestCount, setReservationGuestCount] = useState('2');
+  const [reservationNotes, setReservationNotes] = useState('');
+  const [reservationError, setReservationError] = useState('');
+  const [reservationSuccess, setReservationSuccess] = useState('');
+  const [isSubmittingReservation, setIsSubmittingReservation] = useState(false);
 
   useEffect(() => {
     onRestaurantModeChange?.(viewMode === 'restaurant');
@@ -413,6 +436,57 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
     setSavedStayIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
+  };
+
+  const openReservationForm = () => {
+    if (!selectedStay) return;
+    const start = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const end = new Date(start.getTime() + Math.max(1, selectedStay.totalNights) * 24 * 60 * 60 * 1000);
+    setReservationTripId(trips[0]?.id || 'new');
+    setReservationStartDate(start.toISOString().slice(0, 10));
+    setReservationEndDate(end.toISOString().slice(0, 10));
+    setReservationGuestCount(String(Math.max(1, selectedStay.guests)));
+    setReservationNotes('');
+    setReservationError('');
+    setReservationSuccess('');
+    setIsReservationOpen(true);
+  };
+
+  const submitPackageReservation = async () => {
+    if (!selectedStay || isSubmittingReservation) return;
+    const guests = Number(reservationGuestCount);
+    if (!Number.isInteger(guests) || guests < 1 || guests > 40) {
+      setReservationError('Guest count must be between 1 and 40.');
+      return;
+    }
+    if (!reservationStartDate || !reservationEndDate || reservationEndDate < reservationStartDate) {
+      setReservationError('Choose a valid check-in and check-out date range.');
+      return;
+    }
+
+    setIsSubmittingReservation(true);
+    setReservationError('');
+    try {
+      const response = await packageService.reserve(selectedStay.id, {
+        tripId: reservationTripId === 'new' ? null : reservationTripId,
+        guestCount: guests,
+        startDate: reservationStartDate,
+        endDate: reservationEndDate,
+        notes: reservationNotes.trim(),
+      });
+      const data = response?.data || {};
+      if (!data?.reservation?.id || !data?.tripId) {
+        throw new Error(response?.message || 'The reservation could not be linked to a trip.');
+      }
+      await refreshTrips();
+      setReservationSuccess(
+        `Reservation ${data.reservation.id} saved to ${data.tripCreated ? 'a new trip' : 'your selected trip'} as pending confirmation.`,
+      );
+    } catch (error: any) {
+      setReservationError(error?.message || 'Could not save the reservation. Please try again.');
+    } finally {
+      setIsSubmittingReservation(false);
+    }
   };
 
   // Filter Stays (Real DB Tour Packages)
@@ -518,6 +592,14 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
         {/* ---------------- VIEW MODE: GALLERY ---------------- */}
         {viewMode === 'gallery' && (
           <View style={styles.galleryViewWrapper}>
+            {packageLoadError ? (
+              <View style={styles.packageLoadWarning} accessibilityRole="alert">
+                <Text style={styles.packageLoadWarningText}>Package sync failed: {packageLoadError}</Text>
+                <TouchableOpacity onPress={() => void loadExplorePackages()} disabled={isLoadingStays} activeOpacity={0.8}>
+                  <Text style={styles.packageRetryText}>{isLoadingStays ? 'Retrying...' : 'Retry'}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             {isLoadingStays ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                 <ActivityIndicator size="large" color="#464B29" />
@@ -528,7 +610,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             ) : !featuredStay ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                 <Text style={{ color: '#585952', fontSize: 14 }}>
-                  No published tour packages found in database.
+                  {packageLoadError ? 'Tour packages could not be loaded.' : 'No published tour packages found in database.'}
                 </Text>
               </View>
             ) : (
@@ -575,8 +657,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                       <View style={styles.heroCardBottomInfo}>
                         <Text style={styles.heroCardTitle}>{featuredStay.name}</Text>
                         <Text style={styles.heroCardSub}>
-                          {featuredStay.destination} · {featuredStay.type} · $
-                          {featuredStay.pricePerNight}/night
+                          {featuredStay.destination} · {featuredStay.type} · {formatInr(featuredStay.pricePerNight)}/night
                         </Text>
                       </View>
                     </View>
@@ -619,7 +700,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                             {stay.name}
                           </Text>
                           <Text style={styles.matchGridPrice}>
-                            ${stay.pricePerNight}/night
+                            {formatInr(stay.pricePerNight)}/night
                           </Text>
                         </View>
                       </View>
@@ -780,14 +861,14 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                       <Text style={styles.compareLabel}>Price</Text>
                       <View style={[styles.compareValCol, styles.compareColActive]}>
                         <Text style={styles.compareValBold}>
-                          ${selectedStay.pricePerNight}
+                          {formatInr(selectedStay.pricePerNight)}
                         </Text>
                       </View>
                       <View style={styles.compareValCol}>
-                        <Text style={styles.compareValText}>$132</Text>
+                        <Text style={styles.compareValText}>{formatInr(13200)}</Text>
                       </View>
                       <View style={styles.compareValCol}>
-                        <Text style={styles.compareValText}>$120</Text>
+                        <Text style={styles.compareValText}>{formatInr(12000)}</Text>
                       </View>
                     </View>
 
@@ -866,11 +947,11 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                   <View style={styles.stickyActionHeaderRow}>
                     <View>
                       <Text style={styles.priceMain}>
-                        ${selectedStay.pricePerNight}
+                        {formatInr(selectedStay.pricePerNight)}
                         <Text style={styles.pricePeriod}>/night</Text>
                       </Text>
                       <Text style={styles.priceSub}>
-                        ${selectedStay.pricePerNight * selectedStay.totalNights} total ·{' '}
+                        {formatInr(selectedStay.pricePerNight * selectedStay.totalNights)} total ·{' '}
                         {selectedStay.totalNights} nights
                       </Text>
                     </View>
@@ -904,14 +985,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
 
                     <TouchableOpacity
                       style={styles.btnActionReserve}
-                      onPress={() => {
-                        setIsReserved(true);
-                        Alert.alert(
-                          'Booking Confirmed!',
-                          `Reservation secured for ${selectedStay.name} in ${selectedStay.destination} (${selectedStay.dateRange}).`,
-                          [{ text: 'Great!', onPress: () => setSelectedStay(null) }]
-                        );
-                      }}
+                      onPress={openReservationForm}
                       activeOpacity={0.85}
                     >
                       <Text style={styles.btnActionReserveText}>Reserve</Text>
@@ -923,6 +997,93 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             </ScrollView>
           </View>
         )}
+      </Modal>
+
+      <Modal
+        visible={isReservationOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsReservationOpen(false)}
+      >
+        <View style={styles.reservationOverlay}>
+          <View style={styles.reservationSheet}>
+            <View style={styles.reservationHandle} />
+            <Text style={styles.reservationTitle}>{reservationSuccess ? 'Reservation saved' : 'Reserve package'}</Text>
+            {selectedStay ? (
+              <Text style={styles.reservationSubtitle}>
+                {selectedStay.name} · {selectedStay.destination} · {formatInr(selectedStay.basePrice || selectedStay.pricePerNight * selectedStay.totalNights)}
+              </Text>
+            ) : null}
+
+            {reservationSuccess ? (
+              <View style={styles.reservationSuccessBox}>
+                <CheckCircle2 size={20} color="#047857" />
+                <Text style={styles.reservationSuccessText}>{reservationSuccess}</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.reservationForm} keyboardShouldPersistTaps="handled">
+                <Text style={styles.reservationLabel}>Add reservation to</Text>
+                {trips.map((trip) => (
+                  <TouchableOpacity
+                    key={trip.id}
+                    style={[styles.reservationTripOption, reservationTripId === trip.id && styles.reservationTripOptionActive]}
+                    onPress={() => setReservationTripId(trip.id)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.reservationRadio, reservationTripId === trip.id && styles.reservationRadioActive]} />
+                    <View style={styles.reservationTripCopy}>
+                      <Text style={styles.reservationTripName}>{trip.name}</Text>
+                      <Text style={styles.reservationTripMeta}>{trip.destination}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity
+                  style={[styles.reservationTripOption, reservationTripId === 'new' && styles.reservationTripOptionActive]}
+                  onPress={() => setReservationTripId('new')}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.reservationRadio, reservationTripId === 'new' && styles.reservationRadioActive]} />
+                  <View style={styles.reservationTripCopy}>
+                    <Text style={styles.reservationTripName}>Create a new trip</Text>
+                    <Text style={styles.reservationTripMeta}>A trip ledger will be created for this package</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.reservationDateRow}>
+                  <View style={styles.reservationDateField}>
+                    <Text style={styles.reservationLabel}>Check-in</Text>
+                    <TextInput style={styles.reservationInput} value={reservationStartDate} onChangeText={setReservationStartDate} placeholder="YYYY-MM-DD" />
+                  </View>
+                  <View style={styles.reservationDateField}>
+                    <Text style={styles.reservationLabel}>Check-out</Text>
+                    <TextInput style={styles.reservationInput} value={reservationEndDate} onChangeText={setReservationEndDate} placeholder="YYYY-MM-DD" />
+                  </View>
+                </View>
+                <Text style={styles.reservationLabel}>Guests</Text>
+                <TextInput style={styles.reservationInput} value={reservationGuestCount} onChangeText={setReservationGuestCount} keyboardType="number-pad" />
+                <Text style={styles.reservationLabel}>Notes for the host</Text>
+                <TextInput style={[styles.reservationInput, styles.reservationNotesInput]} value={reservationNotes} onChangeText={setReservationNotes} maxLength={500} multiline placeholder="Arrival time or special requests" />
+              </ScrollView>
+            )}
+
+            {reservationError ? <Text style={styles.reservationError}>{reservationError}</Text> : null}
+            <TouchableOpacity
+              style={styles.reservationSubmit}
+              onPress={() => reservationSuccess ? setIsReservationOpen(false) : void submitPackageReservation()}
+              disabled={isSubmittingReservation}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.reservationSubmitText}>
+                {reservationSuccess ? 'Done' : isSubmittingReservation ? 'Saving reservation...' : 'Confirm reservation'}
+              </Text>
+            </TouchableOpacity>
+            {!reservationSuccess ? (
+              <TouchableOpacity style={styles.reservationCancel} onPress={() => setIsReservationOpen(false)}>
+                <Text style={styles.reservationCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1100,6 +1261,25 @@ const styles = StyleSheet.create({
 
   /* GALLERY VIEW */
   galleryViewWrapper: {},
+  packageLoadWarning: {
+    marginBottom: 14,
+    padding: 13,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F1C9C5',
+    backgroundColor: '#FFF7F5',
+  },
+  packageLoadWarningText: {
+    color: '#8F2D24',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  packageRetryText: {
+    marginTop: 8,
+    color: '#464B29',
+    fontSize: 12,
+    fontWeight: '800',
+  },
 
   /* Stacked Hero Card */
   heroStackWrapper: {
@@ -2031,6 +2211,153 @@ const styles = StyleSheet.create({
   stickyActionBtnsGroup: {
     flexDirection: 'row',
     gap: 10,
+  },
+  reservationOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+  },
+  reservationSheet: {
+    maxHeight: '90%',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+  },
+  reservationHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D6D3CD',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  reservationTitle: {
+    color: '#181916',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  reservationSubtitle: {
+    marginTop: 4,
+    marginBottom: 16,
+    color: '#686960',
+    fontSize: 12,
+  },
+  reservationForm: {
+    maxHeight: 460,
+  },
+  reservationLabel: {
+    marginTop: 12,
+    marginBottom: 7,
+    color: '#464B29',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  reservationTripOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E7E5E4',
+    backgroundColor: '#FFFFFF',
+  },
+  reservationTripOptionActive: {
+    borderColor: '#464B29',
+    backgroundColor: '#F7F7F2',
+  },
+  reservationRadio: {
+    width: 17,
+    height: 17,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: '#A8A99D',
+  },
+  reservationRadioActive: {
+    borderColor: '#464B29',
+    backgroundColor: '#464B29',
+  },
+  reservationTripCopy: {
+    flex: 1,
+  },
+  reservationTripName: {
+    color: '#181916',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  reservationTripMeta: {
+    marginTop: 2,
+    color: '#77786F',
+    fontSize: 11,
+  },
+  reservationDateRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  reservationDateField: {
+    flex: 1,
+  },
+  reservationInput: {
+    minHeight: 42,
+    paddingHorizontal: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D8D6CE',
+    backgroundColor: '#FFFFFF',
+    color: '#181916',
+    fontSize: 13,
+  },
+  reservationNotesInput: {
+    minHeight: 76,
+    paddingTop: 10,
+    textAlignVertical: 'top',
+  },
+  reservationSuccessBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 20,
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
+  },
+  reservationSuccessText: {
+    flex: 1,
+    color: '#065F46',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  reservationError: {
+    marginTop: 10,
+    color: '#B42318',
+    fontSize: 12,
+  },
+  reservationSubmit: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingVertical: 13,
+    borderRadius: radii.full,
+    backgroundColor: '#464B29',
+  },
+  reservationSubmitText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  reservationCancel: {
+    alignItems: 'center',
+    paddingVertical: 11,
+  },
+  reservationCancelText: {
+    color: '#585952',
+    fontSize: 12,
+    fontWeight: '700',
   },
   btnActionLedger: {
     flex: 1,

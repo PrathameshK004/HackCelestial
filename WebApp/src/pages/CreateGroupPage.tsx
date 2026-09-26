@@ -47,9 +47,10 @@ const getInitialTripForm = (user?: any): TripFormData => {
 
 interface CreateGroupPageProps {
   onNavigateDashboard?: (newGroupId?: string) => void;
+  packagePrefill?: { groupName: string; destination: string; description: string };
 }
 
-export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDashboard }) => {
+export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDashboard, packagePrefill }) => {
   const { user } = useAuth();
   const [formData, setFormData] = useState<TripFormData>(() => getInitialTripForm(user));
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -59,6 +60,17 @@ export const CreateGroupPage: React.FC<CreateGroupPageProps> = ({ onNavigateDash
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdGroup, setCreatedGroup] = useState<CreatedGroupData | null>(null);
+
+  useEffect(() => {
+    if (!packagePrefill) return;
+    setFormData((previous) => ({
+      ...previous,
+      groupName: packagePrefill.groupName,
+      destination: packagePrefill.destination,
+      description: packagePrefill.description,
+    }));
+    setCurrentStep(1);
+  }, [packagePrefill]);
 
   // Synchronize logged-in user as the group organizer when user data is ready
   useEffect(() => {

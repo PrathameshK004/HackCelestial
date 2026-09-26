@@ -90,11 +90,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
     return () => sub.remove();
   }, [onBack]);
 
-  // Synchronize fresh DB profile on screen mount
-  useEffect(() => {
-    refreshProfile?.().catch(() => {});
-  }, []);
-
   const [name, setName] = useState(user?.name || user?.username || '');
   const [upiId, setUpiId] = useState(user?.upiId || '');
   const [phone, setPhone] = useState(user?.phone || '');
@@ -115,16 +110,29 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
   const [isSaved, setIsSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    refreshProfile?.().then((freshProfile) => {
+      if (isMounted) {
+        setProfileLoadError(freshProfile ? null : 'Could not sync profile from the server. Check your connection and retry.');
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await Promise.all([
+      const [freshProfile] = await Promise.all([
         refreshProfile?.(),
         refreshTrips(),
       ]);
+      setProfileLoadError(freshProfile ? null : 'Could not sync profile from the server. Check your connection and retry.');
     } catch (err) {
-      console.log('Profile refresh error:', err);
+      console.warn('Profile refresh error:', err);
+      setProfileLoadError('Could not sync profile from the server. Check your connection and retry.');
     } finally {
       setIsRefreshing(false);
     }
@@ -289,6 +297,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
       if (!res.success || res.error) {
         Alert.alert('Save Failed', res.error || 'Failed to update profile on server.');
       } else {
+        setProfileLoadError(null);
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 2000);
         Alert.alert('Profile Saved', 'Your profile information has been saved successfully in database.');
@@ -354,6 +363,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack }) => {
           />
         }
       >
+        {profileLoadError ? (
+          <View style={styles.profileSyncWarning} accessibilityRole="alert">
+            <Text style={styles.profileSyncWarningText}>{profileLoadError}</Text>
+          </View>
+        ) : null}
         {/* Profile User Info Header with Google-Style Illustration Avatar */}
         <View style={styles.profileSection}>
           <View style={{ position: 'relative' }}>
@@ -649,6 +663,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
     paddingBottom: 40,
+  },
+  profileSyncWarning: {
+    marginBottom: 16,
+    padding: 13,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F1C9C5',
+    backgroundColor: '#FFF7F5',
+  },
+  profileSyncWarningText: {
+    color: '#8F2D24',
+    fontSize: 12,
+    lineHeight: 17,
   },
   profileSection: {
     alignItems: 'center',

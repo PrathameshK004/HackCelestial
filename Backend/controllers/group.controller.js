@@ -396,6 +396,30 @@ async function getGroupById(req, res) {
             inviteUrl: m.inviteCode ? `${baseUrl}/join/${m.inviteCode}` : (inviteUrl || null)
         }));
 
+        const [packageReservationsQuery, restaurantReservationsQuery] = await Promise.all([
+            pool.query(`
+                SELECT r.id, r.package_id as "packageId", p.title as "packageName",
+                       p.destination, r.guest_count as "guestCount",
+                       r.start_date as "startDate", r.end_date as "endDate",
+                       r.total_amount as "totalAmount", r.currency, r.status,
+                       r.created_at as "createdAt"
+                FROM tour_package_reservations r
+                JOIN tour_packages p ON p.id = r.package_id
+                WHERE r.group_id = $1
+                ORDER BY r.created_at DESC
+            `, [groupId]),
+            pool.query(`
+                SELECT r.id, r.restaurant_id as "restaurantId", d.name as "restaurantName",
+                       r.reservation_date as date, r.start_time as "startTime",
+                       r.guest_count as "guestCount", r.estimated_budget as "estimatedBudget",
+                       r.currency, r.status, r.notes, r.created_at as "createdAt"
+                FROM dine_restaurant_reservations r
+                JOIN dine_restaurants d ON d.id = r.restaurant_id
+                WHERE r.group_id = $1
+                ORDER BY r.reservation_date, r.start_time
+            `, [groupId])
+        ]);
+
         return sendSuccess(res, "Group fetched successfully", {
             id: group.id,
             groupId: group.id,
@@ -423,6 +447,8 @@ async function getGroupById(req, res) {
                 copyLink: inviteUrl
             } : null,
             members,
+            packageReservations: packageReservationsQuery.rows,
+            restaurantReservations: restaurantReservationsQuery.rows,
             createdAt: group.created_at,
             updatedAt: group.updated_at
         });

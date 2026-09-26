@@ -3,16 +3,77 @@
  * Features: Silent Token Rotation, Request Replay, Network Timeout Handling
  */
 
-import { NativeModules, Platform } from "react-native";
+import { Platform } from "react-native";
+import Constants from "expo-constants";
+import * as Device from "expo-device";
 import { storage } from "../database/storage";
 
 declare const process: any;
+declare const __DEV__: boolean;
 
-const LIVE_API_BASE = "https://triptual-api.onrender.com/api";
-const LOCAL_API_BASE =
-  Platform.OS === "android"
-    ? "http://10.0.2.2:4000/api"
-    : "http://localhost:4000/api";
+const LOCAL_EMULATOR_API_BASE = "http://10.0.2.2:4000/api";
+const LIVE_API_BASE = "https://hackcelestial-api.onrender.com/api";
+
+const getPackagerHost = (): string | null => {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (!hostUri) return null;
+
+  try {
+    return new URL(hostUri.includes("://") ? hostUri : `http://${hostUri}`).hostname;
+  } catch {
+    return null;
+  }
+};
+
+const isLocalApiUrl = (value: string): boolean => {
+  try {
+    const hostname = new URL(value).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname === "::1" ||
+      hostname === "10.0.2.2" ||
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+  } catch {
+    return false;
+  }
+};
+
+const getDefaultApiBase = (): string => {
+  if (Platform.OS === "android") {
+    return LOCAL_EMULATOR_API_BASE;
+  }
+
+  if (Platform.OS === "ios") {
+    return "http://localhost:4000/api";
+  }
+
+  return LIVE_API_BASE;
+};
+
+const normalizeLocalDevUrl = (url: string): string => {
+  let normalized = url.trim().replace(/\/+$/, "");
+
+  if (Platform.OS === "android") {
+    if (/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?/i.test(normalized)) {
+      normalized = normalized.replace(/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?/i, "http://10.0.2.2");
+    }
+  }
+
+  if (/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)/i.test(normalized)) {
+    if (/(8081|8082|3000|5173|4173)$/i.test(normalized) && !normalized.endsWith("/api")) {
+      normalized = normalized.replace(/:\d+$/, ":4000");
+    }
+  }
+
+  if (!normalized.endsWith("/api")) {
+    normalized = `${normalized}/api`;
+  }
+
+  return normalized;
+};
 
 export const getApiBase = (): string => {
   const configuredUrl =
@@ -22,30 +83,30 @@ export const getApiBase = (): string => {
   const normalizedUrl = configuredUrl?.trim().replace(/\/+$/, "");
   const isDevelopment = process.env.NODE_ENV === "development";
 
-  if (normalizedUrl && !(isDevelopment && normalizedUrl === LIVE_API_BASE)) {
+  if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
+    const normalizedUrl = normalizeLocalDevUrl(envUrl);
+    if (isLocalApiUrl(normalizedUrl)) {
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        return `http://${window.location.hostname}:4000/api`;
+      }
+      if (Platform.OS !== "web" && Device.isDevice) {
+        const packagerHost = getPackagerHost();
+        if (packagerHost) return `http://${packagerHost}:4000/api`;
+      }
+    }
     return normalizedUrl;
   }
 
-  if (!isDevelopment) return normalizedUrl || LIVE_API_BASE;
-
-  let bundleHost = "";
-  try {
-    const scriptUrl = (NativeModules as any).SourceCode?.scriptURL;
-    if (scriptUrl) bundleHost = new URL(scriptUrl).hostname;
-  } catch {
-    bundleHost = "";
+  if (typeof __DEV__ !== "undefined" && !__DEV__) return LIVE_API_BASE;
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `http://${window.location.hostname}:4000/api`;
+  }
+  if (Platform.OS !== "web" && Device.isDevice) {
+    const packagerHost = getPackagerHost();
+    if (packagerHost) return `http://${packagerHost}:4000/api`;
   }
 
-  const isLoopbackHost = ["localhost", "127.0.0.1", "0.0.0.0"].includes(
-    bundleHost,
-  );
-  const apiHost =
-    bundleHost && !isLoopbackHost
-      ? bundleHost
-      : Platform.OS === "android"
-        ? "10.0.2.2"
-        : "localhost";
-  return `http://${apiHost}:4000/api`;
+  return getDefaultApiBase();
 };
 
 export const API_BASE = getApiBase();
@@ -167,7 +228,7 @@ async function fetchWithTimeout(
   url: string,
   options: RequestOptions = {},
 ): Promise<Response> {
-  const { timeoutMs = 8000, ...fetchOptions } = options;
+  const { timeoutMs = 25000, ...fetchOptions } = options;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -182,7 +243,7 @@ async function fetchWithTimeout(
     clearTimeout(timeoutId);
     if (err.name === "AbortError") {
       const timeoutError = new Error(
-        "Network request timed out. Please check your connection.",
+        `Network request timed out after ${timeoutMs}ms. The backend may be starting up or the connection is slow.`,
       );
       (timeoutError as any).status = 408;
       throw timeoutError;

@@ -23,56 +23,13 @@ module.exports = {
     recordSettlement,
     settleGroup,
     getAuditLog,
-    reviewExpenseApproval
+    reviewExpenseApproval,
+    normalizeSettlementPaymentMethod
 };
 
-async function getExpenseReplayPayload(client, expense, payer) {
-    const splitsRes = await client.query(`
-        SELECT es.id, es.member_id as "memberId", es.share_type as "shareType",
-               es.share_value as "shareValue", es.computed_amount as "computedAmount",
-               gm.name as "memberName"
-        FROM expense_splits es
-        JOIN group_members gm ON gm.id = es.member_id
-        WHERE es.expense_id = $1
-        ORDER BY es.created_at ASC, es.id ASC
-    `, [expense.id]);
-
-    return {
-        id: expense.id,
-        expenseId: expense.id,
-        description: expense.description,
-        amount: Number(expense.amount),
-        category: expense.category,
-        currency: expense.currency,
-        splitModel: expense.splitModel,
-        paymentMethod: expense.paymentMethod,
-        verificationStatus: expense.verificationStatus,
-        approvals: expense.approvals || [],
-        requiredApprovals: expense.requiredApprovals || 0,
-        createdAt: expense.createdAt,
-        paidBy: {
-            id: payer.id,
-            name: payer.name,
-            role: payer.role,
-            avatarBg: payer.avatar_bg
-        },
-        splits: splitsRes.rows.map((split) => ({
-            ...split,
-            shareValue: Number(split.shareValue),
-            computedAmount: Number(split.computedAmount)
-        }))
-    };
-}
-
-function canonicalizePayload(value) {
-    if (Array.isArray(value)) return value.map(canonicalizePayload);
-    if (value && typeof value === 'object') {
-        return Object.keys(value).sort().reduce((result, key) => {
-            result[key] = canonicalizePayload(value[key]);
-            return result;
-        }, {});
-    }
-    return value;
+function normalizeSettlementPaymentMethod(method = 'UPI') {
+    const normalized = String(method || 'UPI').trim().toUpperCase();
+    return ['CASH', 'UPI'].includes(normalized) ? normalized : null;
 }
 
 /**
@@ -846,6 +803,11 @@ async function recordSettlement(req, res) {
             paymentReference = null,
             remarks = 'Debt settlement'
         } = req.body;
+        const normalizedPaymentMethod = normalizeSettlementPaymentMethod(paymentMethod);
+
+        if (!['CASH', 'UPI'].includes(normalizedPaymentMethod)) {
+            return sendError(res, 'Payment method must be CASH or UPI', null, 400);
+        }
 
         if (!userId) {
             client.release();
@@ -917,7 +879,7 @@ async function recordSettlement(req, res) {
         `, [
             settlementId, groupId, fromMember.id, toMember.id,
             fromMember.user_id || null, toMember.user_id || null,
-            numAmount, currency, paymentMethod, paymentReference, remarks
+            numAmount, currency, normalizedPaymentMethod, paymentReference, remarks
         ]);
 
         // 2. Append to Immutable Ledger Audit Log
@@ -931,13 +893,13 @@ async function recordSettlement(req, res) {
             'SETTLEMENT_RECORDED',
             userId || null,
             fromMember.name,
-            `${fromMember.name} paid ${currency} ${numAmount.toFixed(2)} to ${toMember.name} via ${paymentMethod}`,
+            `${fromMember.name} paid ${currency} ${numAmount.toFixed(2)} to ${toMember.name} via ${normalizedPaymentMethod}`,
             JSON.stringify({
                 settlementId,
                 from: { id: fromMember.id, name: fromMember.name },
                 to: { id: toMember.id, name: toMember.name },
                 amount: numAmount,
-                paymentMethod
+                paymentMethod: normalizedPaymentMethod
             })
         ]);
 
@@ -952,7 +914,7 @@ async function recordSettlement(req, res) {
             toUserId: toMember.user_id,
             amount: numAmount,
             currency,
-            paymentMethod
+            paymentMethod: normalizedPaymentMethod
         }).catch(() => { });
 
         return sendSuccess(res, "Settlement recorded successfully", {
