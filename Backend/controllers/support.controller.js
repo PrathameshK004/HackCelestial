@@ -5,6 +5,7 @@ const { sendSuccess, sendError } = require('../utils/response.util');
 const { uploadSupportDocumentToS3 } = require('../utils/s3.util');
 const { sendTicketCreatedEmail } = require('../utils/mail.util');
 const { emitToTicket } = require('../utils/socket.util');
+const { publishSupportChatEvent } = require('../utils/kafkaProducer.util');
 
 /**
  * Create a new support ticket
@@ -92,7 +93,7 @@ async function createTicket(req, res) {
             );
             await client.query('COMMIT');
         } catch (transactionError) {
-            await client.query('ROLLBACK').catch(() => {});
+            await client.query('ROLLBACK').catch(() => { });
             throw transactionError;
         } finally {
             client.release();
@@ -216,7 +217,7 @@ async function updateTicketStatus(req, res) {
             }
             await client.query('COMMIT');
         } catch (transactionError) {
-            await client.query('ROLLBACK').catch(() => {});
+            await client.query('ROLLBACK').catch(() => { });
             throw transactionError;
         } finally {
             client.release();
@@ -351,7 +352,7 @@ async function sendTicketMessage(req, res) {
             }
             await client.query('COMMIT');
         } catch (transactionError) {
-            await client.query('ROLLBACK').catch(() => {});
+            await client.query('ROLLBACK').catch(() => { });
             throw transactionError;
         } finally {
             client.release();
@@ -361,6 +362,13 @@ async function sendTicketMessage(req, res) {
         if (ticket.status === 'RESOLVED') {
             emitToTicket(ticket.ticketNumber, 'ticket:status_change', { status: 'OPEN' });
         }
+
+        void publishSupportChatEvent({
+            ticketNumber: ticket.ticketNumber,
+            ticketId: ticket.id,
+            messageId: newMsg.id,
+            senderRole: 'USER'
+        }).catch((eventError) => console.warn('[Support Chat Kafka Warning]:', eventError.message));
 
         return sendSuccess(res, 'Message sent successfully', newMsg, 201);
     } catch (error) {
@@ -627,6 +635,12 @@ async function sendAdminTicketMessage(req, res) {
         const newMsg = insertRes.rows[0];
 
         emitToTicket(ticket.ticketNumber, 'ticket:message', { message: newMsg });
+        void publishSupportChatEvent({
+            ticketNumber: ticket.ticketNumber,
+            ticketId: ticket.id,
+            messageId: newMsg.id,
+            senderRole: 'SUPPORT'
+        }).catch((eventError) => console.warn('[Support Chat Kafka Warning]:', eventError.message));
 
         return sendSuccess(res, 'Admin response sent successfully', newMsg, 201);
     } catch (error) {
@@ -672,7 +686,7 @@ async function updateAdminTicketStatus(req, res) {
              (id, ticket_id, sender_id, sender_name, sender_role, message)
              VALUES ($1, $2, NULL, 'System', 'SYSTEM', $3)`,
             [crypto.randomUUID(), ticket.id, `Admin updated status to ${status}`]
-        ).catch(() => {});
+        ).catch(() => { });
 
         // Broadcast real-time status change to user
         try {

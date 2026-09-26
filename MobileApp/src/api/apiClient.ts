@@ -3,24 +3,49 @@
  * Features: Silent Token Rotation, Request Replay, Network Timeout Handling
  */
 
-import { Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 import { storage } from "../database/storage";
 
 declare const process: any;
 
 const LIVE_API_BASE = "https://triptual-api.onrender.com/api";
+const LOCAL_API_BASE =
+  Platform.OS === "android"
+    ? "http://10.0.2.2:4000/api"
+    : "http://localhost:4000/api";
 
 export const getApiBase = (): string => {
-  const envUrl =
+  const configuredUrl =
     process.env.EXPO_PUBLIC_API_URL ||
     process.env.REACT_APP_API_URL ||
     process.env.VITE_API_URL;
+  const normalizedUrl = configuredUrl?.trim().replace(/\/+$/, "");
+  const isDevelopment = process.env.NODE_ENV === "development";
 
-  if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
-    return envUrl.trim().replace(/\/+$/, "");
+  if (normalizedUrl && !(isDevelopment && normalizedUrl === LIVE_API_BASE)) {
+    return normalizedUrl;
   }
 
-  return LIVE_API_BASE;
+  if (!isDevelopment) return normalizedUrl || LIVE_API_BASE;
+
+  let bundleHost = "";
+  try {
+    const scriptUrl = (NativeModules as any).SourceCode?.scriptURL;
+    if (scriptUrl) bundleHost = new URL(scriptUrl).hostname;
+  } catch {
+    bundleHost = "";
+  }
+
+  const isLoopbackHost = ["localhost", "127.0.0.1", "0.0.0.0"].includes(
+    bundleHost,
+  );
+  const apiHost =
+    bundleHost && !isLoopbackHost
+      ? bundleHost
+      : Platform.OS === "android"
+        ? "10.0.2.2"
+        : "localhost";
+  return `http://${apiHost}:4000/api`;
 };
 
 export const API_BASE = getApiBase();

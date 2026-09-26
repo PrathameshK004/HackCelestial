@@ -9,7 +9,24 @@ let isConnected = false;
 let isConnecting = false;
 
 const KAFKA_TOPIC = process.env.KAFKA_TOPIC || 'notification-events';
+const SUPPORT_CHAT_TOPIC = process.env.SUPPORT_CHAT_TOPIC || 'support-chat-topic';
 const CONSUMER_GROUP = process.env.KAFKA_CONSUMER_GROUP || 'triptual-notification-group';
+
+async function ensureSupportChatTopic(kafka) {
+  const admin = kafka.admin();
+  try {
+    await admin.connect();
+    const topics = await admin.listTopics();
+    if (topics.includes(SUPPORT_CHAT_TOPIC)) return true;
+    console.warn(`[Kafka Consumer] Topic '${SUPPORT_CHAT_TOPIC}' must be provisioned by the Kafka administrator; chat delivery will continue through REST polling.`);
+    return false;
+  } catch (error) {
+    console.warn(`[Kafka Consumer] Support chat topic is unavailable: ${error.message}`);
+    return false;
+  } finally {
+    await admin.disconnect().catch(() => { });
+  }
+}
 
 /**
  * Main Event Processor - Handles all event types consumed from Kafka or Fallback
@@ -213,6 +230,11 @@ async function processNotificationEvent(eventMessage) {
         break;
       }
 
+      case 'SUPPORT_CHAT_MESSAGE': {
+        console.log(`[Kafka Consumer] Support message ${payload.messageId} persisted for ticket ${payload.ticketNumber}; clients receive it through REST polling.`);
+        break;
+      }
+
       default:
         console.warn(`[Kafka Consumer] Unhandled event type: ${eventType}`);
     }
@@ -235,6 +257,7 @@ async function startKafkaConsumer() {
 
   isConnecting = true;
   try {
+    const supportTopicReady = SUPPORT_CHAT_TOPIC === KAFKA_TOPIC || await ensureSupportChatTopic(kafka);
     consumer = kafka.consumer({
       groupId: CONSUMER_GROUP,
       sessionTimeout: 30000,
@@ -243,9 +266,15 @@ async function startKafkaConsumer() {
 
     await consumer.connect();
     await consumer.subscribe({ topic: KAFKA_TOPIC, fromBeginning: false });
+    if (SUPPORT_CHAT_TOPIC !== KAFKA_TOPIC && supportTopicReady) {
+      await consumer.subscribe({ topic: SUPPORT_CHAT_TOPIC, fromBeginning: false });
+    }
 
     isConnected = true;
-    console.log(`[Kafka Consumer] Subscribed to topic '${KAFKA_TOPIC}' with group '${CONSUMER_GROUP}'`);
+    const subscribedTopics = SUPPORT_CHAT_TOPIC !== KAFKA_TOPIC && supportTopicReady
+      ? `${KAFKA_TOPIC}' and '${SUPPORT_CHAT_TOPIC}`
+      : KAFKA_TOPIC;
+    console.log(`[Kafka Consumer] Subscribed to topic${supportTopicReady && SUPPORT_CHAT_TOPIC !== KAFKA_TOPIC ? 's' : ''} '${subscribedTopics}' with group '${CONSUMER_GROUP}'`);
 
     await consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
