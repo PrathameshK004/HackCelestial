@@ -21,6 +21,7 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
   'http://localhost:8081',
   'http://127.0.0.1:8081',
+  process.env.ADMIN_FRONTEND_URL
 ];
 
 app.use(cors({
