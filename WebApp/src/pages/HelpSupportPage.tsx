@@ -35,6 +35,8 @@ import {
   getTicketMessages,
   sendTicketMessage,
   getTicketAttachmentUrl,
+  askSupportAssistant,
+  SupportAssistantMessage,
   SupportTicketSummary,
   TicketMessage
 } from '../services/support.service';
@@ -83,6 +85,93 @@ const FAQS: FAQItem[] = [
     a: 'Yes. All communication is secured via end-to-end TLS 1.3 encryption. UPI VPAs and settlement audits are stored using bank-grade AES-256 encryption with strict zero-knowledge access controls.'
   }
 ];
+
+interface AssistantChatMessage extends SupportAssistantMessage {
+  sources?: string[];
+}
+
+const SupportAssistantPanel: React.FC = () => {
+  const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const question = draft.trim();
+    if (!question || isSending) return;
+
+    setIsSending(true);
+    setError('');
+    try {
+      const history = [...messages, { role: 'user' as const, content: question }].slice(-8);
+      const response = await askSupportAssistant(history);
+      setMessages([...history, { role: 'assistant', content: response.answer, sources: response.sources }]);
+      setDraft('');
+    } catch (err: any) {
+      setError(err?.message || 'The assistant is unavailable right now. Please use Raise a Ticket.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <section style={{ borderBottom: '1px solid var(--border-card)', paddingBottom: '16px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.9rem' }}>
+        <Sparkles size={16} color="var(--accent-olive)" />
+        <span>Ask Triptual</span>
+      </div>
+      {messages.length > 0 && (
+        <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto', padding: '12px 2px' }}>
+          {messages.map((message, index) => (
+            <div
+              key={`${index}-${message.role}`}
+              style={{
+                alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '90%',
+                padding: '9px 12px',
+                borderRadius: '10px',
+                background: message.role === 'user' ? 'var(--accent-olive-subtle)' : 'var(--bg-surface-warm)',
+                color: 'var(--text-primary)',
+                fontSize: '0.78rem',
+                lineHeight: 1.5,
+                overflowWrap: 'anywhere'
+              }}
+            >
+              <div>{message.content}</div>
+              {message.sources && message.sources.length > 0 && (
+                <div style={{ marginTop: '5px', color: 'var(--text-muted)', fontSize: '0.66rem' }}>
+                  Guide: {message.sources.join(', ')}
+                </div>
+              )}
+            </div>
+          ))}
+          {isSending && <div role="status" style={{ color: 'var(--text-muted)', fontSize: '0.76rem' }}>Thinking...</div>}
+        </div>
+      )}
+      {error && <div role="alert" style={{ color: 'var(--text-danger, #A33A32)', fontSize: '0.74rem', margin: '8px 0' }}>{error}</div>}
+      <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+        <input
+          aria-label="Ask a question about using Triptual"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          maxLength={1000}
+          placeholder="Ask about trips, expenses, or payments"
+          style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-card)', background: 'var(--bg-surface-warm)', color: 'var(--text-primary)', fontSize: '0.78rem' }}
+        />
+        <button
+          type="submit"
+          aria-label="Send question"
+          title="Send question"
+          disabled={isSending || !draft.trim()}
+          style={{ width: '40px', height: '40px', flex: '0 0 40px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: '8px', background: 'var(--accent-olive)', color: '#fff', cursor: isSending || !draft.trim() ? 'not-allowed' : 'pointer', opacity: isSending || !draft.trim() ? 0.55 : 1 }}
+        >
+          <Send size={16} />
+        </button>
+      </form>
+    </section>
+  );
+};
 
 export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
   // Navigation tabs: 'tickets' | 'new-ticket' | 'faqs'
@@ -1268,6 +1357,8 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onBack }) => {
                 Instant solutions for group trip ledger, debt simplification, and payments.
               </p>
             </div>
+
+            <SupportAssistantPanel />
 
             {/* Search Box */}
             <div style={{ position: 'relative', width: '100%', marginBottom: '12px' }}>

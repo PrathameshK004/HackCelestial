@@ -5,9 +5,16 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import * as Crypto from 'expo-crypto';
 import { Trip, Expense, Participant, SettlementTransfer, ExpenseParticipantSplit, CostSharingModel } from '../types';
 import { groupService } from '../api/group.service';
 import { useAuth } from './AuthContext';
+import { tripRepo } from '../database/repositories/tripRepo';
+import { expenseRepo } from '../database/repositories/expenseRepo';
+import { syncService } from '../sync/syncService';
+import { syncEngine } from '../sync/syncEngine';
+import { ledgerEngine } from '../sync/ledgerEngine';
+import { useSync } from './SyncContext';
 
 interface TripContextType {
   trips: Trip[];
@@ -59,63 +66,57 @@ interface TripContextType {
 const TripContext = createContext<TripContextType | undefined>(undefined);
 
 export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { syncNow } = useSync();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Fetch live groups directly from authoritative backend PostgreSQL database
-  const loadTrips = useCallback(async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      const res = await groupService.getMyGroups();
-      const rawServerGroups = res?.data || [];
-      
-      const seenGroupIds = new Set<string>();
-      const serverGroups = rawServerGroups.filter((g: any) => {
-        const id = String(g.id || g.group_id || '');
-        if (!id || seenGroupIds.has(id)) return false;
-        seenGroupIds.add(id);
-        return true;
+  const publishLocalTrips = () => {
+    const localTrips = tripRepo.getAllTrips()
+      .map((trip) => tripRepo.getTripById(trip.id))
+      .filter((trip): trip is Trip => Boolean(trip))
+      .map((trip) => {
+        const hasPendingExpense = (trip.expenses || []).some((expense) => expense.syncStatus !== 'SYNCED');
+        if (!hasPendingExpense || !trip.members?.length) return trip;
+        const balances = ledgerEngine.recalculateBalances(trip.members, trip.expenses || [], trip.settlements || []);
+        return {
+          ...trip,
+          members: trip.members.map((member) => ({ ...member, balance: balances[member.id] ?? member.balance }))
+        };
       });
+    setTrips(localTrips);
+  };
 
-      // Fetch group details, expenses, and settlements concurrently in parallel
-      const populatedTrips: Trip[] = await Promise.all(
-        serverGroups.map(async (g: any) => {
-          const tripId = String(g.id || g.group_id);
-          const [detailRes, expRes, settleRes] = await Promise.all([
-            groupService.getGroupById(tripId).catch(() => null),
-            groupService.getExpenses(tripId).catch(() => null),
-            groupService.getSettlement(tripId).catch(() => ({ data: null, settlementError: true })),
-          ]);
-
-          const detail = detailRes?.data || {};
-          const expData = expRes?.data || [];
-          const settleData = settleRes?.data || {};
-
-          return mapServerGroupToTrip(
-            g,
-            detail,
-            expData,
-            settleData,
-            user,
-            Boolean(settleRes && 'settlementError' in settleRes && settleRes.settlementError)
-          );
-        })
-      );
-
-      setTrips(populatedTrips);
+  // SQLite is the UI read source; a refresh updates it without replacing pending writes.
+  const loadTrips = useCallback(async (): Promise<void> => {
+    if (isAuthLoading) return;
+    try {
+      if (!isAuthenticated) {
+        setTrips([]);
+        return;
+      }
+      publishLocalTrips();
+      await syncNow();
+      publishLocalTrips();
     } catch (e) {
-      console.warn('Error fetching live trips from server:', e);
-      setTrips([]);
+      console.warn('Trip refresh failed; showing cached trips:', e);
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [isAuthenticated, isAuthLoading, syncNow]);
 
   useEffect(() => {
     loadTrips();
   }, [loadTrips]);
+
+  useEffect(() => syncService.subscribe(() => {
+    try {
+      publishLocalTrips();
+    } catch (error) {
+      console.warn('Could not read locally cached trips:', error);
+    }
+  }), []);
 
   const selectTrip = (tripId: string) => {
     setSelectedTripId(tripId);
@@ -129,7 +130,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ? trips.find((t) => t.id === selectedTripId) || null
     : null;
 
-  // 1. ADD EXPENSE (Direct HTTP API request -> Live DB update)
+  // Persist locally first, then let the durable outbox deliver the expense.
   const addExpense = async (
     tripId: string,
     expenseData: {
@@ -162,10 +163,59 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isOptedIn: split.isOptedIn !== false,
         })) : []);
 
-    await groupService.addExpense(tripId, {
+    const trip = tripRepo.getTripById(tripId);
+    if (!trip) throw new Error('Trip is not available on this device. Connect to the internet and try again.');
+
+    const acceptedMembers = (trip.members || []).filter((member) => member.role === 'Organizer' || member.status === 'ACCEPTED');
+    if (!acceptedMembers.some((member) => String(member.id) === String(expenseData.paidById))) {
+      throw new Error('The selected payer is not a confirmed member in the cached trip. Sync the trip and try again.');
+    }
+    if (payloadParticipants.some((participant) => !acceptedMembers.some((member) => String(member.id) === String(participant.memberId)))) {
+      throw new Error('Every expense participant must be a confirmed trip member. Sync the trip and try again.');
+    }
+
+    const expenseId = Crypto.randomUUID();
+    const now = new Date();
+    const selectedParticipants = payloadParticipants.length > 0
+      ? payloadParticipants
+      : acceptedMembers.map((member) => ({ memberId: member.id, shareType: 'EQUAL_UNIT', shareValue: 1, isOptedIn: true }));
+    const shares = calculateLocalShares(expenseData.amount, expenseData.splitModel, selectedParticipants);
+
+    const expense: Expense = {
+      id: expenseId,
+      tripId,
+      title: expenseData.title,
+      description: expenseData.description || expenseData.title,
+      amount: expenseData.amount,
+      currency: trip.currency || 'INR',
+      category: expenseData.category,
+      paidById: expenseData.paidById,
+      paidByName: expenseData.paidByName,
+      splitModel: expenseData.splitModel,
+      splitCount: selectedParticipants.length || 1,
+      paymentMethod: expenseData.paymentMethod,
+      paymentReference: expenseData.paymentReference,
+      date: now.toISOString().slice(0, 10),
+      time: now.toTimeString().slice(0, 5),
+      syncStatus: 'PENDING',
+      verificationStatus: (expenseData.verificationStatus as Expense['verificationStatus']) || 'VERIFIED',
+      rawSmsProof: expenseData.rawSmsProof
+    };
+    const splits: ExpenseParticipantSplit[] = selectedParticipants.map((participant) => ({
+      id: Crypto.randomUUID(),
+      expenseId,
+      participantId: String(participant.memberId),
+      shareAmount: shares.get(String(participant.memberId)) || 0,
+      isOptedIn: participant.isOptedIn !== false,
+      shareType: participant.shareType || 'EQUAL_UNIT',
+      shareValue: participant.shareValue ?? 1,
+      syncStatus: 'PENDING'
+    }));
+    const payload = {
       description: expenseData.title,
       amount: expenseData.amount,
       category: expenseData.category,
+      currency: expense.currency,
       splitModel: expenseData.splitModel,
       paidByMemberId: expenseData.paidById,
       paymentMethod: expenseData.paymentMethod,
@@ -173,9 +223,19 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       participants: payloadParticipants,
       verificationStatus: expenseData.verificationStatus,
       rawSmsProof: expenseData.rawSmsProof,
-    });
+    };
 
-    await loadTrips();
+    expenseRepo.addExpense(expense, splits, {
+      entityType: 'EXPENSE',
+      entityId: expenseId,
+      operation: 'CREATE',
+      endpoint: `/groups/${tripId}/expenses`,
+      httpMethod: 'POST',
+      payload: JSON.stringify(payload),
+      idempotencyKey: expenseId
+    });
+    syncService.notifyListeners();
+    syncEngine.processQueue().catch(() => {});
   };
 
   // 2. DELETE EXPENSE (Direct HTTP DELETE)
@@ -260,6 +320,77 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </TripContext.Provider>
   );
 };
+
+function calculateLocalShares(
+  amount: number,
+  splitModel: CostSharingModel,
+  participants: Array<{ memberId: string; shareType?: string; shareValue?: number; isOptedIn?: boolean }>
+): Map<string, number> {
+  const total = Math.round((amount + Number.EPSILON) * 100) / 100;
+  const shares = new Map<string, number>();
+  const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+  if (participants.length === 0) return shares;
+
+  if (splitModel === 'ORGANIZER_PAID') {
+    participants.forEach((participant) => shares.set(String(participant.memberId), 0));
+    return shares;
+  }
+
+  if (splitModel === 'PARTICIPANT_BASED') {
+    const isPercentage = participants.some((participant) => participant.shareType === 'PERCENTAGE');
+    let distributed = 0;
+    participants.forEach((participant, index) => {
+      const value = Number(participant.shareValue || 0);
+      const share = isPercentage
+        ? index === participants.length - 1 ? round2(total - distributed) : round2((total * value) / 100)
+        : round2(value);
+      shares.set(String(participant.memberId), share);
+      if (isPercentage && index !== participants.length - 1) distributed = round2(distributed + share);
+    });
+    return shares;
+  }
+
+  if (splitModel === 'ROOM_SHARE') {
+    const units = participants.map((participant) => Number(participant.shareValue) > 0 ? Number(participant.shareValue) : 1);
+    const totalUnits = units.reduce((sum, value) => sum + value, 0);
+    let distributed = 0;
+    participants.forEach((participant, index) => {
+      const share = index === participants.length - 1
+        ? round2(total - distributed)
+        : round2((total * units[index]) / totalUnits);
+      shares.set(String(participant.memberId), share);
+      if (index !== participants.length - 1) distributed = round2(distributed + share);
+    });
+    return shares;
+  }
+
+  if (splitModel === 'EQUAL') {
+    const baseCents = Math.floor((total * 100) / participants.length);
+    const remainderCents = Math.round((total - (baseCents / 100) * participants.length) * 100);
+    participants.forEach((participant, index) => {
+      const receivesRemainder = index >= participants.length - remainderCents;
+      shares.set(String(participant.memberId), (baseCents + (receivesRemainder ? 1 : 0)) / 100);
+    });
+    return shares;
+  }
+
+  const liable = splitModel === 'ACTIVITY_BASED'
+    ? participants.filter((participant) => participant.isOptedIn !== false && (participant.shareValue === undefined || Number(participant.shareValue) > 0))
+    : participants;
+  const baseCents = liable.length > 0 ? Math.floor((total * 100) / liable.length) : 0;
+  let remainingCents = liable.length > 0 ? Math.round((total - (baseCents / 100) * liable.length) * 100) : 0;
+  participants.forEach((participant) => {
+    const isLiable = liable.some((entry) => String(entry.memberId) === String(participant.memberId));
+    if (!isLiable) {
+      shares.set(String(participant.memberId), 0);
+      return;
+    }
+    const share = (baseCents + (remainingCents > 0 ? 1 : 0)) / 100;
+    if (remainingCents > 0) remainingCents--;
+    shares.set(String(participant.memberId), share);
+  });
+  return shares;
+}
 
 export const useTrips = (): TripContextType => {
   const context = useContext(TripContext);

@@ -13,6 +13,8 @@
       "bundleIdentifier": "com.yog7284.MobileApp",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow Triptual to access your camera to scan merchant UPI QR codes at counters.",
+        "NSMicrophoneUsageDescription": "Allow Triptual to use your microphone for voice search.",
+        "NSSpeechRecognitionUsageDescription": "Allow Triptual to convert your voice into a search query.",
         "NSPhotoLibraryUsageDescription": "Allow Triptual to access your photos to select a profile picture and support attachments.",
         "NSPhotoLibraryAddUsageDescription": "Allow Triptual to save selected images for profile and support uploads."
       }
@@ -62,7 +64,8 @@
           "icon": "./assets/triptual-logo.png",
           "color": "#059669"
         }
-      ]
+      ],
+      "expo-speech-recognition"
     ],
     "extra": {
       "eas": {

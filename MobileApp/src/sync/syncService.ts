@@ -36,6 +36,9 @@ export const syncService = {
   async downloadServerData(): Promise<{ success: boolean; tripCount: number; error?: string }> {
     try {
       const res = await groupService.getMyGroups();
+      if (res?.message === 'Unauthenticated') {
+        throw new Error('Authentication required; cached trips were left unchanged.');
+      }
       const rawServerGroups = res?.data || [];
       const seenGroupIds = new Set<string>();
       const serverGroups = rawServerGroups.filter((g: any) => {
@@ -95,14 +98,6 @@ export const syncService = {
           }
         }
 
-        // Reconcile: Purge any local SQLite trips that no longer exist on the remote server
-        const allLocalTrips = tripRepo.getAllTrips();
-        for (const localTrip of allLocalTrips) {
-          if (!seenGroupIds.has(localTrip.id) && localTrip.syncStatus !== 'LOCAL_ONLY') {
-            tripRepo.deleteTrip(localTrip.id);
-          }
-        }
-
         // Store sync timestamp
         db.runSync(`
           INSERT INTO sync_metadata (key, value, last_synced_at)
@@ -143,7 +138,10 @@ export const syncService = {
           }
 
           if (Array.isArray(expRes?.data)) {
+            const serverExpenseIds: string[] = [];
             for (const e of expRes.data) {
+              serverExpenseIds.push(String(e.id));
+              const createdAt = e.createdAt ? new Date(e.createdAt) : new Date();
               const exp: Expense = {
                 id: String(e.id),
                 tripId,
@@ -152,18 +150,32 @@ export const syncService = {
                 amount: Number(e.amount || 0),
                 currency: e.currency || 'INR',
                 category: (e.category as any) || 'Food',
-                paidById: String(e.paidByMemberId || e.paidById || 'user-1'),
-                paidByName: e.paidByName || 'Member',
+                paidById: String(e.paidByMemberId || e.paidById || e.paidBy?.id || ''),
+                paidByName: e.paidByName || e.paidBy?.name || 'Member',
                 splitModel: (e.splitModel as any) || 'EQUAL',
-                splitCount: Number(e.splitCount || 1),
+                splitCount: Number(e.splits?.length || e.splitCount || 1),
                 paymentMethod: (e.paymentMethod as any) || 'CASH',
                 paymentReference: e.paymentReference,
-                date: e.date || new Date().toISOString().split('T')[0],
-                time: e.time || '12:00',
-                syncStatus: 'SYNCED'
+                date: e.date || createdAt.toISOString().split('T')[0],
+                time: e.time || createdAt.toTimeString().slice(0, 5),
+                syncStatus: 'SYNCED',
+                verificationStatus: e.verificationStatus || 'VERIFIED',
+                approvals: e.approvals || [],
+                requiredApprovals: Number(e.requiredApprovals || 0)
               };
-              expenseRepo.addExpense(exp);
+              const splits = (Array.isArray(e.splits) ? e.splits : []).map((split: any) => ({
+                id: String(split.id),
+                expenseId: exp.id,
+                participantId: String(split.memberId || split.participantId),
+                shareAmount: Number(split.computedAmount ?? split.shareAmount ?? 0),
+                isOptedIn: split.shareType !== 'ACTIVITY_OPT_OUT',
+                shareType: split.shareType || 'EQUAL_UNIT',
+                shareValue: Number(split.shareValue ?? 1),
+                syncStatus: 'SYNCED' as const
+              }));
+              expenseRepo.upsertServerExpense(exp, splits);
             }
+            expenseRepo.reconcileServerExpenses(tripId, serverExpenseIds);
           }
 
           if (settleRes?.data?.transfers && Array.isArray(settleRes.data.transfers)) {

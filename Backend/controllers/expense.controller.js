@@ -26,6 +26,55 @@ module.exports = {
     reviewExpenseApproval
 };
 
+async function getExpenseReplayPayload(client, expense, payer) {
+    const splitsRes = await client.query(`
+        SELECT es.id, es.member_id as "memberId", es.share_type as "shareType",
+               es.share_value as "shareValue", es.computed_amount as "computedAmount",
+               gm.name as "memberName"
+        FROM expense_splits es
+        JOIN group_members gm ON gm.id = es.member_id
+        WHERE es.expense_id = $1
+        ORDER BY es.created_at ASC, es.id ASC
+    `, [expense.id]);
+
+    return {
+        id: expense.id,
+        expenseId: expense.id,
+        description: expense.description,
+        amount: Number(expense.amount),
+        category: expense.category,
+        currency: expense.currency,
+        splitModel: expense.splitModel,
+        paymentMethod: expense.paymentMethod,
+        verificationStatus: expense.verificationStatus,
+        approvals: expense.approvals || [],
+        requiredApprovals: expense.requiredApprovals || 0,
+        createdAt: expense.createdAt,
+        paidBy: {
+            id: payer.id,
+            name: payer.name,
+            role: payer.role,
+            avatarBg: payer.avatar_bg
+        },
+        splits: splitsRes.rows.map((split) => ({
+            ...split,
+            shareValue: Number(split.shareValue),
+            computedAmount: Number(split.computedAmount)
+        }))
+    };
+}
+
+function canonicalizePayload(value) {
+    if (Array.isArray(value)) return value.map(canonicalizePayload);
+    if (value && typeof value === 'object') {
+        return Object.keys(value).sort().reduce((result, key) => {
+            result[key] = canonicalizePayload(value[key]);
+            return result;
+        }, {});
+    }
+    return value;
+}
+
 /**
  * 1. Add a new group expense with participation splits and audit log
  */
@@ -51,6 +100,11 @@ async function addExpense(req, res) {
         if (!userId) {
             client.release();
             return sendError(res, "Authentication required", null, 401);
+        }
+
+        const mutationId = req.get('Idempotency-Key') || req.body.clientMutationId || null;
+        if (mutationId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(mutationId)) {
+            return sendError(res, "Idempotency-Key must be a UUID", null, 400);
         }
 
         if (!description || !description.trim()) {
@@ -194,65 +248,37 @@ async function addExpense(req, res) {
             return sendError(res, "Expense splits must add up exactly to the total amount", null, 400);
         }
 
-        // Anti-duplicate / Idempotency check:
-        // If an expense with same group, description, amount, and payer was created within the last 10 seconds,
-        // or if paymentReference already exists, return the existing expense to prevent duplicate entry
-        let existingExpenseQuery = null;
-        if (paymentReference) {
-            existingExpenseQuery = await client.query(`
-                SELECT id, description, amount, category, currency, split_model as "splitModel",
-                       payment_method as "paymentMethod", verification_status as "verificationStatus",
-                       approvals, required_approvals as "requiredApprovals", created_at as "createdAt"
-                FROM expenses
-                WHERE group_id = $1 AND payment_reference = $2
-                LIMIT 1
-            `, [groupId, paymentReference]);
-        }
-        if (!existingExpenseQuery || existingExpenseQuery.rows.length === 0) {
-            existingExpenseQuery = await client.query(`
-                SELECT id, description, amount, category, currency, split_model as "splitModel",
-                       payment_method as "paymentMethod", verification_status as "verificationStatus",
-                       approvals, required_approvals as "requiredApprovals", created_at as "createdAt"
-                FROM expenses
-                WHERE group_id = $1
-                  AND LOWER(description) = LOWER($2)
-                  AND amount = $3
-                  AND (paid_by_member_id = $4 OR paid_by = $4)
-                  AND created_at >= NOW() - INTERVAL '10 seconds'
-                ORDER BY created_at DESC
-                LIMIT 1
-            `, [groupId, description.trim(), numAmount, payer.id]);
-        }
+        const requestHash = mutationId
+            ? crypto.createHash('sha256').update(JSON.stringify(canonicalizePayload({
+                groupId: String(groupId),
+                userId: String(userId),
+                payload: req.body
+            }))).digest('hex')
+            : null;
 
-        if (existingExpenseQuery && existingExpenseQuery.rows.length > 0) {
-            client.release();
-            const existingExp = existingExpenseQuery.rows[0];
-            return sendSuccess(res, "Expense already recorded", {
-                id: existingExp.id,
-                expenseId: existingExp.id,
-                description: existingExp.description,
-                amount: Number(existingExp.amount),
-                category: existingExp.category,
-                currency: existingExp.currency,
-                splitModel: existingExp.splitModel,
-                paymentMethod: existingExp.paymentMethod,
-                verificationStatus: existingExp.verificationStatus,
-                approvals: existingExp.approvals || [],
-                requiredApprovals: existingExp.requiredApprovals || 0,
-                createdAt: existingExp.createdAt,
-                paidBy: {
-                    id: payer.id,
-                    name: payer.name,
-                    role: payer.role,
-                    avatarBg: payer.avatar_bg
-                },
-                splits: []
-            }, 200);
+        if (mutationId) {
+            const priorMutation = await client.query(`
+                SELECT id, group_id as "groupId", created_by as "createdBy", idempotency_hash as "idempotencyHash",
+                       description, amount, category, currency, split_model as "splitModel",
+                       payment_method as "paymentMethod", verification_status as "verificationStatus",
+                       approvals, required_approvals as "requiredApprovals", created_at as "createdAt"
+                FROM expenses
+                WHERE id = $1
+                LIMIT 1
+            `, [mutationId]);
+
+            if (priorMutation.rows.length > 0) {
+                const existing = priorMutation.rows[0];
+                if (String(existing.groupId) !== String(groupId) || String(existing.createdBy) !== String(userId) || existing.idempotencyHash !== requestHash) {
+                    return sendError(res, "Idempotency key was already used for a different request", null, 409);
+                }
+                return sendSuccess(res, "Expense already recorded", await getExpenseReplayPayload(client, existing, payer), 200);
+            }
         }
 
         await client.query('BEGIN');
 
-        const expenseId = crypto.randomUUID();
+        const expenseId = mutationId || crypto.randomUUID();
 
         // Calculate 60% approval threshold for group companions
         const otherMembers = allMembers.filter(m => String(m.id) !== String(payer.id));
@@ -273,17 +299,37 @@ async function addExpense(req, res) {
             INSERT INTO expenses (
                 id, group_id, paid_by, paid_by_member_id, created_by, description,
                 amount, category, currency, split_model, payment_method, payment_reference,
-                verification_status, approvals, required_approvals, raw_sms_proof,
+                verification_status, approvals, required_approvals, raw_sms_proof, idempotency_hash,
                 created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, '[]'::jsonb, $14, $15, NOW(), NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, '[]'::jsonb, $14, $15, $16, NOW(), NOW())
+            ON CONFLICT (id) DO NOTHING
             RETURNING id, description, amount, category, currency, split_model as "splitModel",
                       payment_method as "paymentMethod", verification_status as "verificationStatus",
                       approvals, required_approvals as "requiredApprovals", created_at as "createdAt"
         `, [
             expenseId, groupId, payer.id, payer.id, userId || null, description.trim(),
             numAmount, category, currency || group.currency, effectiveSplitModel, paymentMethod, paymentReference,
-            verificationStatus, requiredApprovals, rawSmsProof
+            verificationStatus, requiredApprovals, rawSmsProof, requestHash
         ]);
+
+        if (expenseInsert.rows.length === 0) {
+            const racedMutation = await client.query(`
+                SELECT id, group_id as "groupId", created_by as "createdBy", idempotency_hash as "idempotencyHash",
+                       description, amount, category, currency, split_model as "splitModel",
+                       payment_method as "paymentMethod", verification_status as "verificationStatus",
+                       approvals, required_approvals as "requiredApprovals", created_at as "createdAt"
+                FROM expenses
+                WHERE id = $1
+                LIMIT 1
+            `, [expenseId]);
+            const existing = racedMutation.rows[0];
+            if (!existing || String(existing.groupId) !== String(groupId) || String(existing.createdBy) !== String(userId) || existing.idempotencyHash !== requestHash) {
+                await client.query('ROLLBACK');
+                return sendError(res, "Idempotency key was already used for a different request", null, 409);
+            }
+            await client.query('COMMIT');
+            return sendSuccess(res, "Expense already recorded", await getExpenseReplayPayload(client, existing, payer), 200);
+        }
 
         // 2. Insert Expense Splits
         const insertedSplits = [];
@@ -431,25 +477,7 @@ async function getGroupExpenses(req, res) {
             return sendSuccess(res, "No expenses recorded yet", []);
         }
 
-        // Deduplicate in-memory to ensure strictly 1 entry per expense and unique IDs
-        const seenExpIds = new Set();
-        const seenExpFingerprints = new Set();
-        const uniqueExpenseRows = [];
-
-        for (const row of expensesRes.rows) {
-            const expId = String(row.id);
-            if (seenExpIds.has(expId)) continue;
-
-            // Fingerprint for rapid double-submission (< 15s window)
-            const createdSec = Math.floor(new Date(row.createdAt).getTime() / 15000);
-            const fingerprint = `${row.description?.trim().toLowerCase()}_${Number(row.amount)}_${row.paidById}_${createdSec}`;
-            if (seenExpFingerprints.has(fingerprint)) continue;
-
-            seenExpIds.add(expId);
-            seenExpFingerprints.add(fingerprint);
-            uniqueExpenseRows.push(row);
-        }
-
+        const uniqueExpenseRows = expensesRes.rows;
         const expenseIds = uniqueExpenseRows.map(e => e.id);
         const splitsRes = await pool.query(`
             SELECT es.id, es.expense_id as "expenseId", es.member_id as "memberId",

@@ -20,7 +20,7 @@ export const tripRepo = {
     const trip = mapTripRow(row);
     // Load relational members, expenses, and settlements
     trip.members = db.getAllSync<any>('SELECT * FROM participants WHERE trip_id = ?', [id]).map(mapParticipantRow);
-    trip.expenses = db.getAllSync<any>('SELECT * FROM expenses WHERE trip_id = ? ORDER BY date DESC, time DESC', [id]).map(mapExpenseRow);
+    trip.expenses = db.getAllSync<any>('SELECT * FROM expenses WHERE trip_id = ? ORDER BY date DESC, time DESC', [id]).map((row) => mapExpenseRow(db, row));
     trip.settlements = db.getAllSync<any>('SELECT * FROM settlements WHERE trip_id = ?', [id]).map(mapSettlementRow);
 
     return trip;
@@ -127,11 +127,12 @@ function mapParticipantRow(r: any): Participant {
     avatarBg: r.avatar_bg,
     isUser: Boolean(r.is_user),
     balance: Number(r.balance || 0),
+    status: r.status,
     syncStatus: r.sync_status
   };
 }
 
-function mapExpenseRow(r: any): Expense {
+function mapExpenseRow(db: ReturnType<typeof getDatabase>, r: any): Expense {
   return {
     id: r.id,
     tripId: r.trip_id,
@@ -146,9 +147,23 @@ function mapExpenseRow(r: any): Expense {
     splitCount: Number(r.split_count || 1),
     paymentMethod: r.payment_method,
     paymentReference: r.payment_reference,
+    verificationStatus: r.verification_status || 'VERIFIED',
+    approvals: JSON.parse(r.approvals_json || '[]'),
+    requiredApprovals: Number(r.required_approvals || 0),
+    rawSmsProof: r.raw_sms_proof || undefined,
     date: r.date,
     time: r.time,
-    syncStatus: r.sync_status
+    syncStatus: r.sync_status,
+    splits: db.getAllSync<any>('SELECT * FROM expense_participants WHERE expense_id = ?', [r.id]).map((split) => ({
+      id: split.id,
+      expenseId: split.expense_id,
+      participantId: split.participant_id,
+      shareAmount: Number(split.share_amount || 0),
+      isOptedIn: Boolean(split.is_opted_in),
+      shareType: split.share_type,
+      shareValue: split.share_value === null ? undefined : Number(split.share_value),
+      syncStatus: split.sync_status
+    }))
   };
 }
 
