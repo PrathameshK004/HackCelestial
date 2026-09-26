@@ -4,6 +4,7 @@ const { pool } = require('../utils/db.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const { uploadSupportDocumentToS3 } = require('../utils/s3.util');
 const { sendTicketCreatedEmail } = require('../utils/mail.util');
+const { emitToTicket } = require('../utils/socket.util');
 
 /**
  * Create a new support ticket
@@ -356,6 +357,11 @@ async function sendTicketMessage(req, res) {
             client.release();
         }
 
+        emitToTicket(ticket.ticketNumber, 'ticket:message', { message: newMsg });
+        if (ticket.status === 'RESOLVED') {
+            emitToTicket(ticket.ticketNumber, 'ticket:status_change', { status: 'OPEN' });
+        }
+
         return sendSuccess(res, 'Message sent successfully', newMsg, 201);
     } catch (error) {
         console.error('Send ticket message error:', error.message);
@@ -620,13 +626,7 @@ async function sendAdminTicketMessage(req, res) {
 
         const newMsg = insertRes.rows[0];
 
-        // Broadcast real-time socket event to user
-        try {
-            const { emitTicketMessage } = require('../utils/socket.util');
-            emitTicketMessage(ticket.ticketNumber, newMsg);
-        } catch (sErr) {
-            console.warn('[Socket Message Emit Note]:', sErr.message);
-        }
+        emitToTicket(ticket.ticketNumber, 'ticket:message', { message: newMsg });
 
         return sendSuccess(res, 'Admin response sent successfully', newMsg, 201);
     } catch (error) {
