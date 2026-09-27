@@ -13,6 +13,7 @@ const dineRoutes = require('./dine.route');
 const nugenController = require('../controllers/nugen.controller');
 const dineController = require('../controllers/dine.controller');
 const healthController = require('../controllers/health.controller');
+const digitalTwinRoutes = require('./digitalTwin.route');
 
 // Health Check Endpoint
 router.get('/health', healthController.checkHealth);

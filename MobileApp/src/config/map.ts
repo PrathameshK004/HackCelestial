@@ -21,16 +21,38 @@ const getRuntimeEnv = () => {
 export const getMapProviderDefaults = (): MapProviderConfig => {
   const env = getRuntimeEnv();
 
+  // Real OpenStreetMap raster tile style (free, no API key required)
+  const osmRasterStyle = JSON.stringify({
+    version: 8,
+    name: 'OpenStreetMap Raster',
+    sources: {
+      'osm-raster': {
+        type: 'raster',
+        tiles: [
+          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        ],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: '© OpenStreetMap contributors',
+      },
+    },
+    layers: [
+      { id: 'osm-raster-layer', type: 'raster', source: 'osm-raster', minzoom: 0, maxzoom: 19 },
+    ],
+  });
+
   return {
-    name: 'MapLibre Demo',
+    name: 'OpenStreetMap Live',
     provider: 'maplibre-demo',
     tileProvider: 'maplibre-demo',
     freeTier: true,
     requiresApiKey: false,
-    description: 'Free MapLibre starter style for local development and low-usage production tuning.',
+    description: 'Real OpenStreetMap tile server with full street-level detail. Free and requires no API key.',
     styleUrl:
       (typeof env.EXPO_PUBLIC_MAP_STYLE_URL === 'string' && env.EXPO_PUBLIC_MAP_STYLE_URL) ||
-      'https://demotiles.maplibre.org/style.json',
+      osmRasterStyle,
   };
 };
 

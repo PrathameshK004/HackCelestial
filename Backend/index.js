@@ -61,6 +61,7 @@ const http = require('http');
 const { initSocketServer } = require('./utils/socket.util');
 const { initKafkaProducer, disconnectKafkaProducer } = require('./utils/kafkaProducer.util');
 const { startKafkaConsumer, stopKafkaConsumer } = require('./utils/kafkaConsumer.util');
+const { startDigitalTwinMonitor } = require('./services/digital-twin.service');
 
 // Start Server
 const PORT = process.env.PORT || 4000;
@@ -79,6 +80,7 @@ initializeDatabase()
       // Asynchronously initialize Kafka Event-Driven Notification Services
       initKafkaProducer().catch((e) => console.warn('[Kafka] Producer startup note:', e.message));
       startKafkaConsumer().catch((e) => console.warn('[Kafka] Consumer startup note:', e.message));
+      startDigitalTwinMonitor();
     });
   })
   .catch((error) => {

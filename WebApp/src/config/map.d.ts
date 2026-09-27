@@ -5,7 +5,7 @@ export interface MapProviderDefaults {
   freeTier: boolean;
   requiresApiKey: boolean;
   description: string;
-  styleUrl: string;
+  styleUrl: string | Record<string, any>;
   tilesUrl: string;
 }
 
@@ -13,7 +13,7 @@ export function getMapProviderDefaults(): MapProviderDefaults;
 export function getMapStyleConfig(variant?: string): {
   provider: string;
   variant: string;
-  styleUrl: string;
+  styleUrl: string | Record<string, any>;
   tileProvider: string;
   requiresApiKey: boolean;
 };

@@ -28,6 +28,7 @@ import { groupService } from '../services/group.service';
 import { useRealtimePoller } from '../hooks/useRealtimePoller';
 import { GroupSummary, SettlementData, SettlementExpense, SettlementTransfer, Traveler } from '../types/group';
 import { GroupMembersModal } from '../components/group/GroupMembersModal';
+import { DigitalTwinPanel } from '../components/digital-twin/DigitalTwinPanel';
 
 type LedgerTab = 'expenses' | 'debts' | 'transactions' | 'balances';
 
@@ -684,6 +685,8 @@ export const GroupMenuPage: React.FC<GroupMenuPageProps> = ({
             <span>{toastMessage}</span>
           </div>
         )}
+
+        <DigitalTwinPanel tripId={group.id} />
 
         {/* ================= 2. HERO FINTECH METRICS STRIP ================= */}
         <section

@@ -18,6 +18,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DigitalTwinImpactCard } from '../components/group/DigitalTwinImpactCard';
 import Svg, { Circle, Line, Path, Defs, Marker, Text as SvgText, G } from 'react-native-svg';
 import {
   ArrowLeft,
@@ -679,6 +680,8 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
 
           </View>
         </View>
+
+        <DigitalTwinImpactCard tripId={trip.id} />
 
         {/* Tab Content Area */}
         {/* TripFairness AI Intelligence Card */}
