@@ -111,7 +111,7 @@ export const getApiBase = (): string => {
         if (packagerHost) return `http://${packagerHost}:4000/api`;
       }
     }
-    return resolvedUrl;
+    return normalizedUrl;
   }
 
   if (typeof __DEV__ !== "undefined" && !__DEV__) return LIVE_API_BASE;

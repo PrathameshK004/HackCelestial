@@ -27,6 +27,7 @@ import {
   Receipt,
   IndianRupee,
   Scale,
+  CloudSun,
   History,
   Trash2,
   ChevronDown,
@@ -205,7 +206,7 @@ const DebtGraphView: React.FC<DebtGraphViewProps> = ({ transfers, members }) => 
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
-type LedgerTab = 'expenses' | 'debts' | 'balances' | 'transactions';
+type LedgerTab = 'expenses' | 'debts' | 'balances' | 'weather' | 'transactions';
 
 interface GroupMenuScreenProps {
   tripId: string;
@@ -678,13 +679,22 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
               </Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={[styles.underlinedTabItem, activeTab === 'weather' && styles.underlinedTabItemActive]}
+              onPress={() => setActiveTab('weather')}
+              activeOpacity={0.7}
+            >
+              <CloudSun size={14} color={activeTab === 'weather' ? colors.primary600 : colors.slate500} />
+              <Text style={[styles.underlinedTabText, activeTab === 'weather' && styles.underlinedTabTextActive]}>
+                Weather
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <DigitalTwinImpactCard tripId={trip.id} />
-
         {/* Tab Content Area */}
-        {/* TripFairness AI Intelligence Card */}
+        {/* TripFairness AI Intelligence Card - shown on Expenses */}
+        {activeTab === 'expenses' && (
         <TouchableOpacity
           style={styles.fairnessInsightCard}
           onPress={() => setIsFairnessModalOpen(true)}
@@ -769,6 +779,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
             </Text>
           )}
         </TouchableOpacity>
+        )}
 
         <View style={styles.tabContentWrap}>
           {/* TAB 1: EXPENSES */}
@@ -1219,44 +1230,52 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
             )}
           </View>
         )}
+        {/* TAB: WEATHER & DIGITAL TWIN SIMULATION */}
+        {activeTab === 'weather' && (
+          <View style={{ marginHorizontal: -16, marginTop: -4 }}>
+            <DigitalTwinImpactCard tripId={trip.id} />
+          </View>
+        )}
         </View>
 
         <View style={{ height: 54 + insets.bottom }} />
       </ScrollView>
 
       {/* Floating Bottom Action Bar */}
-      <View style={[styles.floatingActionBar, { paddingBottom: insets.bottom }]}>
-        <TouchableOpacity
-          style={[styles.primaryAddExpenseBtn, isExpenseLocked && { backgroundColor: '#475569' }]}
-          onPress={handleAttemptAddExpense}
-          activeOpacity={0.85}
-        >
-          {isExpenseLocked ? (
-            <Lock size={16} color="#ffffff" strokeWidth={2.4} />
-          ) : (
-            <Plus size={18} color="#ffffff" strokeWidth={2.6} />
-          )}
-          <Text style={styles.primaryAddExpenseText}>
-            {isExpenseLocked ? 'Expenses Locked 🔒' : 'Add Expense'}
-          </Text>
-        </TouchableOpacity>
-
-        {doesUserOwe && !financialDataError && (
+      {activeTab !== 'weather' && (
+        <View style={[styles.floatingActionBar, { paddingBottom: insets.bottom }]}>
           <TouchableOpacity
-            style={styles.secondarySettleBtn}
-            onPress={() => {
-              setSettlePayerId(userMember?.id);
-              setSettleReceiverId(undefined);
-              setSettleAmount(undefined);
-              setIsSettleUpOpen(true);
-            }}
+            style={[styles.primaryAddExpenseBtn, isExpenseLocked && { backgroundColor: '#475569' }]}
+            onPress={handleAttemptAddExpense}
             activeOpacity={0.85}
           >
-            <IndianRupee size={17} color={colors.primary700} strokeWidth={2.4} />
-            <Text style={styles.secondarySettleText}>Settle Up</Text>
+            {isExpenseLocked ? (
+              <Lock size={16} color="#ffffff" strokeWidth={2.4} />
+            ) : (
+              <Plus size={18} color="#ffffff" strokeWidth={2.6} />
+            )}
+            <Text style={styles.primaryAddExpenseText}>
+              {isExpenseLocked ? 'Expenses Locked 🔒' : 'Add Expense'}
+            </Text>
           </TouchableOpacity>
-        )}
-      </View>
+
+          {doesUserOwe && !financialDataError && (
+            <TouchableOpacity
+              style={styles.secondarySettleBtn}
+              onPress={() => {
+                setSettlePayerId(userMember?.id);
+                setSettleReceiverId(undefined);
+                setSettleAmount(undefined);
+                setIsSettleUpOpen(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <IndianRupee size={17} color={colors.primary700} strokeWidth={2.4} />
+              <Text style={styles.secondarySettleText}>Settle Up</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* Modals */}
       <AddExpenseModal
@@ -1425,23 +1444,23 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
     backgroundColor: colors.bgCard,
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
   },
   underlinedTabItem: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 11,
     borderBottomWidth: 2.5,
     borderBottomColor: 'transparent',
-    gap: 5,
+    gap: 4,
   },
   underlinedTabItemActive: {
     borderBottomColor: colors.primary600,
   },
   underlinedTabText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '600',
     color: colors.slate500,
   },

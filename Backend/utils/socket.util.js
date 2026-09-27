@@ -109,7 +109,9 @@ function scheduleSupportEventsPoll(delayMs = 30000) {
     try {
       await dispatchPendingSupportEvents();
     } catch (error) {
-      console.error('[Support Events] Outbox delivery failed:', error.message);
+      if (!error.message?.includes('Cannot use a pool after calling end')) {
+        console.error('[Support Events] Outbox delivery failed:', error.message);
+      }
     }
     scheduleSupportEventsPoll();
   }, delayMs);

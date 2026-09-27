@@ -34,6 +34,7 @@ router.use('/packages', packageRoutes);
 router.use('/saved-trips', savedTripRoutes);
 router.use('/support', supportRoutes);
 router.use('/dine', dineRoutes);
+router.use('/digital-twin', digitalTwinRoutes);
 router.post('/trip-fairness/analyze', verifyToken, validateTripFairnessPayload, nugenController.analyzeTripFairness);
 router.post('/trip-fairness/nugen', verifyToken, validateTripFairnessPayload, nugenController.analyzeTripWithNugen);
 router.post('/trip-fairness/simulate', verifyToken, validateTripFairnessPayload, nugenController.simulateSettlementStrategy);
