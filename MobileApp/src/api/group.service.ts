@@ -70,12 +70,14 @@ export const groupService = {
       verificationStatus?: string;
       rawSmsProof?: string;
     },
+    idempotencyKey?: string,
   ): Promise<{ message: string; data: any }> {
     return apiRequest<{ message: string; data: any }>(
       `/groups/${groupId}/expenses`,
       {
         method: "POST",
         body: JSON.stringify(payload),
+        headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
       },
     );
   },
@@ -155,18 +157,28 @@ export const groupService = {
 
   async simulateSettlementStrategy(
     tripData: Record<string, any>,
-    options: { mode?: "min_transfers" | "organizer_hub" | "threshold_filter"; threshold?: number; organizerId?: string } = {}
+    options: {
+      mode?: "min_transfers" | "organizer_hub" | "threshold_filter";
+      threshold?: number;
+      organizerId?: string;
+    } = {},
   ): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>("/trip-fairness/simulate", {
-      method: "POST",
-      body: JSON.stringify({ tripData, ...options }),
-    });
+    return apiRequest<{ message: string; data: any }>(
+      "/trip-fairness/simulate",
+      {
+        method: "POST",
+        body: JSON.stringify({ tripData, ...options }),
+      },
+    );
   },
 
   async getFairnessMetrics(): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>("/trip-fairness/metrics", {
-      method: "GET",
-    });
+    return apiRequest<{ message: string; data: any }>(
+      "/trip-fairness/metrics",
+      {
+        method: "GET",
+      },
+    );
   },
 
   async recordSettlement(

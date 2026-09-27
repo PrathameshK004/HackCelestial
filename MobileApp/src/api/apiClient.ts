@@ -26,6 +26,28 @@ const getPackagerHost = (): string | null => {
   }
 };
 
+const isPrivateNetworkHost = (hostname: string): boolean =>
+  /^10\./.test(hostname) ||
+  /^192\.168\./.test(hostname) ||
+  /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+
+const isLoopbackApiUrl = (value: string): boolean => {
+  try {
+    const hostname = new URL(value).hostname
+      .replace(/^\[|\]$/g, "")
+      .toLowerCase();
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname === "::1" ||
+      hostname === "10.0.2.2"
+    );
+  } catch {
+    return false;
+  }
+};
+
 const isLocalApiUrl = (value: string): boolean => {
   try {
     const hostname = new URL(value).hostname
@@ -100,15 +122,25 @@ export const getApiBase = (): string => {
     process.env.REACT_APP_API_URL ||
     process.env.VITE_API_URL;
 
-  if (configuredUrl && typeof configuredUrl === "string" && configuredUrl.trim() !== "") {
+  if (
+    configuredUrl &&
+    typeof configuredUrl === "string" &&
+    configuredUrl.trim() !== ""
+  ) {
     const normalizedUrl = normalizeLocalDevUrl(configuredUrl);
     if (isLocalApiUrl(normalizedUrl)) {
       if (Platform.OS === "web" && typeof window !== "undefined") {
         return `http://${window.location.hostname}:4000/api`;
       }
-      if (Platform.OS !== "web" && Device.isDevice) {
+      if (
+        Platform.OS !== "web" &&
+        Device.isDevice &&
+        isLoopbackApiUrl(normalizedUrl)
+      ) {
         const packagerHost = getPackagerHost();
-        if (packagerHost) return `http://${packagerHost}:4000/api`;
+        if (packagerHost && isPrivateNetworkHost(packagerHost)) {
+          return `http://${packagerHost}:4000/api`;
+        }
       }
     }
     return normalizedUrl;

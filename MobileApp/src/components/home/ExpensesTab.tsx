@@ -145,6 +145,9 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
         refreshTrips().catch(() => null);
       }
     });
+    const unsubExpenseCreated = socketService.on('EXPENSE_CREATED', () => {
+      refreshTrips().catch(() => null);
+    });
 
     // Also join each group's socket room so we receive group-scoped events
     trips.forEach((t) => {
@@ -153,6 +156,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({ onOpenSettleModal, sea
 
     return () => {
       unsub();
+      unsubExpenseCreated();
     };
   }, [trips, refreshTrips]);
 

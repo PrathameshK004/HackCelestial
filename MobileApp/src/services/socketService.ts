@@ -16,7 +16,6 @@ class SocketService {
   private isConnecting: boolean = false;
   private currentServerBase: string = SERVER_BASE;
   private hasTriedFallback: boolean = false;
-  private lastConnectErrorLogged: number = 0;
   private activeToken: string | null = null;
   private activeUserId: string | null = null;
   private appStateSubscription: any = null;
@@ -32,9 +31,6 @@ class SocketService {
   private handleAppStateChange = (nextAppState: AppStateStatus) => {
     if (nextAppState === "active") {
       if (!this.socket || !this.socket.connected) {
-        console.log(
-          "📱 [Mobile Socket] App resumed to foreground -> Reconnecting Socket.IO",
-        );
         this.connect().catch(() => {});
       }
     }
@@ -86,8 +82,7 @@ class SocketService {
       );
 
       return this.socket;
-    } catch (err: any) {
-      console.warn("🔴 [Socket.io] Exception during connect:", err?.message);
+    } catch {
       return null;
     } finally {
       this.isConnecting = false;
@@ -162,10 +157,6 @@ class SocketService {
     });
 
     this.socket.on("connect", () => {
-      console.log(
-        `🟢 [Socket.io] Connected successfully to ${serverUrl}:`,
-        this.socket?.id,
-      );
       this.hasTriedFallback = false;
 
       // Immediately ensure user is joined to their room
@@ -175,21 +166,6 @@ class SocketService {
       this.joinedTicketNumbers.forEach((ticketNumber) => {
         this.socket?.emit("join:ticket", ticketNumber);
       });
-    });
-
-    this.socket.on("connect_error", (err) => {
-      const now = Date.now();
-      if (now - this.lastConnectErrorLogged > 8000) {
-        console.warn(
-          `🔴 [Socket.io] Connection error (${serverUrl}):`,
-          err?.message || "websocket connection failed",
-        );
-        this.lastConnectErrorLogged = now;
-      }
-    });
-
-    this.socket.on("disconnect", (reason) => {
-      console.log("⚠️ [Socket.io] Socket disconnected:", reason);
     });
 
     // Re-attach all registered event listeners to the new socket instance
@@ -208,7 +184,6 @@ class SocketService {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
-      console.log("🔌 [Socket.io] Socket disconnected on cleanup");
     }
     this.activeToken = null;
     this.activeUserId = null;

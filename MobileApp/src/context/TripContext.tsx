@@ -6,6 +6,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import * as Crypto from 'expo-crypto';
+import NetInfo from '@react-native-community/netinfo';
 import { Trip, Expense, Participant, SettlementTransfer, ExpenseParticipantSplit, CostSharingModel } from '../types';
 import { groupService } from '../api/group.service';
 import { useAuth } from './AuthContext';
@@ -15,6 +16,7 @@ import { syncService } from '../sync/syncService';
 import { syncEngine } from '../sync/syncEngine';
 import { ledgerEngine } from '../sync/ledgerEngine';
 import { useSync } from './SyncContext';
+import { isNetworkAvailable } from '../utils/network.util';
 
 interface TripContextType {
   trips: Trip[];
@@ -198,6 +200,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       rawSmsProof?: string;
     }
   ): Promise<void> => {
+    const isOnline = await isNetworkAvailable(await NetInfo.fetch());
     const payloadParticipants = Array.isArray(expenseData.participants) && expenseData.participants.length > 0
       ? expenseData.participants
       : (Array.isArray(expenseData.splits) ? expenseData.splits.map((split) => ({
@@ -207,7 +210,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isOptedIn: split.isOptedIn !== false,
         })) : []);
 
-    const trip = tripRepo.getTripById(tripId);
+    const trip = tripRepo.getTripById(tripId) || (isOnline ? trips.find((item) => item.id === tripId) || null : null);
     if (!trip) throw new Error('Trip is not available on this device. Connect to the internet and try again.');
 
     const acceptedMembers = (trip.members || []).filter((member) => member.role === 'Organizer' || member.status === 'ACCEPTED');
@@ -279,7 +282,15 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       idempotencyKey: expenseId
     });
     syncService.notifyListeners();
-    syncEngine.processQueue().catch(() => {});
+    void syncEngine.processQueue()
+      .then(async ({ processed }) => {
+        if (processed === 0) return;
+        const refresh = await syncService.downloadServerData();
+        if (!refresh.success) await loadTrips();
+      })
+      .catch((error) => {
+        console.warn('Expense sync attempt failed:', error);
+      });
   };
 
   // 2. DELETE EXPENSE (Direct HTTP DELETE)

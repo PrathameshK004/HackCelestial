@@ -24,12 +24,25 @@ module.exports = {
     settleGroup,
     getAuditLog,
     reviewExpenseApproval,
-    normalizeSettlementPaymentMethod
+    normalizeSettlementPaymentMethod,
+    canonicalizePayload
 };
 
 function normalizeSettlementPaymentMethod(method = 'UPI') {
     const normalized = String(method || 'UPI').trim().toUpperCase();
     return ['CASH', 'UPI'].includes(normalized) ? normalized : null;
+}
+
+function canonicalizePayload(value) {
+    if (Array.isArray(value)) return value.map(canonicalizePayload);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.keys(value)
+                .sort()
+                .map(key => [key, canonicalizePayload(value[key])])
+        );
+    }
+    return value;
 }
 
 /**

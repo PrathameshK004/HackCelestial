@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import React, { useEffect, useRef } from 'react';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getMapStyleConfig } from '../../config/map';
 import { DigitalTwinEntity } from '../../services/digitalTwin.service';
@@ -39,8 +39,6 @@ export const DigitalTwinMap: React.FC<DigitalTwinMapProps> = ({
   entities = [],
 }) => {
   const container = useRef<HTMLDivElement | null>(null);
-  const [selectedEntity, setSelectedEntity] = useState<DigitalTwinEntity | null>(null);
-
   useEffect(() => {
     if (!container.current || latitude === undefined || longitude === undefined) return;
 
