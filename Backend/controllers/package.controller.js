@@ -5,7 +5,6 @@ const {
     withCache,
     buildPackageCacheKey,
     getPackageCacheConfig,
-    invalidatePackageCache
 } = require('../utils/cache.util');
 const { sendSuccess, sendError } = require('../utils/response.util');
 const crypto = require('crypto');
@@ -135,8 +134,6 @@ const getExplorePackages = async (req, res) => {
         const cacheConfig = getPackageCacheConfig();
         const cacheKey = buildPackageCacheKey({ category, destination });
 
-        await invalidatePackageCache();
-
         const rawPackages = await withCache({
             key: cacheKey,
             ttlSeconds: cacheConfig.ttlSeconds,
@@ -149,7 +146,7 @@ const getExplorePackages = async (req, res) => {
 
         res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
         res.set('X-Cache', 'Redis');
-        return sendSuccess(res, 'Published tour packages retrieved successfully', { packages: normalizedPackages, total: normalizedPackages.length });
+        return sendSuccess(res, 'Published tour packages retrieved successfully', { packages, total: packages.length });
     } catch (error) {
         console.error('Error fetching explore tour packages:', error);
         return sendError(res, 'Failed to retrieve tour packages', error.message, 500);
@@ -250,7 +247,7 @@ const createReservation = async (req, res) => {
             tripCreated
         }, 201);
     } catch (error) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK').catch(() => { });
         console.error('Error creating tour package reservation:', error);
         return sendError(res, 'Failed to create reservation request', error.message, 500);
     } finally {
@@ -262,7 +259,6 @@ module.exports = {
     getExplorePackages,
     createReservation,
     fetchExplorePackages,
-    invalidatePackageCache,
     normalizePackageRow,
     normalizePackagesPayload,
     validateReservationPayload

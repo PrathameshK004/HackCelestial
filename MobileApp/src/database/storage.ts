@@ -13,6 +13,7 @@ export const USER_STORAGE_KEY = 'triptual_auth_user';
 export const OFFLINE_MODE_PREF_KEY = 'triptual_offline_pref';
 export const PUSH_TOKEN_KEY = 'triptual_fcm_push_token';
 export const READ_NOTIFICATIONS_KEY = 'triptual_read_notifications';
+export const EXPLORE_PACKAGES_CACHE_KEY = 'triptual_explore_packages_v1';
 
 export const storage = {
   async getAuthToken(): Promise<string | null> {
@@ -61,6 +62,24 @@ export const storage = {
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     } catch (e) {
       console.warn('Failed to save auth user:', e);
+    }
+  },
+
+  async getCachedExplorePackages<T>(): Promise<T[] | null> {
+    try {
+      const value = await AsyncStorage.getItem(EXPLORE_PACKAGES_CACHE_KEY);
+      const packages = value ? JSON.parse(value) : null;
+      return Array.isArray(packages) ? packages : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async setCachedExplorePackages<T>(packages: T[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(EXPLORE_PACKAGES_CACHE_KEY, JSON.stringify(packages));
+    } catch (e) {
+      console.warn('Failed to cache explore packages:', e);
     }
   },
 

@@ -135,6 +135,30 @@ export const groupService = {
     );
   },
 
+  async analyzeTripFairness(
+    tripData: Record<string, any>,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      "/trip-fairness/analyze",
+      {
+        method: "POST",
+        body: JSON.stringify({ tripData }),
+      },
+    );
+  },
+
+  async analyzeTripWithNugen(
+    tripData: Record<string, any>,
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>(
+      "/trip-fairness/nugen",
+      {
+        method: "POST",
+        body: JSON.stringify({ tripData }),
+      },
+    );
+  },
+
   async recordSettlement(
     groupId: string,
     payload: {

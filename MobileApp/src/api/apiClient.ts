@@ -12,14 +12,15 @@ declare const process: any;
 declare const __DEV__: boolean;
 
 const LOCAL_EMULATOR_API_BASE = "http://10.0.2.2:4000/api";
-const LIVE_API_BASE = "https://hackcelestial-api.onrender.com/api";
+const LIVE_API_BASE = "https://triptual-api.onrender.com/api";
 
 const getPackagerHost = (): string | null => {
   const hostUri = Constants.expoConfig?.hostUri;
   if (!hostUri) return null;
 
   try {
-    return new URL(hostUri.includes("://") ? hostUri : `http://${hostUri}`).hostname;
+    return new URL(hostUri.includes("://") ? hostUri : `http://${hostUri}`)
+      .hostname;
   } catch {
     return null;
   }
@@ -27,15 +28,19 @@ const getPackagerHost = (): string | null => {
 
 const isLocalApiUrl = (value: string): boolean => {
   try {
-    const hostname = new URL(value).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    return hostname === "localhost" ||
+    const hostname = new URL(value).hostname
+      .replace(/^\[|\]$/g, "")
+      .toLowerCase();
+    return (
+      hostname === "localhost" ||
       hostname === "127.0.0.1" ||
       hostname === "0.0.0.0" ||
       hostname === "::1" ||
       hostname === "10.0.2.2" ||
       /^10\./.test(hostname) ||
       /^192\.168\./.test(hostname) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+    );
   } catch {
     return false;
   }
@@ -57,13 +62,27 @@ const normalizeLocalDevUrl = (url: string): string => {
   let normalized = url.trim().replace(/\/+$/, "");
 
   if (Platform.OS === "android") {
-    if (/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?/i.test(normalized)) {
-      normalized = normalized.replace(/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?/i, "http://10.0.2.2");
+    if (
+      /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?/i.test(
+        normalized,
+      )
+    ) {
+      normalized = normalized.replace(
+        /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?/i,
+        "http://10.0.2.2",
+      );
     }
   }
 
-  if (/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)/i.test(normalized)) {
-    if (/(8081|8082|3000|5173|4173)$/i.test(normalized) && !normalized.endsWith("/api")) {
+  if (
+    /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)/i.test(
+      normalized,
+    )
+  ) {
+    if (
+      /(8081|8082|3000|5173|4173)$/i.test(normalized) &&
+      !normalized.endsWith("/api")
+    ) {
       normalized = normalized.replace(/:\d+$/, ":4000");
     }
   }
@@ -81,11 +100,10 @@ export const getApiBase = (): string => {
     process.env.REACT_APP_API_URL ||
     process.env.VITE_API_URL;
   const normalizedUrl = configuredUrl?.trim().replace(/\/+$/, "");
-  const isDevelopment = process.env.NODE_ENV === "development";
 
-  if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
-    const normalizedUrl = normalizeLocalDevUrl(envUrl);
-    if (isLocalApiUrl(normalizedUrl)) {
+  if (normalizedUrl) {
+    const resolvedUrl = normalizeLocalDevUrl(normalizedUrl);
+    if (isLocalApiUrl(resolvedUrl)) {
       if (Platform.OS === "web" && typeof window !== "undefined") {
         return `http://${window.location.hostname}:4000/api`;
       }
@@ -94,7 +112,7 @@ export const getApiBase = (): string => {
         if (packagerHost) return `http://${packagerHost}:4000/api`;
       }
     }
-    return normalizedUrl;
+    return resolvedUrl;
   }
 
   if (typeof __DEV__ !== "undefined" && !__DEV__) return LIVE_API_BASE;

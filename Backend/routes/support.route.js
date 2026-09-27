@@ -20,6 +20,7 @@ const upload = multer({
 });
 
 // Ticket lifecycle routes
+router.post('/assistant', verifyToken, supportAssistantController.replyToSupportAssistant);
 router.post('/tickets', verifyToken, upload.single('attachment'), supportController.createTicket);
 router.get('/tickets', verifyToken, supportController.getMyTickets);
 router.patch('/tickets/:ticketNumber/status', verifyToken, supportController.updateTicketStatus);
@@ -28,7 +29,6 @@ router.get('/tickets/:ticketNumber/attachment', verifyToken, supportController.g
 // Dedicated chat & document upload routes for tickets
 router.get('/tickets/:ticketNumber/messages', verifyToken, supportController.getTicketMessages);
 router.post('/tickets/:ticketNumber/messages', verifyToken, upload.single('attachment'), supportController.sendTicketMessage);
-router.post('/assistant', verifyToken, supportAssistantController.replyToSupportAssistant);
 
 
 // Admin operations (Accessible to Admin console)

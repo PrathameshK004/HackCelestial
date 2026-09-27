@@ -10,6 +10,7 @@ import { syncEngine } from '../sync/syncEngine';
 import { syncQueueRepo } from '../database/repositories/syncQueueRepo';
 import { syncService } from '../sync/syncService';
 import { useAuth } from './AuthContext';
+import { isNetworkAvailable } from '../utils/network.util';
 
 interface SyncContextType {
   isOnline: boolean;
@@ -51,8 +52,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const operation = (async () => {
       setIsSyncing(true);
       try {
-        const network = await NetInfo.fetch();
-        const online = Boolean(network.isConnected && network.isInternetReachable !== false);
+        const online = await isNetworkAvailable(await NetInfo.fetch());
         setIsOnline(online);
         if (!online || !isAuthenticated) return;
         await syncEngine.processQueue();
@@ -80,8 +80,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isAuthLoading) return;
     let active = true;
     const refreshNetwork = async () => {
-      const state = await NetInfo.fetch();
-      const online = Boolean(state.isConnected && state.isInternetReachable !== false);
+      const online = await isNetworkAvailable(await NetInfo.fetch());
       if (!active) return;
       setIsOnline(online);
       if (online && isAuthenticated) void syncNow();

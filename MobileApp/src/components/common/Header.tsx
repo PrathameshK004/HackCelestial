@@ -9,9 +9,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   Alert,
-  Platform,
 } from 'react-native';
 import { Search, Inbox, Mic, MicOff } from 'lucide-react-native';
 import { colors, radii } from '../../theme/colors';
@@ -22,6 +20,7 @@ import { IllustrationAvatar } from './IllustrationAvatar';
 interface HeaderProps {
   onPressProfile?: () => void;
   onPressNotifications?: () => void;
+  onPressSearch?: () => void;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
   unreadCount?: number;
@@ -30,6 +29,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   onPressProfile,
   onPressNotifications,
+  onPressSearch,
   searchQuery = '',
   onSearchChange,
   unreadCount = 0,
@@ -78,7 +78,10 @@ export const Header: React.FC<HeaderProps> = ({
         ExpoSpeechRecognitionModule.addListener('end', () => setIsListening(false)),
         ExpoSpeechRecognitionModule.addListener('result', (event) => {
           const transcript = event.results?.[0]?.transcript?.trim();
-          if (transcript) onSearchChange?.(transcript);
+          if (transcript) {
+            onSearchChange?.(transcript);
+            onPressSearch?.();
+          }
         }),
         ExpoSpeechRecognitionModule.addListener('error', (event) => {
           setIsListening(false);
@@ -121,26 +124,19 @@ export const Header: React.FC<HeaderProps> = ({
       </TouchableOpacity>
 
       {/* Center: Pill search bar */}
-      <View
-        style={styles.searchPill}
-      >
-        <Search
-          size={16}
-          color="#9CA3AF"
-          strokeWidth={2.2}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search trips, expenses, places…"
-          placeholderTextColor="#9CA3AF"
-          value={searchQuery}
-          onChangeText={onSearchChange}
-          returnKeyType="search"
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-        />
+      <View style={styles.searchPill}>
+        <TouchableOpacity
+          style={styles.searchAction}
+          onPress={onPressSearch}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Open search"
+        >
+          <Search size={16} color="#9CA3AF" strokeWidth={2.2} />
+          <Text style={styles.searchPlaceholder} numberOfLines={1}>
+            {searchQuery || 'Search trips, expenses, places...'}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.voiceBtn, isListening && styles.voiceBtnListening]}
           onPress={toggleVoiceSearch}
@@ -218,13 +214,17 @@ const styles = StyleSheet.create({
   searchIcon: {
     flexShrink: 0,
   },
-  searchInput: {
+  searchAction: {
     flex: 1,
-    fontSize: 14,
-    color: '#111827',
-    padding: 0,
-    margin: 0,
-    height: Platform.OS === 'android' ? 42 : undefined,
+    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchPlaceholder: {
+    flex: 1,
+    color: '#737A82',
+    fontSize: 13,
     fontWeight: '400',
   },
   voiceBtn: {

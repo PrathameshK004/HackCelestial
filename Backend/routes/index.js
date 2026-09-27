@@ -10,6 +10,7 @@ const packageRoutes = require('./package.route');
 const savedTripRoutes = require('./savedTrip.route');
 const supportRoutes = require('./support.route');
 const dineRoutes = require('./dine.route');
+const nugenController = require('../controllers/nugen.controller');
 const dineController = require('../controllers/dine.controller');
 const healthController = require('../controllers/health.controller');
 
@@ -30,6 +31,8 @@ router.use('/packages', packageRoutes);
 router.use('/saved-trips', savedTripRoutes);
 router.use('/support', supportRoutes);
 router.use('/dine', dineRoutes);
+router.post('/trip-fairness/analyze', verifyToken, nugenController.analyzeTripFairness);
+router.post('/trip-fairness/nugen', verifyToken, nugenController.analyzeTripWithNugen);
 router.post('/trips/:tripId/dining', verifyToken, dineController.handleCreateDiningActivity);
 router.post('/groups/:groupId/dining', verifyToken, dineController.handleCreateDiningActivity);
 router.post('/user-push-tokens', verifyToken, userController.registerPushToken);

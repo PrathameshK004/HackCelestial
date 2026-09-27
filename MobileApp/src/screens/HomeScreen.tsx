@@ -23,6 +23,7 @@ import { InvitationScreen } from './InvitationScreen';
 import { AboutScreen } from './AboutScreen';
 import { HelpSupportScreen } from './HelpSupportScreen';
 import { SecurityScreen } from './SecurityScreen';
+import { SearchScreen } from './SearchScreen';
 import { useTrips } from '../context/TripContext';
 import { groupService } from '../api/group.service';
 import { notificationService as apiNotificationService } from '../api/notification.service';
@@ -46,7 +47,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
   const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
   
   // Full-page screen navigation state (entire new page, no popups)
-  const [screenMode, setScreenMode] = useState<'main' | 'notifications' | 'invitation' | 'about' | 'help' | 'security'>('main');
+  const [screenMode, setScreenMode] = useState<'main' | 'notifications' | 'invitation' | 'about' | 'help' | 'security' | 'search'>('main');
   const [activeInviteCode, setActiveInviteCode] = useState<string | null>(null);
   const [inviteOrigin, setInviteOrigin] = useState<'notifications' | 'main'>('main');
 
@@ -356,6 +357,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
         return true;
       }
 
+      if (screenMode === 'search') {
+        setScreenMode('main');
+        setSearchQuery('');
+        return true;
+      }
+
       // 2. Return from full-page Notifications / About / Help / Security Screen to Main Hub
       if (screenMode === 'notifications' || screenMode === 'about' || screenMode === 'help' || screenMode === 'security') {
         setScreenMode('main');
@@ -408,6 +415,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
     const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBackPress);
     return () => subscription.remove();
   }, [screenMode, inviteOrigin, isDrawerOpen, isJoinModalOpen, isQuickExpenseOpen, searchQuery, activeTab]);
+
+  if (screenMode === 'search') {
+    return (
+      <SearchScreen
+        trips={trips}
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        onBack={() => {
+          setScreenMode('main');
+          setSearchQuery('');
+        }}
+        onSelectTrip={(tripId) => {
+          setScreenMode('main');
+          setSearchQuery('');
+          onSelectTrip(tripId);
+        }}
+        onOpenExpenses={(query) => {
+          setScreenMode('main');
+          setActiveTab('expenses');
+          setSearchQuery(query);
+        }}
+        onOpenPlace={(query) => {
+          setScreenMode('main');
+          setActiveTab('explore');
+          setSearchQuery(query);
+        }}
+      />
+    );
+  }
 
   // ── Full-Page View 1: Notifications & Activity Inbox Screen (entire new page, no popups) ──
   if (screenMode === 'notifications') {
@@ -521,6 +557,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTrip, onCreateTr
             <Header
               onPressProfile={() => setIsDrawerOpen(true)}
               onPressNotifications={() => setScreenMode('notifications')}
+              onPressSearch={() => setScreenMode('search')}
               unreadCount={unreadInboxCount}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}

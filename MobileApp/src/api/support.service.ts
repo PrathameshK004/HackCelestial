@@ -34,12 +34,6 @@ export interface TicketMessage {
   createdAt: string;
 }
 
-export interface SupportAttachment {
-  uri: string;
-  name: string;
-  type: string;
-}
-
 export interface SupportAssistantMessage {
   role: "user" | "assistant";
   content: string;
@@ -48,6 +42,12 @@ export interface SupportAssistantMessage {
 export interface SupportAssistantReply {
   answer: string;
   sources: string[];
+}
+
+export interface SupportAttachment {
+  uri: string;
+  name: string;
+  type: string;
 }
 
 export async function askSupportAssistant(

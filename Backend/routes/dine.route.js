@@ -19,12 +19,12 @@ const {
 router.get('/restaurants/nearby', handleNearbyRestaurants);
 router.get('/restaurants/search', handleSearchRestaurants);
 router.get('/restaurants/:restaurantId/availability', handleGetRestaurantAvailability);
+router.get('/restaurants/favorites', verifyToken, handleGetFavorites);
 router.get('/restaurants/:restaurantId', handleGetRestaurant);
 router.get('/restaurants/:restaurantId/menu', handleGetRestaurantMenu);
 router.get('/restaurants/:restaurantId/photos', handleGetRestaurantPhotos);
 router.get('/restaurants/:restaurantId/offers', handleGetRestaurantOffers);
 router.get('/restaurants/:restaurantId/hours', handleGetRestaurantHours);
-router.get('/restaurants/favorites', verifyToken, handleGetFavorites);
 router.post('/restaurants/:restaurantId/favorite', verifyToken, handleToggleFavorite);
 router.post('/restaurants/:restaurantId/reservations', verifyToken, handleCreateRestaurantReservation);
 router.delete('/restaurants/:restaurantId/favorite', verifyToken, handleToggleFavorite);
