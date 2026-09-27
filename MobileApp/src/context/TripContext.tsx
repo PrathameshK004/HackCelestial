@@ -103,9 +103,45 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     try {
-      publishLocalTrips();
-      await syncNow();
-      publishLocalTrips();
+      setIsLoading(true);
+      setLoadError(null);
+      const res = await groupService.getMyGroups();
+      const rawServerGroups = Array.isArray(res?.data) ? res.data : [];
+      
+      const seenGroupIds = new Set<string>();
+      const serverGroups = rawServerGroups.filter((g: any) => {
+        const id = String(g.id || g.group_id || '');
+        if (!id || seenGroupIds.has(id)) return false;
+        seenGroupIds.add(id);
+        return true;
+      });
+
+      // Fetch group details, expenses, and settlements concurrently in parallel
+      const populatedTrips: Trip[] = await Promise.all(
+        serverGroups.map(async (g: any) => {
+          const tripId = String(g.id || g.group_id);
+          const [detailRes, expRes, settleRes] = await Promise.all([
+            groupService.getGroupById(tripId),
+            groupService.getExpenses(tripId),
+            groupService.getSettlement(tripId).catch(() => ({ data: null, settlementError: true })),
+          ]);
+
+          const detail = detailRes?.data || {};
+          const expData = expRes?.data || [];
+          const settleData = settleRes?.data || {};
+
+          return mapServerGroupToTrip(
+            g,
+            detail,
+            expData,
+            settleData,
+            user,
+            Boolean(settleRes && 'settlementError' in settleRes && settleRes.settlementError)
+          );
+        })
+      );
+
+      setTrips(populatedTrips);
     } catch (e) {
       console.warn('Trip refresh failed; showing cached trips:', e);
       setLoadError(e instanceof Error ? e.message : 'Could not read cached trips.');
@@ -120,11 +156,11 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => syncService.subscribe(() => {
     try {
-      publishLocalTrips();
+      loadTrips();
     } catch (error) {
       console.warn('Could not read locally cached trips:', error);
     }
-  }), [publishLocalTrips]);
+  }), [loadTrips]);
 
   const selectTrip = (tripId: string) => {
     setSelectedTripId(tripId);

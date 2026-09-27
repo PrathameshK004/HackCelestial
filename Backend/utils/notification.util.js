@@ -632,6 +632,7 @@ module.exports = {
     sendNotificationToTokens,
     sendPushToUser,
     sendPushToEmail,
+    dispatchImmediateUserNotification,
     createInAppNotification,
     createBroadcastNotification,
     sendGroupInviteNotification,
