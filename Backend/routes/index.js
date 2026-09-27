@@ -12,6 +12,7 @@ const supportRoutes = require('./support.route');
 const dineRoutes = require('./dine.route');
 const dineController = require('../controllers/dine.controller');
 const healthController = require('../controllers/health.controller');
+const digitalTwinRoutes = require('./digitalTwin.route');
 
 // Health Check Endpoint
 router.get('/health', healthController.checkHealth);
@@ -30,6 +31,7 @@ router.use('/packages', packageRoutes);
 router.use('/saved-trips', savedTripRoutes);
 router.use('/support', supportRoutes);
 router.use('/dine', dineRoutes);
+router.use('/digital-twin', digitalTwinRoutes);
 router.post('/trips/:tripId/dining', verifyToken, dineController.handleCreateDiningActivity);
 router.post('/groups/:groupId/dining', verifyToken, dineController.handleCreateDiningActivity);
 router.post('/user-push-tokens', verifyToken, userController.registerPushToken);

@@ -476,6 +476,64 @@ const initializeDatabase = async () => {
         CREATE INDEX IF NOT EXISTS idx_in_app_notifications_user_id ON in_app_notifications(user_id, created_at DESC);
     `);
 
+    // Digital Twin virtual state. These tables never mutate trips, bookings, payments, or inventory.
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS weather_observations (
+            id UUID PRIMARY KEY,
+            cache_key VARCHAR(120) NOT NULL,
+            latitude DOUBLE PRECISION NOT NULL,
+            longitude DOUBLE PRECISION NOT NULL,
+            provider VARCHAR(80) NOT NULL,
+            payload JSONB NOT NULL,
+            fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_weather_observations_cache ON weather_observations(cache_key, fetched_at DESC);
+
+        CREATE TABLE IF NOT EXISTS digital_twin_states (
+            id UUID PRIMARY KEY,
+            group_id UUID UNIQUE NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            impact_level VARCHAR(16) NOT NULL,
+            impact_score NUMERIC(5,2) NOT NULL,
+            lower_bound NUMERIC(5,2) NOT NULL,
+            upper_bound NUMERIC(5,2) NOT NULL,
+            confidence NUMERIC(4,3) NOT NULL,
+            weather_hash CHAR(64) NOT NULL,
+            state JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS digital_twin_simulations (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            group_id UUID REFERENCES groups(id) ON DELETE SET NULL,
+            inputs JSONB NOT NULL,
+            result JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_digital_twin_simulations_user ON digital_twin_simulations(user_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS social_signals (
+            id UUID PRIMARY KEY,
+            location TEXT NOT NULL,
+            event VARCHAR(120) NOT NULL,
+            sentiment VARCHAR(32) NOT NULL,
+            severity VARCHAR(32) NOT NULL,
+            timestamp TIMESTAMPTZ NOT NULL,
+            confidence NUMERIC(4,3) NOT NULL,
+            source_url TEXT,
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+        CREATE INDEX IF NOT EXISTS idx_social_signals_location_time ON social_signals(LOWER(location), timestamp DESC);
+
+        CREATE TABLE IF NOT EXISTS weather_notification_events (
+            group_id UUID PRIMARY KEY REFERENCES groups(id) ON DELETE CASCADE,
+            last_impact_level VARCHAR(16) NOT NULL,
+            last_impact_score NUMERIC(5,2) NOT NULL,
+            notified_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+    `);
+
     // 12. Restaurant Discovery & Dining Tables
     await pool.query(`
         CREATE TABLE IF NOT EXISTS dine_restaurants (

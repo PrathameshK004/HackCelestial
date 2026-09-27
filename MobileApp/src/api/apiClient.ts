@@ -80,11 +80,9 @@ export const getApiBase = (): string => {
     process.env.EXPO_PUBLIC_API_URL ||
     process.env.REACT_APP_API_URL ||
     process.env.VITE_API_URL;
-  const normalizedUrl = configuredUrl?.trim().replace(/\/+$/, "");
-  const isDevelopment = process.env.NODE_ENV === "development";
 
-  if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
-    const normalizedUrl = normalizeLocalDevUrl(envUrl);
+  if (configuredUrl && typeof configuredUrl === "string" && configuredUrl.trim() !== "") {
+    const normalizedUrl = normalizeLocalDevUrl(configuredUrl);
     if (isLocalApiUrl(normalizedUrl)) {
       if (Platform.OS === "web" && typeof window !== "undefined") {
         return `http://${window.location.hostname}:4000/api`;

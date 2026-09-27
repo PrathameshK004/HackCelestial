@@ -98,8 +98,6 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         seenGroupIds.add(id);
         return true;
       });
-    setTrips(localTrips);
-  };
 
       // Fetch group details, expenses, and settlements concurrently in parallel
       const populatedTrips: Trip[] = await Promise.all(
@@ -144,11 +142,11 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => syncService.subscribe(() => {
     try {
-      publishLocalTrips();
+      loadTrips();
     } catch (error) {
       console.warn('Could not read locally cached trips:', error);
     }
-  }), []);
+  }), [loadTrips]);
 
   const selectTrip = (tripId: string) => {
     setSelectedTripId(tripId);
