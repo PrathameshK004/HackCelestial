@@ -20,6 +20,8 @@ router.get('/health', healthController.checkHealth);
 const verifyToken = require('../middleware/auth.middleware');
 const userController = require('../controllers/user.controller');
 
+const { validateTripFairnessPayload } = require('../middleware/tripFairnessValidation.middleware');
+
 // API Microservices Gateway Routing
 router.use('/users', userRoutes);
 router.use('/groups', groupRoutes);
@@ -31,8 +33,10 @@ router.use('/packages', packageRoutes);
 router.use('/saved-trips', savedTripRoutes);
 router.use('/support', supportRoutes);
 router.use('/dine', dineRoutes);
-router.post('/trip-fairness/analyze', verifyToken, nugenController.analyzeTripFairness);
-router.post('/trip-fairness/nugen', verifyToken, nugenController.analyzeTripWithNugen);
+router.post('/trip-fairness/analyze', verifyToken, validateTripFairnessPayload, nugenController.analyzeTripFairness);
+router.post('/trip-fairness/nugen', verifyToken, validateTripFairnessPayload, nugenController.analyzeTripWithNugen);
+router.post('/trip-fairness/simulate', verifyToken, validateTripFairnessPayload, nugenController.simulateSettlementStrategy);
+router.get('/trip-fairness/metrics', verifyToken, nugenController.getFairnessMetrics);
 router.post('/trips/:tripId/dining', verifyToken, dineController.handleCreateDiningActivity);
 router.post('/groups/:groupId/dining', verifyToken, dineController.handleCreateDiningActivity);
 router.post('/user-push-tokens', verifyToken, userController.registerPushToken);

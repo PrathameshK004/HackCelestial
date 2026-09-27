@@ -4,7 +4,7 @@
  * 4 Tabs: Expenses, Debts, Balances, Transactions
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -42,6 +42,7 @@ import {
   AlertTriangle,
   TrendingUp,
   ArrowRight,
+  Sparkles,
 } from 'lucide-react-native';
 import { colors, radii, shadows } from '../theme/colors';
 import { useTrips } from '../context/TripContext';
@@ -52,8 +53,9 @@ import { AddExpenseModal } from '../components/group/AddExpenseModal';
 import { SyncBanner } from '../components/common/SyncBanner';
 import { SettleUpModal } from '../components/group/SettleUpModal';
 import { GroupMembersModal } from '../components/group/GroupMembersModal';
+import { TripFairnessModal } from '../components/group/TripFairnessModal';
 
-import { SettlementTransfer, Expense, CostSharingModel, Participant } from '../types';
+import { SettlementTransfer, Expense, CostSharingModel, Participant, TripFairnessInsight, TripFairnessTransfer } from '../types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -217,43 +219,71 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const isSyncing = false;
 
   const [refreshing, setRefreshing] = useState(false);
-  const [fairnessInsight, setFairnessInsight] = useState<{
-    fairnessScore: number;
-    issues: string[];
-    recommendations: string[];
-    summary: string;
-  } | null>(null);
+  const [fairnessInsight, setFairnessInsight] = useState<TripFairnessInsight | null>(null);
   const [isFairnessLoading, setIsFairnessLoading] = useState(false);
+  const [isFairnessModalOpen, setIsFairnessModalOpen] = useState(false);
 
   const trip = trips.find((t) => t.id === tripId) || trips[0];
+  const [serverSettlement, setServerSettlement] = useState<any>(null);
+  const refreshSettlement = useCallback(async () => {
+    try {
+      const response = await groupService.getSettlement(tripId);
+      setServerSettlement(response?.data || null);
+    } catch (error) {
+      console.warn('Could not refresh trip settlement:', error);
+    }
+  }, [tripId]);
 
-  const buildTripFairnessPayload = () => ({
-    tripName: trip?.name || 'Trip',
-    participants: (trip?.members || []).map((member) => ({
-      id: String(member.id),
-      name: member.name || 'Traveler',
-    })),
-    bookings: (trip?.expenses || []).map((expense) => ({
-      id: expense.id,
-      title: expense.title,
-      amount: Number(expense.amount || 0),
-      splitModel: expense.splitModel,
-      participants: Array.isArray(expense.splits)
-        ? expense.splits.map((split: any) => String(split.participantId))
-        : [],
-      payer: String(expense.paidById || expense.paidByName || '')
-    })),
-    payments: (trip?.settlements || []).map((settlement) => ({
-      from: String(settlement.fromMemberId),
-      to: String(settlement.toMemberId),
-      amount: Number(settlement.amount || 0)
-    }))
-  });
+  const settlementBalanceMap = useMemo(() => {
+    const rows = Array.isArray(serverSettlement?.balances) ? serverSettlement.balances : [];
+    return new Map<string, number>(rows.flatMap((row: any) => {
+      const memberId = String(row.memberId || row.id || '');
+      const netBalance = Number(row.netBalance ?? row.balance);
+      return memberId && Number.isFinite(netBalance) ? [[memberId, netBalance]] : [];
+    }));
+  }, [serverSettlement]);
+
+  const members = useMemo(() => (trip?.members || []).map((member) => {
+    const liveBalance = settlementBalanceMap.get(String(member.id));
+    return liveBalance === undefined ? member : { ...member, balance: liveBalance };
+  }), [trip?.members, settlementBalanceMap]);
+
+  const buildTripFairnessPayload = () => {
+    const defaultParticipants = (trip?.members || []).map((m) => String(m.id));
+    return {
+      tripName: trip?.name || 'Trip',
+      participants: (trip?.members || []).map((member) => ({
+        id: String(member.id),
+        name: member.name || 'Traveler',
+      })),
+      bookings: (trip?.expenses || []).map((expense) => {
+        const splits = Array.isArray(expense.splits) ? expense.splits : null;
+        return {
+          id: expense.id,
+          title: expense.title,
+          amount: Number(expense.amount || 0),
+          splitModel: expense.splitModel || 'EQUAL',
+          participants: splits && splits.length > 0
+            ? splits.map((split: any) => ({
+                participantId: String(split.participantId || split.memberId || split.userId || split.id || ''),
+                amount: Number(split.amount || split.computedAmount || 0)
+              }))
+            : defaultParticipants,
+          payer: String(expense.paidById || expense.paidByName || '')
+        };
+      }),
+      payments: (trip?.settlements || []).map((settlement) => ({
+        from: String(settlement.fromMemberId),
+        to: String(settlement.toMemberId),
+        amount: Number(settlement.amount || 0)
+      }))
+    };
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await refreshTrips();
+      await Promise.all([refreshTrips(), refreshSettlement()]);
     } catch (err) {
       console.warn('Refresh error:', err);
     } finally {
@@ -267,10 +297,11 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
     const loadFreshTripData = async () => {
       if (!tripId) return;
       try {
+        setServerSettlement(null);
         if (isMounted) {
           setRefreshing(true);
         }
-        await refreshTrips();
+        await Promise.all([refreshTrips(), refreshSettlement()]);
       } catch (err) {
         console.warn('Initial trip refresh error:', err);
       } finally {
@@ -284,45 +315,38 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
     return () => {
       isMounted = false;
     };
-  }, [tripId, refreshTrips]);
+  }, [tripId, refreshTrips, refreshSettlement]);
+
+  const refreshFairnessInsight = useCallback(async () => {
+    if (!trip || !trip.members?.length) return;
+    setIsFairnessLoading(true);
+    try {
+      const res = await groupService.analyzeTripFairness(buildTripFairnessPayload());
+      const payload = res?.data || null;
+      if (payload && typeof payload.fairnessScore === 'number') {
+        setFairnessInsight(payload);
+      } else {
+        setFairnessInsight(null);
+      }
+    } catch (error) {
+      console.warn('Trip fairness analysis is unavailable:', error);
+      setFairnessInsight(null);
+    } finally {
+      setIsFairnessLoading(false);
+    }
+  }, [trip?.id, trip?.members, trip?.expenses, trip?.settlements]);
 
   useEffect(() => {
-    let isActive = true;
+    refreshFairnessInsight();
+  }, [refreshFairnessInsight]);
 
-    const loadFairnessInsight = async () => {
-      if (!trip || !trip.members?.length) return;
-
-      setIsFairnessLoading(true);
-      try {
-        const res = await groupService.analyzeTripFairness(buildTripFairnessPayload());
-        const payload = res?.data || null;
-        if (!isActive) return;
-        if (payload && typeof payload.fairnessScore === 'number') {
-          setFairnessInsight({
-            fairnessScore: payload.fairnessScore,
-            issues: Array.isArray(payload.issues) ? payload.issues : [],
-            recommendations: Array.isArray(payload.recommendations) ? payload.recommendations : [],
-            summary: payload.summary || 'Fairness analysis is ready.'
-          });
-        } else {
-          setFairnessInsight(null);
-        }
-      } catch (error) {
-        if (!isActive) return;
-        console.warn('Trip fairness analysis is unavailable:', error);
-        setFairnessInsight(null);
-      } finally {
-        if (isActive) {
-          setIsFairnessLoading(false);
-        }
-      }
-    };
-
-    loadFairnessInsight();
-    return () => {
-      isActive = false;
-    };
-  }, [trip?.id, trip?.members?.length, trip?.expenses?.length, trip?.settlements?.length]);
+  const handleSettleFairnessTransfer = (transfer: TripFairnessTransfer) => {
+    setIsFairnessModalOpen(false);
+    setSettlePayerId(transfer.from);
+    setSettleReceiverId(transfer.to);
+    setSettleAmount(transfer.amount);
+    setIsSettleUpOpen(true);
+  };
 
   const [activeTab, setActiveTab] = useState<LedgerTab>('expenses');
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
@@ -338,7 +362,6 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const [settleAmount, setSettleAmount] = useState<number | undefined>(undefined);
 
   const financialDataError = Boolean(trip?.settlementError);
-  const members = trip?.members || [];
   const rawExpenses = trip?.expenses || [];
   const expenses = rawExpenses;
   const settlements = trip?.settlements || [];
@@ -479,6 +502,10 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
       setIsMembersModalOpen(false);
       return;
     }
+    if (isFairnessModalOpen) {
+      setIsFairnessModalOpen(false);
+      return;
+    }
     // 2. Collapse expanded expense card if open
     if (expandedExpenseId) {
       setExpandedExpenseId(null);
@@ -501,7 +528,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
 
     const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
     return () => sub.remove();
-  }, [isAddExpenseOpen, isSettleUpOpen, isMembersModalOpen, expandedExpenseId, activeTab, onBack]);
+  }, [isAddExpenseOpen, isSettleUpOpen, isMembersModalOpen, isFairnessModalOpen, expandedExpenseId, activeTab, onBack]);
 
   return (
     <SafeAreaView
@@ -654,38 +681,82 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         </View>
 
         {/* Tab Content Area */}
-        <View style={styles.fairnessInsightCard}>
+        {/* TripFairness AI Intelligence Card */}
+        <TouchableOpacity
+          style={styles.fairnessInsightCard}
+          onPress={() => setIsFairnessModalOpen(true)}
+          activeOpacity={0.88}
+        >
           <View style={styles.fairnessHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={styles.fairnessBadge}>
                 <ShieldCheck size={14} color={colors.primary700} />
               </View>
               <Text style={styles.fairnessTitle}>TripFairness AI</Text>
+              <View style={styles.fairnessLivePill}>
+                <Sparkles size={9} color={colors.accentPurple} />
+                <Text style={styles.fairnessLiveText}>Live Engine</Text>
+              </View>
             </View>
             {isFairnessLoading ? (
               <ActivityIndicator size="small" color={colors.primary600} />
             ) : (
-              <Text style={styles.fairnessScorePill}>{fairnessInsight?.fairnessScore ?? 92}/100</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text
+                  style={[
+                    styles.fairnessScorePill,
+                    {
+                      backgroundColor:
+                        (fairnessInsight?.fairnessScore ?? 100) >= 80
+                          ? colors.primary50
+                          : (fairnessInsight?.fairnessScore ?? 100) >= 60
+                          ? colors.accentAmberLight
+                          : colors.accentRoseLight,
+                      color:
+                        (fairnessInsight?.fairnessScore ?? 100) >= 80
+                          ? colors.primary700
+                          : (fairnessInsight?.fairnessScore ?? 100) >= 60
+                          ? colors.accentAmber
+                          : colors.accentRose,
+                    },
+                  ]}
+                >
+                  {fairnessInsight?.fairnessScore ?? 100}/100
+                </Text>
+                <ChevronRight size={14} color={colors.slate400} />
+              </View>
             )}
           </View>
 
           {fairnessInsight ? (
             <>
               <Text style={styles.fairnessSummary}>{fairnessInsight.summary}</Text>
-              <View style={styles.fairnessIssueWrap}>
-                {fairnessInsight.issues.slice(0, 2).map((issue, index) => (
-                  <View key={`${issue}-${index}`} style={styles.fairnessIssueChip}>
-                    <AlertTriangle size={11} color={colors.accentAmber} />
-                    <Text style={styles.fairnessIssueText}>{issue}</Text>
-                  </View>
-                ))}
-              </View>
-              {fairnessInsight.recommendations.length > 0 && (
+              {fairnessInsight.issues && fairnessInsight.issues.length > 0 && (
+                <View style={styles.fairnessIssueWrap}>
+                  {fairnessInsight.issues.slice(0, 2).map((issue, index) => (
+                    <View key={`${issue}-${index}`} style={styles.fairnessIssueChip}>
+                      <AlertTriangle size={11} color={colors.accentAmber} />
+                      <Text style={styles.fairnessIssueText} numberOfLines={2}>{issue}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              {fairnessInsight.settlementStrategy && (
                 <View style={styles.fairnessRecommendBox}>
-                  <Text style={styles.fairnessRecommendTitle}>Recommended action</Text>
-                  <Text style={styles.fairnessRecommendText}>
-                    {fairnessInsight.recommendations[0]}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={styles.fairnessRecommendTitle}>{fairnessInsight.settlementStrategy.title}</Text>
+                    <Text style={styles.fairnessTapHint}>View Report →</Text>
+                  </View>
+                  <Text style={styles.fairnessRecommendText} numberOfLines={2}>
+                    {fairnessInsight.settlementStrategy.summary}
                   </Text>
+                  {fairnessInsight.settlementStrategy.minTransferSet && fairnessInsight.settlementStrategy.minTransferSet.length > 0 && (
+                    <View style={styles.fairnessTeaserRow}>
+                      <Text style={styles.fairnessTeaserText}>
+                        ⚡ {fairnessInsight.settlementStrategy.minTransferSet.length} optimized transfer{fairnessInsight.settlementStrategy.minTransferSet.length > 1 ? 's' : ''} to clear all debts
+                      </Text>
+                    </View>
+                  )}
                 </View>
               )}
             </>
@@ -694,7 +765,7 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
               {isFairnessLoading ? 'Analyzing trip fairness…' : 'No fairness signal available yet. Add more trip expenses to generate insights.'}
             </Text>
           )}
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.tabContentWrap}>
           {/* TAB 1: EXPENSES */}
@@ -1220,6 +1291,15 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
           await addMember(trip.id, { name, email, role: 'Traveler' });
         }}
       />
+
+      <TripFairnessModal
+        visible={isFairnessModalOpen}
+        onClose={() => setIsFairnessModalOpen(false)}
+        insight={fairnessInsight}
+        isLoading={isFairnessLoading}
+        onRefresh={refreshFairnessInsight}
+        onSettleTransfer={handleSettleFairnessTransfer}
+      />
       </View>
     </SafeAreaView>
   );
@@ -1444,6 +1524,58 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: colors.slate700,
     lineHeight: 18,
+  },
+  fairnessMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  fairnessMetaLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.slate500,
+    textTransform: 'uppercase',
+  },
+  fairnessMetaValue: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: colors.primary700,
+  },
+  fairnessLivePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.accentPurpleLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.full,
+  },
+  fairnessLiveText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.accentPurple,
+  },
+  fairnessTapHint: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary600,
+  },
+  fairnessTeaserRow: {
+    marginTop: 6,
+    backgroundColor: colors.primary50,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  fairnessTeaserText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: colors.primary900,
   },
   tabContentWrap: {
     paddingHorizontal: 16,

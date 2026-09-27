@@ -6,11 +6,16 @@ function requestIdMiddleware(req, res, next) {
   res.setHeader('X-Request-Id', requestId);
   res.locals.requestId = requestId;
 
-  console.info('[request]', {
-    requestId,
-    method: req.method,
-    path: req.originalUrl,
-    userId: req.userKey || null
+  const startedAt = Date.now();
+  res.once('finish', () => {
+    console.info('[request]', {
+      requestId,
+      method: req.method,
+      path: req.originalUrl,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+      userId: req.userKey || null
+    });
   });
 
   next();

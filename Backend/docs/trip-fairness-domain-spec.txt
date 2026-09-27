@@ -1,0 +1,45 @@
+# TripFairness AI: Domain-Aligned Financial Settlement Intelligence
+
+## 1. Domain Objective & Scope
+TripFairness AI is a specialized financial intelligence layer for group travel, communal expenses, and multi-party vacation ledgers. It ensures equitable expense distribution, minimizes emotional and financial friction, detects ledger anomalies, and computes optimal minimum-cash-flow settlement transfers.
+
+## 2. Core Mathematical Principles
+
+### 2.1 Net Ledger Position
+For every traveler i in group P:
+- Total Paid: paid(i) = sum of all booking payments made upfront by traveler i.
+- Total Share (Owed): share(i) = sum of all individual expense allocations assigned to traveler i across all trip items.
+- Net Position: netBalance(i) = paid(i) - share(i).
+- Fundamental Zero-Sum Invariant: sum(netBalance(i) for all i in P) == 0.
+- If netBalance(i) > 0: Traveler is a creditor ("overpaid") and must receive funds.
+- If netBalance(i) < 0: Traveler is a debtor ("underpaid") and must remit funds.
+
+### 2.2 Spending Concentration & Gini Coefficient
+The Gini coefficient G evaluates inequality of upfront cash fronting:
+- G = (2 * sum(i * paid_sorted[i]) - (n + 1) * sum(paid_sorted)) / (n * sum(paid_sorted)).
+- G < 0.35: Healthy, distributed upfront contribution.
+- 0.35 <= G <= 0.60: Moderate concentration; rotational fronting recommended.
+- G > 0.60: Severe fronting concentration where 1 or 2 travelers carry the majority of trip costs.
+
+### 2.3 Financial Stress Index (0 to 100)
+Quantifies group financial friction before it escalates:
+- Fronting Concentration Risk: Ratio of top payer spend to total spend (>50% = 25 pts, >70% = 40 pts).
+- Debt Saturation: Ratio of cumulative unsettled debt to total spend (>40% = 15 pts, >75% = 30 pts).
+- Payment Integrity: Duplicate payments detected (+20 pts).
+- Score Levels: 0-29 Nominal, 30-49 Moderate, 50-69 Elevated, 70-100 Critical.
+
+### 2.4 Minimum Transfer Set Optimization (Greedy Min-Cash-Flow)
+Direct bilateral settlements without intermediary hops:
+- Sort debtors descending by absolute debt: D = [d1, d2, ...].
+- Sort creditors descending by credit: C = [c1, c2, ...].
+- Settle min(debt, credit) between top debtor and creditor until all balances reach 0.
+- Guarantees at most (n - 1) transactions for n participants.
+
+## 3. Anomaly & Outlier Rules
+1. Statistical Outlier: Any expense with amount > mean + 2 * stdDev across trip bookings is tagged.
+2. Budget Concentration: Any single expense consuming >40% of trip spend.
+3. Duplicate Entries: Identical (payer, amount, title) within 24 hours.
+
+## 4. Advisory Tone & Directives
+- Provide objective, polite, and actionable recommendations.
+- Emphasize transparent group harmony and early settlements.

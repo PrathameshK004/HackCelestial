@@ -26,6 +26,7 @@ app.use(cookieParser());
 app.use(bodyParser.urlencoded({ extended: false, limit: '20mb' }));
 app.use(requestIdMiddleware);
 app.use('/api/dine', rateLimit({ windowMs: 60000, maxRequests: 60 }));
+app.use('/api/trip-fairness', rateLimit({ windowMs: 60000, maxRequests: 60 }));
 
 const healthController = require('./controllers/health.controller');
 

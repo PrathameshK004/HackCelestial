@@ -302,3 +302,128 @@ export interface InboxNotification {
   category: "trip" | "expense" | "security" | "system";
   actionTab?: "explore" | "trips" | "expenses" | "payments";
 }
+
+export interface DetailedIssue {
+  id: string;
+  severity: "critical" | "warning" | "info";
+  category: string;
+  title: string;
+  description: string;
+}
+
+export interface TripFairnessTransfer {
+  from: string;
+  fromName: string;
+  to: string;
+  toName: string;
+  amount: number;
+  currency: string;
+}
+
+export interface TravelerFairnessBreakdown {
+  id: string;
+  name: string;
+  paid: number;
+  share: number;
+  netBalance: number;
+  status: "overpaid" | "underpaid" | "settled";
+}
+
+export interface FinancialStressFactor {
+  factor: string;
+  score: number;
+  description: string;
+}
+
+export interface FinancialStressAssessment {
+  financialStressIndex: number;
+  stressLevel: "nominal" | "moderate" | "elevated" | "critical";
+  stressFactors: FinancialStressFactor[];
+  stressNarrative: string;
+  totalOutstandingDebt: number;
+}
+
+export interface ExpenseAnomaly {
+  id: string;
+  type: "DUPLICATE_PAYMENT" | "DUPLICATE_BOOKING" | "STATISTICAL_OUTLIER" | "LARGE_SHARE_OF_BUDGET";
+  severity: "critical" | "warning" | "info";
+  title: string;
+  description: string;
+}
+
+export interface FairnessTimelineStep {
+  stepIndex: number;
+  eventId: string;
+  eventType: "booking" | "payment";
+  title: string;
+  amount: number;
+  date?: string | null;
+  cumulativeSpend: number;
+  imbalanceImpact: "low" | "moderate" | "high";
+  runningBalances: Record<string, number>;
+}
+
+export interface CategorySpendItem {
+  category: string;
+  total: number;
+  percentage: number;
+}
+
+export interface TripBudgetHealth {
+  targetBudget: number | null;
+  totalSpend: number;
+  remainingBudget: number | null;
+  budgetUtilizationPct: number | null;
+  status: "under_budget" | "near_limit" | "over_budget" | "untracked";
+  burnRatePerTraveler: number;
+  categoryBreakdown: CategorySpendItem[];
+}
+
+export interface AlternativeSettlementStrategies {
+  organizerHub?: TripFairnessTransfer[];
+  thresholdFilter?: {
+    threshold: number;
+    activeTransfers: TripFairnessTransfer[];
+    absorbedTransfers: TripFairnessTransfer[];
+    absorbedTotal: number;
+  };
+}
+
+export interface TripFairnessStrategy {
+  title: string;
+  summary: string;
+  priority: "low" | "medium" | "high" | "critical";
+  confidence: number;
+  recommendedActions: string[];
+  minTransferSet: TripFairnessTransfer[];
+  alternativeStrategies?: AlternativeSettlementStrategies;
+  travelerBreakdown?: TravelerFairnessBreakdown[];
+}
+
+export interface TripFairnessInsight {
+  fairnessScore: number;
+  riskLevel: "low" | "moderate" | "high";
+  scoreBreakdown?: {
+    spendDistributionScore: number;
+    settlementHealthScore: number;
+    coverageScore: number;
+    anomalyDeductions: number;
+    giniCoefficient: number;
+  };
+  issues: string[];
+  detailedIssues?: DetailedIssue[];
+  recommendations: string[];
+  summary: string;
+  riskAssessment?: FinancialStressAssessment;
+  anomalies?: ExpenseAnomaly[];
+  timeline?: FairnessTimelineStep[];
+  budgetHealth?: TripBudgetHealth;
+  settlementStrategy?: TripFairnessStrategy;
+  generatedAt?: string;
+  model?: string;
+  source?: string;
+  aiNarrative?: string | null;
+  confidenceScore?: number | null;
+  engineMode?: string;
+}
+
