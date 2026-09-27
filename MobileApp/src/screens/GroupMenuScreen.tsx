@@ -218,6 +218,38 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const isSyncing = false;
 
   const [refreshing, setRefreshing] = useState(false);
+  const [fairnessInsight, setFairnessInsight] = useState<{
+    fairnessScore: number;
+    issues: string[];
+    recommendations: string[];
+    summary: string;
+  } | null>(null);
+  const [isFairnessLoading, setIsFairnessLoading] = useState(false);
+
+  const trip = trips.find((t) => t.id === tripId) || trips[0];
+
+  const buildTripFairnessPayload = () => ({
+    tripName: trip?.name || 'Trip',
+    participants: (trip?.members || []).map((member) => ({
+      id: String(member.id),
+      name: member.name || 'Traveler',
+    })),
+    bookings: (trip?.expenses || []).map((expense) => ({
+      id: expense.id,
+      title: expense.title,
+      amount: Number(expense.amount || 0),
+      splitModel: expense.splitModel,
+      participants: Array.isArray(expense.splits)
+        ? expense.splits.map((split: any) => String(split.participantId))
+        : [],
+      payer: String(expense.paidById || expense.paidByName || '')
+    })),
+    payments: (trip?.settlements || []).map((settlement) => ({
+      from: String(settlement.fromMemberId),
+      to: String(settlement.toMemberId),
+      amount: Number(settlement.amount || 0)
+    }))
+  });
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -255,6 +287,44 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
     };
   }, [tripId, refreshTrips]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const loadFairnessInsight = async () => {
+      if (!trip || !trip.members?.length) return;
+
+      setIsFairnessLoading(true);
+      try {
+        const res = await groupService.analyzeTripFairness(buildTripFairnessPayload());
+        const payload = res?.data || null;
+        if (!isActive) return;
+        if (payload && typeof payload.fairnessScore === 'number') {
+          setFairnessInsight({
+            fairnessScore: payload.fairnessScore,
+            issues: Array.isArray(payload.issues) ? payload.issues : [],
+            recommendations: Array.isArray(payload.recommendations) ? payload.recommendations : [],
+            summary: payload.summary || 'Fairness analysis is ready.'
+          });
+        } else {
+          setFairnessInsight(null);
+        }
+      } catch (error) {
+        if (!isActive) return;
+        console.warn('Trip fairness analysis is unavailable:', error);
+        setFairnessInsight(null);
+      } finally {
+        if (isActive) {
+          setIsFairnessLoading(false);
+        }
+      }
+    };
+
+    loadFairnessInsight();
+    return () => {
+      isActive = false;
+    };
+  }, [trip?.id, trip?.members?.length, trip?.expenses?.length, trip?.settlements?.length]);
+
   const [activeTab, setActiveTab] = useState<LedgerTab>('expenses');
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
@@ -268,7 +338,6 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
   const [settleReceiverId, setSettleReceiverId] = useState<string | undefined>(undefined);
   const [settleAmount, setSettleAmount] = useState<number | undefined>(undefined);
 
-  const trip = trips.find((t) => t.id === tripId) || trips[0];
   const financialDataError = Boolean(trip?.settlementError);
   const members = trip?.members || [];
   const rawExpenses = trip?.expenses || [];
@@ -588,6 +657,48 @@ export const GroupMenuScreen: React.FC<GroupMenuScreenProps> = ({ tripId, onBack
         <DigitalTwinImpactCard tripId={trip.id} />
 
         {/* Tab Content Area */}
+        <View style={styles.fairnessInsightCard}>
+          <View style={styles.fairnessHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={styles.fairnessBadge}>
+                <ShieldCheck size={14} color={colors.primary700} />
+              </View>
+              <Text style={styles.fairnessTitle}>TripFairness AI</Text>
+            </View>
+            {isFairnessLoading ? (
+              <ActivityIndicator size="small" color={colors.primary600} />
+            ) : (
+              <Text style={styles.fairnessScorePill}>{fairnessInsight?.fairnessScore ?? 92}/100</Text>
+            )}
+          </View>
+
+          {fairnessInsight ? (
+            <>
+              <Text style={styles.fairnessSummary}>{fairnessInsight.summary}</Text>
+              <View style={styles.fairnessIssueWrap}>
+                {fairnessInsight.issues.slice(0, 2).map((issue, index) => (
+                  <View key={`${issue}-${index}`} style={styles.fairnessIssueChip}>
+                    <AlertTriangle size={11} color={colors.accentAmber} />
+                    <Text style={styles.fairnessIssueText}>{issue}</Text>
+                  </View>
+                ))}
+              </View>
+              {fairnessInsight.recommendations.length > 0 && (
+                <View style={styles.fairnessRecommendBox}>
+                  <Text style={styles.fairnessRecommendTitle}>Recommended action</Text>
+                  <Text style={styles.fairnessRecommendText}>
+                    {fairnessInsight.recommendations[0]}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <Text style={styles.fairnessSummary}>
+              {isFairnessLoading ? 'Analyzing trip fairness…' : 'No fairness signal available yet. Add more trip expenses to generate insights.'}
+            </Text>
+          )}
+        </View>
+
         <View style={styles.tabContentWrap}>
           {/* TAB 1: EXPENSES */}
         {activeTab === 'expenses' && (
@@ -1257,6 +1368,85 @@ const styles = StyleSheet.create({
   underlinedTabTextActive: {
     color: colors.primary600,
     fontWeight: '700',
+  },
+  fairnessInsightCard: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    padding: 14,
+    ...shadows.sm,
+  },
+  fairnessHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  fairnessBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fairnessTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.slate900,
+  },
+  fairnessScorePill: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primary700,
+    backgroundColor: colors.primary50,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  fairnessSummary: {
+    fontSize: 11.5,
+    lineHeight: 18,
+    color: colors.slate600,
+  },
+  fairnessIssueWrap: {
+    marginTop: 10,
+    gap: 6,
+  },
+  fairnessIssueChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fff7ed',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  fairnessIssueText: {
+    fontSize: 10.5,
+    color: colors.slate700,
+    flex: 1,
+  },
+  fairnessRecommendBox: {
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    paddingTop: 10,
+  },
+  fairnessRecommendTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: colors.slate500,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  fairnessRecommendText: {
+    fontSize: 11.5,
+    color: colors.slate700,
+    lineHeight: 18,
   },
   tabContentWrap: {
     paddingHorizontal: 16,

@@ -7,12 +7,13 @@ import { colors, radii, shadows } from '../theme/colors';
 import { backgrounds, borders, cardRadius, fontSize as themeFontSize, fontWeight as fw, screenHeader, spacing } from '../theme/theme';
 import { askSupportAssistant, createSupportTicket, getTicketAttachmentUrl, getTicketMessages, listSupportTickets, sendTicketMessage, SupportAssistantMessage, SupportAttachment, SupportTicketSummary, TicketMessage, updateSupportTicketStatus } from '../api/support.service';
 import { socketService } from '../services/socketService';
+import { SupportAssistantChatScreen } from './SupportAssistantChatScreen';
 
 const fs = { ...themeFontSize, modalTitle: themeFontSize.sectionTitle, modalSubtitle: themeFontSize.inputText };
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
 
-type Screen = 'tickets' | 'new' | 'chat';
+type Screen = 'tickets' | 'new' | 'chat' | 'assistant';
 type FaqCategory = 'all' | 'account' | 'trips' | 'expenses' | 'security';
 
 const FAQ_DATA = [
@@ -213,7 +214,9 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
   const TabBar = () => <View style={styles.tabBar}><Pressable style={styles.tabButton} onPress={() => setActiveTab('faq')}><Text style={[styles.tabText, activeTab === 'faq' && styles.tabTextActive]}>FAQ</Text>{activeTab === 'faq' && <View style={styles.tabIndicator} />}</Pressable><Pressable style={styles.tabButton} onPress={() => { setActiveTab('tickets'); setScreen('tickets'); }}><Text style={[styles.tabText, activeTab === 'tickets' && styles.tabTextActive]}>Tickets</Text>{activeTab === 'tickets' && <View style={styles.tabIndicator} />}</Pressable></View>;
   const keyboardOffset = 0;
 
-  if (screen === 'tickets' && activeTab === 'faq') return <View style={styles.container}><StatusBar barStyle="dark-content" backgroundColor={backgrounds.card} /><Header title="Help Center" /><TabBar /><FaqView /></View>;
+  if (screen === 'tickets' && activeTab === 'faq') return <View style={styles.container}><StatusBar barStyle="dark-content" backgroundColor={backgrounds.card} /><Header title="Help Center" /><TabBar /><FaqView onAskAssistant={() => setScreen('assistant')} /></View>;
+
+  if (screen === 'assistant') return <SupportAssistantChatScreen onBack={() => setScreen('tickets')} onContactSupport={() => setScreen('new')} />;
 
   if (screen === 'new') return <View style={styles.container}><StatusBar barStyle="dark-content" backgroundColor={backgrounds.card} /><Header title="New ticket" right={<Headphones size={27} color={colors.slate900} />} /><ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled"><Text style={styles.label}>Category</Text><Pressable style={[styles.select, categoryOpen && styles.selectActive]} onPress={() => setCategoryOpen((value) => !value)}><Text style={styles.inputText}>{category}</Text><ChevronDown size={21} color={colors.slate500} /></Pressable>{categoryOpen && <View style={styles.categoryMenu}>{CATEGORIES.map((item) => <Pressable key={item} style={styles.categoryOption} onPress={() => { setCategory(item); setCategoryOpen(false); }}><Text style={styles.inputText}>{item}</Text></Pressable>)}</View>}<Text style={styles.label}>Subject</Text><TextInput style={styles.input} placeholder="E.g. Payment not going through" placeholderTextColor={colors.slate400} value={subject} onChangeText={setSubject} /><Text style={styles.label}>Describe your issue</Text><TextInput style={[styles.input, styles.textArea]} placeholder="Please provide as much detail as possible" placeholderTextColor={colors.slate400} multiline textAlignVertical="top" value={description} onChangeText={setDescription} /><Text style={styles.label}>Upload file</Text><Pressable style={styles.uploadBox} onPress={chooseAttachment}><ImagePlus size={23} color={colors.slate900} /><Text style={styles.uploadText}>{attachment?.name || 'Add screenshot / file'}</Text><Text style={styles.uploadHint}>Max 10 Mb</Text></Pressable><View style={styles.formSpacer} /><View style={styles.urgentRow}><Text style={styles.label}>Mark as urgent</Text><Switch value={urgent} onValueChange={setUrgent} trackColor={{ false: colors.slate200, true: colors.primary200 }} thumbColor={urgent ? colors.primary600 : colors.slate50} /></View><Pressable style={[styles.primaryButton, submitting && styles.disabled]} onPress={submitTicket} disabled={submitting}><Text style={styles.primaryButtonText}>{submitting ? 'Submitting...' : 'Submit Ticket'}</Text><Send size={19} color="#FFFFFF" /></Pressable></ScrollView></View>;
 
@@ -232,7 +235,7 @@ export const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({ onBack }) 
   /><ScrollView style={styles.ticketScroll} contentContainerStyle={styles.ticketContent}>{loading ? <ActivityIndicator color={colors.primary600} style={styles.loader} /> : error ? <EmptyState text={error} action="Retry" onPress={loadTickets} /> : visibleTickets.length === 0 ? <EmptyState text={search ? 'No tickets match your search.' : 'You have not created a support ticket yet.'} action="Create ticket" onPress={() => setScreen('new')} /> : visibleTickets.map((ticket) => <TicketCard key={ticket.ticketNumber} ticket={ticket} onPress={() => openTicket(ticket)} onResolve={() => markResolved(ticket)} />)}</ScrollView><Pressable style={[styles.fab, { bottom: 56 }]} onPress={() => setScreen('new')} accessibilityLabel="Create support ticket"><Plus size={28} color="#FFFFFF" /></Pressable></View>;
 };
 
-const FaqView = () => {
+const FaqView = ({ onAskAssistant }: { onAskAssistant: () => void }) => {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<FaqCategory>('all');
@@ -274,6 +277,14 @@ const FaqView = () => {
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.faqCategoryRow}>
       {FAQ_CATEGORIES.map((item) => <Pressable key={item.key} style={[styles.faqCategory, category === item.key && styles.faqCategoryActive]} onPress={() => setCategory(item.key)}><Text style={[styles.faqCategoryText, category === item.key && styles.faqCategoryTextActive]}>{item.label}</Text></Pressable>)}
     </ScrollView>
+    <Pressable style={styles.assistantEntry} onPress={onAskAssistant} accessibilityRole="button" accessibilityLabel="Ask Triptual support assistant">
+      <View style={styles.assistantEntryIcon}><MessageCircle size={20} color="#FFFFFF" /></View>
+      <View style={styles.assistantEntryCopy}>
+        <Text style={styles.assistantEntryTitle}>Ask Triptual</Text>
+        <Text style={styles.assistantEntrySubtitle}>Get quick answers about trips, expenses, and your account</Text>
+      </View>
+      <ChevronRight size={20} color={colors.primary700} />
+    </Pressable>
     <View style={styles.faqSearch}><Search size={18} color={colors.slate400} /><TextInput style={styles.faqSearchInput} placeholder="Search for help..." placeholderTextColor={colors.slate400} value={query} onChangeText={setQuery} /><SlidersHorizontal size={18} color={colors.slate400} /></View>
     {filtered.map((item) => { const isOpen = expanded === item.id; return <View key={item.id} style={[styles.faqCard, isOpen && styles.faqCardOpen]}><Pressable style={styles.faqQuestion} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setExpanded(isOpen ? '' : item.id); }}><Text style={styles.faqQuestionText}>{item.question}</Text>{isOpen ? <ChevronUp size={22} color={colors.primary600} /> : <ChevronDown size={22} color={colors.slate500} />}</Pressable>{isOpen && <View style={styles.faqAnswer}><Text style={styles.faqAnswerText}>{item.answer}</Text></View>}</View>; })}
   </ScrollView>;
@@ -419,6 +430,11 @@ const styles = StyleSheet.create({
   faqCategoryActive: { backgroundColor: colors.primary600, borderColor: colors.primary600 },
   faqCategoryText: { color: colors.slate600, fontSize: fs.inputText, fontWeight: fw.semiBold },
   faqCategoryTextActive: { color: '#FFFFFF' },
+  assistantEntry: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginBottom: 18, borderRadius: cardRadius.inner, borderWidth: 1, borderColor: colors.primary200, backgroundColor: colors.primary50 },
+  assistantEntryIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary600, alignItems: 'center', justifyContent: 'center' },
+  assistantEntryCopy: { flex: 1, gap: 3 },
+  assistantEntryTitle: { color: colors.slate900, fontSize: fs.modalSubtitle, fontWeight: fw.bold },
+  assistantEntrySubtitle: { color: colors.slate600, fontSize: fs.caption, lineHeight: 16 },
   faqSearch: { height: 40, borderWidth: 1, borderColor: colors.slate300, borderRadius: cardRadius.pill, backgroundColor: backgrounds.card, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 18 },
   faqSearchInput: { flex: 1, color: colors.slate900, fontSize: 11.5 },
   faqCard: { backgroundColor: backgrounds.card, borderWidth: 1, borderColor: colors.slate300, borderRadius: cardRadius.card, marginBottom: 12, ...shadows.sm },

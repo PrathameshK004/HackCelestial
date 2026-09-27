@@ -69,22 +69,39 @@ interface TripContextType {
 const TripContext = createContext<TripContextType | undefined>(undefined);
 
 export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { syncNow } = useSync();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Fetch live groups directly from authoritative backend PostgreSQL database
+  const publishLocalTrips = useCallback(() => {
+    const localTrips = tripRepo.getAllTrips()
+      .map((trip) => tripRepo.getTripById(trip.id))
+      .filter((trip): trip is Trip => Boolean(trip))
+      .map((trip) => {
+        const hasPendingExpense = (trip.expenses || []).some((expense) => expense.syncStatus !== 'SYNCED');
+        if (!hasPendingExpense || !trip.members?.length) return trip;
+        const balances = ledgerEngine.recalculateBalances(trip.members, trip.expenses || [], trip.settlements || []);
+        return {
+          ...trip,
+          members: trip.members.map((member) => ({ ...member, balance: balances[member.id] ?? member.balance }))
+        };
+      });
+    setTrips(localTrips);
+  }, []);
+
+  // SQLite is the UI read source; sync refreshes it without replacing pending writes.
   const loadTrips = useCallback(async (): Promise<void> => {
     if (isAuthLoading) return;
+    setIsLoading(true);
+    setLoadError(null);
     if (!isAuthenticated) {
       setTrips([]);
-      setLoadError(null);
       setIsLoading(false);
       return;
     }
-
     try {
       setIsLoading(true);
       setLoadError(null);
@@ -126,15 +143,12 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setTrips(populatedTrips);
     } catch (e) {
-      console.warn('Error fetching live trips from server:', e);
-      const error = e as Error & { status?: number };
-      setLoadError(error.status === 401 || error.status === 403
-        ? 'Your session could not be verified. Please sign in again to load your trips.'
-        : error.message || 'Could not connect to the server. Check your connection and try again.');
+      console.warn('Trip refresh failed; showing cached trips:', e);
+      setLoadError(e instanceof Error ? e.message : 'Could not read cached trips.');
     } finally {
       setIsLoading(false);
     }
-  }, [user, isAuthenticated, isAuthLoading]);
+  }, [isAuthenticated, isAuthLoading, publishLocalTrips, syncNow]);
 
   useEffect(() => {
     loadTrips();

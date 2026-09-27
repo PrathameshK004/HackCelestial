@@ -45,6 +45,7 @@ import { colors, radii, shadows } from '../../theme/colors';
 import { useTrips } from '../../context/TripContext';
 import { apiRequest } from '../../api/apiClient';
 import { packageService } from '../../api/package.service';
+import { storage } from '../../database/storage';
 import { DineScreen } from '../../screens/DineScreen';
 
 const formatInr = (value: number) =>
@@ -78,12 +79,82 @@ export interface CuratedStay {
     food: number;
     activity: number;
   };
+  isLivePackage?: boolean;
   whyMatched: {
     icon: 'walk' | 'food' | 'quiet';
     title: string;
     description: string;
   }[];
 }
+
+const PACKAGE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeExplorePackage = (value: any): CuratedStay | null => {
+  if (!value || typeof value !== 'object') return null;
+
+  const id = String(value.id || '').trim();
+  const name = String(value.name || value.title || '').trim();
+  const image = String(value.image || '').trim();
+  if (!id || !name || !image) return null;
+
+  const categoryValue = String(value.category || 'hotel').toLowerCase();
+  const category: CuratedStay['category'] = ['hotel', 'villa', 'resort', 'camping'].includes(categoryValue)
+    ? categoryValue as CuratedStay['category']
+    : 'hotel';
+  const basePrice = Number(value.basePrice ?? value.base_price ?? 0) || 0;
+  const totalNights = Math.max(1, Number(value.totalNights ?? value.total_nights ?? 7) || 7);
+
+  return {
+    ...value,
+    id,
+    name,
+    type: String(value.type || 'Hotel'),
+    category,
+    destination: String(value.destination || ''),
+    dateRange: String(value.dateRange || value.date_range || ''),
+    guests: Math.max(1, Number(value.guests) || 2),
+    matchScore: Number(value.matchScore ?? value.match_score) || 90,
+    rating: Number(value.rating) || 4.8,
+    pricePerNight: Number(value.pricePerNight ?? value.price_per_night) || Math.round(basePrice / totalNights),
+    basePrice,
+    currency: String(value.currency || 'INR'),
+    totalNights,
+    style: String(value.style || 'Boutique'),
+    distance: String(value.distance || '0.5 km'),
+    featured: Boolean(value.featured),
+    image,
+    altImages: Array.isArray(value.altImages) ? value.altImages : [],
+    metrics: value.metrics && typeof value.metrics === 'object'
+      ? value.metrics
+      : { walk: 90, food: 90, activity: 90 },
+    isLivePackage: PACKAGE_ID_PATTERN.test(id),
+    whyMatched: Array.isArray(value.whyMatched) ? value.whyMatched : [],
+  };
+};
+
+const unwrapExplorePackages = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') {
+    if (Array.isArray(value.value)) return value.value;
+    if (typeof value.value === 'string') {
+      try {
+        const parsed = JSON.parse(value.value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
 
 export const CURATED_STAYS: CuratedStay[] = [
   {
@@ -345,38 +416,48 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
   const insets = useSafeAreaInsets();
   const { trips, refreshTrips } = useTrips();
   const [refreshing, setRefreshing] = useState(false);
-  const [exploreStays, setExploreStays] = useState<CuratedStay[]>([]);
-  const [isLoadingStays, setIsLoadingStays] = useState<boolean>(true);
-  const [packageLoadError, setPackageLoadError] = useState<string | null>(null);
+  const [exploreStays, setExploreStays] = useState<CuratedStay[]>(() =>
+    CURATED_STAYS.map((stay) => ({ ...stay, isLivePackage: false })),
+  );
+  const [isLoadingStays, setIsLoadingStays] = useState<boolean>(false);
+  const [isShowingSamplePackages, setIsShowingSamplePackages] = useState(true);
 
   const loadExplorePackages = async () => {
-    setIsLoadingStays(true);
+    if (exploreStays.length === 0) setIsLoadingStays(true);
+
+    const cachedPackages = await storage.getCachedExplorePackages<unknown>();
+    const cachedStays = (cachedPackages || [])
+      .map(normalizeExplorePackage)
+      .filter((stay): stay is CuratedStay => Boolean(stay));
+
+    if (isShowingSamplePackages && cachedStays.length > 0) {
+      setExploreStays(cachedStays);
+      setIsShowingSamplePackages(false);
+    }
+
     try {
       const res: any = await apiRequest('/packages/explore');
-      const rawPackages = res?.data?.packages || res?.packages;
-      let pkgs: any[] = [];
+      const packageRows = unwrapExplorePackages(res?.data?.packages ?? res?.packages);
+      const freshStays = packageRows
+        .map(normalizeExplorePackage)
+        .filter((stay): stay is CuratedStay => Boolean(stay));
 
-      if (Array.isArray(rawPackages)) {
-        pkgs = rawPackages;
-      } else if (rawPackages && typeof rawPackages === 'object') {
-        const nestedValue = rawPackages.value;
-        if (Array.isArray(nestedValue)) {
-          pkgs = nestedValue;
-        } else if (typeof nestedValue === 'string') {
-          try {
-            const parsed = JSON.parse(nestedValue);
-            pkgs = Array.isArray(parsed) ? parsed : [];
-          } catch {
-            pkgs = [];
-          }
+      if (freshStays.length > 0) {
+        setExploreStays(freshStays);
+        setIsShowingSamplePackages(false);
+        await storage.setCachedExplorePackages(freshStays);
+      } else {
+        if (cachedStays.length === 0 && exploreStays.length === 0) {
+          setExploreStays(CURATED_STAYS.map((stay) => ({ ...stay, isLivePackage: false })));
+          setIsShowingSamplePackages(true);
         }
       }
-
-      setExploreStays(pkgs);
-      setPackageLoadError(null);
     } catch (err) {
-      console.warn('Failed to load Redis-backed tour packages:', err);
-      setPackageLoadError((err as Error)?.message || 'Could not connect to the packages service.');
+      console.warn('Explore package refresh failed; keeping available listings.', err);
+      if (cachedStays.length > 0) {
+        if (isShowingSamplePackages) setExploreStays(cachedStays);
+        setIsShowingSamplePackages(false);
+      }
     } finally {
       setIsLoadingStays(false);
     }
@@ -440,6 +521,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
 
   const openReservationForm = () => {
     if (!selectedStay) return;
+    if (!selectedStay.isLivePackage) return;
     const start = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
     const end = new Date(start.getTime() + Math.max(1, selectedStay.totalNights) * 24 * 60 * 60 * 1000);
     setReservationTripId(trips[0]?.id || 'new');
@@ -592,15 +674,12 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
         {/* ---------------- VIEW MODE: GALLERY ---------------- */}
         {viewMode === 'gallery' && (
           <View style={styles.galleryViewWrapper}>
-            {packageLoadError ? (
-              <View style={styles.packageLoadWarning} accessibilityRole="alert">
-                <Text style={styles.packageLoadWarningText}>Package sync failed: {packageLoadError}</Text>
-                <TouchableOpacity onPress={() => void loadExplorePackages()} disabled={isLoadingStays} activeOpacity={0.8}>
-                  <Text style={styles.packageRetryText}>{isLoadingStays ? 'Retrying...' : 'Retry'}</Text>
-                </TouchableOpacity>
-              </View>
+            {isShowingSamplePackages ? (
+              <Text style={{ color: '#77786F', fontSize: 12, marginBottom: 12 }}>
+                Popular stays are available to browse. Live reservations will return when the service reconnects.
+              </Text>
             ) : null}
-            {isLoadingStays ? (
+            {isLoadingStays && exploreStays.length === 0 ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                 <ActivityIndicator size="large" color="#464B29" />
                 <Text style={{ marginTop: 12, color: '#585952', fontSize: 14 }}>
@@ -610,7 +689,7 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
             ) : !featuredStay ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                 <Text style={{ color: '#585952', fontSize: 14 }}>
-                  {packageLoadError ? 'Tour packages could not be loaded.' : 'No published tour packages found in database.'}
+                  No published tour packages found.
                 </Text>
               </View>
             ) : (
@@ -984,12 +1063,13 @@ export const ExploreTab: React.FC<ExploreTabProps> = ({
                     )}
 
                     <TouchableOpacity
-                      style={styles.btnActionReserve}
+                      style={[styles.btnActionReserve, !selectedStay.isLivePackage && { opacity: 0.5 }]}
                       onPress={openReservationForm}
+                      disabled={!selectedStay.isLivePackage}
                       activeOpacity={0.85}
                     >
-                      <Text style={styles.btnActionReserveText}>Reserve</Text>
-                      <ArrowRight size={15} color="#FFFFFF" />
+                      <Text style={styles.btnActionReserveText}>{selectedStay.isLivePackage ? 'Reserve' : 'Browse only'}</Text>
+                      {selectedStay.isLivePackage ? <ArrowRight size={15} color="#FFFFFF" /> : null}
                     </TouchableOpacity>
                   </View>
                 </View>

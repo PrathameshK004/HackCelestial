@@ -411,15 +411,15 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
 
   const screenContent = (
       <View style={styles.container}>
-        <View style={[styles.header, { paddingTop: headerTopPadding, paddingBottom: screenHeader.bottomPadding }]}>
+        <View style={[styles.header, selectedRestaurant && styles.hidden, { paddingTop: headerTopPadding, paddingBottom: screenHeader.bottomPadding }]}>
           <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.headerBack} onPress={onClose} activeOpacity={0.8} accessibilityLabel="Back">
+            <TouchableOpacity style={styles.headerBack} onPress={() => selectedRestaurant ? setSelectedRestaurant(null) : onClose()} activeOpacity={0.8} accessibilityLabel={selectedRestaurant ? 'Back to restaurants' : 'Back'}>
               <ArrowLeft size={20} color={palette.dark} />
             </TouchableOpacity>
             <View style={styles.headerTitleWrap}>
-              <Text style={styles.title}>Restaurants</Text>
+              <Text style={styles.title}>{selectedRestaurant ? 'Restaurant details' : 'Restaurants'}</Text>
             </View>
-            <View style={styles.viewToggle}>
+            <View style={[styles.viewToggle, selectedRestaurant && styles.hidden]}>
               <TouchableOpacity
                 style={[styles.toggleButton, viewMode === 'map' && styles.toggleButtonActive]}
                 onPress={() => setViewMode('map')}
@@ -436,7 +436,7 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
               </TouchableOpacity>
             </View>
           </View>
-          <View style={styles.headerSearchWrap}>
+          <View style={[styles.headerSearchWrap, selectedRestaurant && styles.hidden]}>
             <View style={styles.searchBar}>
               <Search size={18} color={palette.lightText} />
               <TextInput
@@ -464,6 +464,7 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
           </View>
         </View>
 
+        {!selectedRestaurant && <>
         {showFilters && (
           <View style={styles.filterSheet}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChipScroller}>
@@ -564,7 +565,6 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                   rating: restaurant.rating,
                   status: restaurant.status,
                 }))}
-                selectedRestaurantId={selectedRestaurant?.id}
                 onSelectRestaurant={(restaurant) => setSelectedRestaurant(restaurants.find((item) => item.id === restaurant.id) || null)}
                 region={mapRegion}
                 onRegionChangeComplete={setMapRegion}
@@ -585,23 +585,6 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
               </TouchableOpacity>
             </View>
 
-            {selectedRestaurant ? (
-              <View style={styles.mapPreviewCard}>
-                <Image source={{ uri: selectedRestaurant.image }} style={styles.previewImage} />
-                <View style={styles.previewBody}>
-                  <Text style={styles.previewTitle}>{selectedRestaurant.name}</Text>
-                  <View style={styles.ratingRow}>
-                    <Star size={12} color={palette.amber} fill={palette.amber} />
-                    <Text style={styles.ratingText}>{selectedRestaurant.rating}</Text>
-                    <Text style={styles.previewMeta}> • {selectedRestaurant.cuisine.join(' • ')}</Text>
-                  </View>
-                  <Text style={styles.previewMeta}>{selectedRestaurant.distance} away • {selectedRestaurant.status}</Text>
-                  <TouchableOpacity style={styles.primaryButton} onPress={() => setSelectedRestaurant(selectedRestaurant)} activeOpacity={0.9}>
-                    <Text style={styles.primaryButtonText}>View Restaurant</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
           </View>
         ) : (
           <FlatList
@@ -614,32 +597,32 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                 activeOpacity={0.9}
                 onPress={() => setSelectedRestaurant(item)}
               >
-                <Image source={{ uri: item.image }} style={styles.cardImage} />
+                <Image source={{ uri: item.image }} style={styles.cardImage} resizeMode="cover" />
                 <View style={styles.cardBody}>
                   <View style={styles.cardHeaderRow}>
                     <Text style={styles.cardTitle}>{item.name}</Text>
-                    <TouchableOpacity onPress={() => toggleFavorite(item.id)} activeOpacity={0.8}>
-                      <Heart size={18} color={favorites.includes(item.id) ? palette.red : palette.darkMuted} fill={favorites.includes(item.id) ? palette.red : 'none'} />
+                    <TouchableOpacity onPress={() => toggleFavorite(item.id)} activeOpacity={0.8} hitSlop={8}>
+                      <Heart size={17} color={favorites.includes(item.id) ? palette.red : palette.darkMuted} fill={favorites.includes(item.id) ? palette.red : 'none'} />
                     </TouchableOpacity>
                   </View>
 
                   <View style={styles.ratingRow}>
                     <Star size={12} color={palette.amber} fill={palette.amber} />
                     <Text style={styles.ratingText}>{item.rating}</Text>
-                    <Text style={styles.metaText}> • {item.reviewCount} reviews</Text>
+                    <Text style={styles.cardMetaText}> • {item.reviewCount} reviews</Text>
                   </View>
 
-                  <Text style={styles.metaText}>{item.cuisine.join(' • ')} • {item.priceRange}</Text>
+                  <Text style={styles.cardMetaText} numberOfLines={1}>{item.cuisine.join(' • ')} • {item.priceRange}</Text>
                   <View style={styles.metaRow}>
-                    <Text style={styles.metaText}>{item.distance}</Text>
-                    <Text style={styles.metaDot}>•</Text>
-                    <Text style={[styles.metaText, item.status === 'OPEN' ? styles.openText : styles.closedText]}>{item.status === 'OPEN' ? 'Open now' : 'Closed'}</Text>
+                    <Text style={styles.cardMetaText}>{item.distance}</Text>
+                    <Text style={styles.cardMetaText}>•</Text>
+                    <Text style={[styles.cardMetaText, item.status === 'OPEN' ? styles.openText : styles.closedText]}>{item.status === 'OPEN' ? 'Open now' : 'Closed'}</Text>
                   </View>
 
                   <View style={styles.cardFootRow}>
                     {item.groupFriendly ? <View style={styles.tag}><Text style={styles.tagText}>Group Friendly</Text></View> : null}
                     {item.offer ? <View style={[styles.tag, styles.offerTag]}><Text style={styles.tagText}>{item.offer}</Text></View> : null}
-                    <ArrowRight size={16} color={palette.dark} />
+                    <ArrowRight size={15} color={palette.dark} style={styles.cardChevron} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -647,11 +630,11 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
           />
         )}
 
+        </>}
+
         {selectedRestaurant ? (
-          <Modal visible={!!selectedRestaurant} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setSelectedRestaurant(null)}>
-            <View style={styles.detailsSheetWrap}>
-              <View style={styles.detailsSheet}>
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailsContent}>
+            <View style={styles.inlineDetailsWrap}>
+              <ScrollView style={styles.inlineDetailsScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailsContent}>
                   <Image source={{ uri: selectedRestaurant.heroImage }} style={styles.detailsHeroImage} />
                   <View style={styles.detailsHeaderRow}>
                     <TouchableOpacity style={styles.roundIcon} onPress={() => setSelectedRestaurant(null)}>
@@ -663,7 +646,7 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                   </View>
 
                   <Text style={styles.detailsTitle}>{selectedRestaurant.name}</Text>
-                  <View style={styles.ratingRow}>
+                  <View style={[styles.ratingRow, styles.detailsRatingRow]}>
                     <Star size={13} color={palette.amber} fill={palette.amber} />
                     <Text style={styles.ratingText}>{selectedRestaurant.rating}</Text>
                     <Text style={styles.metaText}> • {selectedRestaurant.reviewCount} reviews</Text>
@@ -718,17 +701,15 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                   </View>
 
                   <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.primaryButtonLarge} onPress={() => { setBookingMode('activity'); setShowAddSheet(true); }} activeOpacity={0.9}>
-                      <Text style={styles.primaryButtonText}>Add to Trip</Text>
+                    <TouchableOpacity style={[styles.primaryButtonLarge, styles.detailActionButton]} onPress={() => { setBookingMode('activity'); setShowAddSheet(true); }} activeOpacity={0.9}>
+                      <Text style={[styles.primaryButtonText, styles.detailActionButtonText]}>Add to Trip</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.primaryButtonLarge, styles.bookTableButton]} onPress={() => { setBookingMode('book'); setShowAddSheet(true); }} activeOpacity={0.9}>
-                      <Text style={styles.primaryButtonText}>Book a Table</Text>
+                    <TouchableOpacity style={[styles.primaryButtonLarge, styles.detailActionButton, styles.bookTableButton]} onPress={() => { setBookingMode('book'); setShowAddSheet(true); }} activeOpacity={0.9}>
+                      <Text style={[styles.primaryButtonText, styles.detailActionButtonText]}>Book a Table</Text>
                     </TouchableOpacity>
                   </View>
-                </ScrollView>
-              </View>
+              </ScrollView>
             </View>
-          </Modal>
         ) : null}
 
         <Modal visible={showMenu && !!selectedRestaurant} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowMenu(false)}>
@@ -1097,30 +1078,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   listContent: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: themeSpacing.screenHorizontal,
     paddingBottom: 120,
   },
   restaurantCard: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: backgrounds.card,
+    borderRadius: cardRadius.card,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: palette.line,
-    marginBottom: spacing.md,
+    borderColor: borders.card,
+    marginBottom: themeSpacing.sectionGap,
     shadowColor: palette.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
   },
   cardImage: {
-    width: 110,
-    height: 140,
+    width: 88,
+    alignSelf: 'stretch',
   },
   cardBody: {
     flex: 1,
-    padding: 12,
+    minWidth: 0,
+    padding: themeSpacing.sectionGap,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -1128,16 +1110,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: themeFontSize.sectionTitle,
+    lineHeight: 19,
     fontWeight: '700',
     color: palette.dark,
     flex: 1,
+    minWidth: 0,
     marginRight: 6,
   },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 4,
+  },
+  detailsRatingRow: {
+    marginHorizontal: spacing.lg,
   },
   ratingText: {
     marginLeft: 4,
@@ -1149,11 +1136,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: palette.darkMuted,
   },
+  cardMetaText: {
+    fontSize: themeFontSize.sectionSubtitle,
+    lineHeight: 14,
+    color: palette.darkMuted,
+  },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
-    gap: 6,
+    marginTop: 4,
+    gap: 5,
   },
   metaDot: {
     fontSize: 12,
@@ -1168,24 +1160,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   cardFootRow: {
-    marginTop: 12,
+    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 6,
   },
   tag: {
-    backgroundColor: '#EEF8F5',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    backgroundColor: backgrounds.infoBox,
+    borderRadius: cardRadius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   offerTag: {
-    backgroundColor: '#FFF7ED',
+    backgroundColor: backgrounds.input,
   },
   tagText: {
-    fontSize: 10,
+    fontSize: themeFontSize.smallBadge,
     fontWeight: '700',
     color: palette.dark,
+  },
+  cardChevron: {
+    marginLeft: 'auto',
   },
   mapWrap: {
     flex: 1,
@@ -1329,33 +1325,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
   },
-  mapPreviewCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    overflow: 'hidden',
-    marginTop: 18,
-    borderWidth: 1,
-    borderColor: palette.line,
-  },
-  previewImage: {
-    width: 96,
-    height: 118,
-  },
-  previewBody: {
-    flex: 1,
-    padding: 12,
-  },
-  previewTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: palette.dark,
-  },
-  previewMeta: {
-    fontSize: 12,
-    color: palette.darkMuted,
-    marginTop: 3,
-  },
   loadingWrap: {
     flex: 1,
     alignItems: 'center',
@@ -1436,6 +1405,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 20,
   },
+  detailActionButton: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 10,
+  },
+  detailActionButtonText: {
+    flexShrink: 1,
+    textAlign: 'center',
+    fontSize: 14,
+  },
   bookTableButton: {
     backgroundColor: palette.dark,
   },
@@ -1460,17 +1439,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: palette.dark,
   },
-  detailsSheetWrap: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
   sheetBackdrop: {
     ...StyleSheet.absoluteFill,
   },
-  detailsSheet: {
+  inlineDetailsWrap: {
     flex: 1,
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
+  },
+  inlineDetailsScroll: {
+    flex: 1,
+  },
+  hidden: {
+    display: 'none',
   },
   sheetHandle: {
     width: 44,

@@ -10,6 +10,7 @@ const packageRoutes = require('./package.route');
 const savedTripRoutes = require('./savedTrip.route');
 const supportRoutes = require('./support.route');
 const dineRoutes = require('./dine.route');
+const nugenController = require('../controllers/nugen.controller');
 const dineController = require('../controllers/dine.controller');
 const healthController = require('../controllers/health.controller');
 const digitalTwinRoutes = require('./digitalTwin.route');
