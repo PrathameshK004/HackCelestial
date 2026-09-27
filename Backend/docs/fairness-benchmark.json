@@ -1,0 +1,27 @@
+[
+  {
+    "sample_num": 1,
+    "instruction": "Explain how the Gini coefficient measures expense fronting fairness in group travel.",
+    "response": "The Gini coefficient measures the inequality of upfront cash fronted by travelers on a scale from 0.0 to 1.0. A score below 0.35 indicates healthy, shared expense distribution. A score between 0.35 and 0.60 reflects moderate concentration where a few travelers carry the load. A score exceeding 0.60 flags severe fronting inequality where one person is funding most bookings, triggering recommendations to rotate payers for upcoming expenses."
+  },
+  {
+    "sample_num": 2,
+    "instruction": "How does the Min-Cash-Flow algorithm simplify group debt settlement?",
+    "response": "The greedy Min-Cash-Flow algorithm models trip obligations as a bipartite graph between creditors and debtors. By sorting debtors by largest debt and creditors by largest credit, it directly pairs them to settle the maximum possible amount in a single transfer. This mathematical optimization guarantees that all group debts are fully cleared in at most (N - 1) transactions for N participants, completely eliminating circular intermediate transfers."
+  },
+  {
+    "sample_num": 3,
+    "instruction": "What is the Financial Stress Index (FSI) and how is it scored?",
+    "response": "The Financial Stress Index is a composite metric scored from 0 to 100 that quantifies financial friction in a trip ledger. It evaluates fronting concentration (up to 40 points if top payer fronted over 70% of spend), debt saturation (up to 30 points if unsettled debts exceed 75% of spend), and ledger anomalies like duplicate payments (up to 30 points). Scores from 0-29 are Low, 30-49 Moderate, 50-69 High, and 70-100 Critical."
+  },
+  {
+    "sample_num": 4,
+    "instruction": "Alice paid Rs 24,000, Bob paid Rs 8,000, Charlie paid Rs 4,000, and Diana paid Rs 4,000 for a 4-person trip split equally. What are their net balances and optimal settlement transfers?",
+    "response": "Total spend is Rs 40,000, making each person's equal share Rs 10,000. Net balances: Alice is +Rs 14,000 (Creditor); Bob is -Rs 2,000 (Debtor); Charlie is -Rs 6,000 (Debtor); Diana is -Rs 6,000 (Debtor). Optimal settlement transfers: Charlie pays Alice Rs 6,000; Diana pays Alice Rs 6,000; Bob pays Alice Rs 2,000. All obligations are cleared in exactly 3 transfers."
+  },
+  {
+    "sample_num": 5,
+    "instruction": "How should a duplicate settlement payment anomaly be handled in the trip ledger?",
+    "response": "When two payment records with identical sender, receiver, and amount occur within a 24-hour window, TripFairness AI flags them as a critical duplicate payment anomaly. Automatic balance deduction is paused, the Financial Stress Index is penalized by 20 points, and the group organizer is alerted to confirm whether the second payment was an accidental double-tap before committing it to the permanent ledger."
+  }
+]

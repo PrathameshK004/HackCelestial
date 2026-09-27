@@ -19,12 +19,9 @@ export const groupService = {
   },
 
   async getMyGroups(): Promise<{ message: string; data: any[] }> {
-    return apiRequest<{ message: string; data: any[] }>(
-      "/groups/my-groups",
-      {
-        method: "GET",
-      },
-    );
+    return apiRequest<{ message: string; data: any[] }>("/groups/my-groups", {
+      method: "GET",
+    });
   },
 
   async getGroupById(groupId: string): Promise<{ message: string; data: any }> {
@@ -150,13 +147,26 @@ export const groupService = {
   async analyzeTripWithNugen(
     tripData: Record<string, any>,
   ): Promise<{ message: string; data: any }> {
-    return apiRequest<{ message: string; data: any }>(
-      "/trip-fairness/nugen",
-      {
-        method: "POST",
-        body: JSON.stringify({ tripData }),
-      },
-    );
+    return apiRequest<{ message: string; data: any }>("/trip-fairness/nugen", {
+      method: "POST",
+      body: JSON.stringify({ tripData }),
+    });
+  },
+
+  async simulateSettlementStrategy(
+    tripData: Record<string, any>,
+    options: { mode?: "min_transfers" | "organizer_hub" | "threshold_filter"; threshold?: number; organizerId?: string } = {}
+  ): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>("/trip-fairness/simulate", {
+      method: "POST",
+      body: JSON.stringify({ tripData, ...options }),
+    });
+  },
+
+  async getFairnessMetrics(): Promise<{ message: string; data: any }> {
+    return apiRequest<{ message: string; data: any }>("/trip-fairness/metrics", {
+      method: "GET",
+    });
   },
 
   async recordSettlement(

@@ -701,7 +701,12 @@ async function createDiningActivity({ groupId, restaurantId, date, startTime, en
     date: result.rows[0].activity_date,
     startTime: result.rows[0].start_time,
     endTime: result.rows[0].end_time,
-    participants: JSON.parse(result.rows[0].participants || '[]'),
+    participants: (() => {
+      const raw = result.rows[0].participants;
+      if (Array.isArray(raw)) return raw;
+      if (!raw) return [];
+      try { return JSON.parse(raw); } catch { return []; }
+    })(),
     estimatedBudget: result.rows[0].estimated_budget,
     currency: result.rows[0].currency,
     notes: result.rows[0].notes,

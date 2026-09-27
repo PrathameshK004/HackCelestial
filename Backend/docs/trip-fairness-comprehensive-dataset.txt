@@ -1,0 +1,124 @@
+# TripFairness AI: Comprehensive Group Travel Expense Settlement & Fairness Dataset
+
+## 1. Domain Specification & Intelligence Framework
+TripFairness AI is a specialized financial intelligence layer for group travel, vacation ledgers, shared bookings, and multi-party communal dining. It resolves complex social and mathematical frictions by enforcing:
+1. Exact Net Balance Invariants: Sum of all net ledger balances across all participants must equal zero (sum(netBalance_i) == 0).
+2. Upfront Fronting Equity via Gini Coefficient: Measuring the inequality of capital outlay among members.
+3. Financial Stress Index (FSI): Early detection of fronting fatigue and credit concentration before trip completion.
+4. Minimal Cash Flow Settlement: Eliminating redundant transactions using greedy bipartite graph reduction (Min-Transfers).
+5. Ledger Integrity & Anomaly Detection: Flagging duplicate transactions, circular refunds, and disproportionate booking spikes.
+
+---
+
+## 2. Core Mathematical Formulations
+
+### 2.1 Net Balance Equations
+For traveler i in group P of size n:
+- totalPaid(i) = sum of booking and expense payments contributed upfront by i
+- totalShare(i) = sum of cost shares allocated to i across all items (equal or custom splits)
+- netBalance(i) = totalPaid(i) - totalShare(i)
+- When netBalance(i) > 0: Creditor. The group owes money to traveler i.
+- When netBalance(i) < 0: Debtor. Traveler i owes money to the group.
+
+### 2.2 Gini Coefficient for Fronting Inequality
+G = [2 * sum(k * paid_sorted[k]) - (n + 1) * sum(paid_sorted)] / [n * sum(paid_sorted)]
+Where paid_sorted is sorted in ascending order for k = 1 to n.
+- G < 0.35: Healthy, egalitarian fronting distribution.
+- 0.35 <= G <= 0.60: Moderate concentration. Advisory: Encourage secondary members to pay for upcoming dining/activities.
+- G > 0.60: Critical concentration. 1 or 2 travelers are shouldering over 80% of upfront cash obligations.
+
+### 2.3 Financial Stress Index (FSI)
+A composite index scored from 0 to 100:
+- Fronting Factor (0 to 40 pts): Top fronting ratio = max(paid(i)) / totalTripSpend. >50% gives 25 pts; >70% gives 40 pts.
+- Debt Saturation (0 to 30 pts): Total unsettled debt / totalTripSpend. >40% gives 15 pts; >75% gives 30 pts.
+- Anomaly Penalty (0 to 30 pts): Duplicate entries add 20 pts; extreme outlier expenses add 10 pts.
+Risk Levels:
+- 0 to 29: Low (Nominal group equity)
+- 30 to 49: Moderate (Mild imbalance, normal progress)
+- 50 to 69: High (Action needed: fronting load skewed)
+- 70 to 100: Critical (Immediate settlement required to prevent discord)
+
+### 2.4 Greedy Min-Cash-Flow Algorithm
+1. Separate participants into Creditors (net > 0) and Debtors (net < 0).
+2. Sort Creditors descending by credit; sort Debtors descending by absolute debt.
+3. Match top debtor with top creditor, transferring min(|debt|, credit).
+4. Update balances and repeat until all net balances are 0.
+5. Invariant: Produces at most (n - 1) transactions for n travelers.
+
+---
+
+## 3. Training Scenarios and Real Ledger Case Studies
+
+### Scenario 1: Goa Beach Villa Weekend (Balanced Splitting)
+- Participants: Alice (id: u1), Bob (id: u2), Charlie (id: u3), Diana (id: u4)
+- Expenses:
+  - Villa Booking: Rs 24,000 paid by Alice, split equally among all 4 (Rs 6,000 each).
+  - Seafood Dinner: Rs 8,000 paid by Bob, split equally among all 4 (Rs 2,000 each).
+  - Scooter Rentals: Rs 4,000 paid by Charlie, split equally among all 4 (Rs 1,000 each).
+  - Groceries & Drinks: Rs 4,000 paid by Diana, split equally among all 4 (Rs 1,000 each).
+- Total Spend: Rs 40,000. Each member's share: Rs 10,000.
+- Net Balances:
+  - Alice: Paid 24,000, Share 10,000 -> Net +14,000 (Creditor)
+  - Bob: Paid 8,000, Share 10,000 -> Net -2,000 (Debtor)
+  - Charlie: Paid 4,000, Share 10,000 -> Net -6,000 (Debtor)
+  - Diana: Paid 4,000, Share 10,000 -> Net -6,000 (Debtor)
+- Settlement Plan:
+  1. Charlie pays Alice Rs 6,000.
+  2. Diana pays Alice Rs 6,000.
+  3. Bob pays Alice Rs 2,000.
+- Gini: 0.42. FSI: 38 (Moderate). Advice: Alice fronted 60% of trip costs; direct all remaining settlements to Alice.
+
+### Scenario 2: Manali Trek Expedition (High Fronting Stress)
+- Participants: Rahul (id: m1), Priya (id: m2), Amit (id: m3), Sneha (id: m4), Vikram (id: m5)
+- Expenses:
+  - Trek Agency & Permits: Rs 65,000 paid by Rahul, split equally (Rs 13,000 each).
+  - Gear Rental: Rs 15,000 paid by Rahul, split equally (Rs 3,000 each).
+  - Cabin Stay: Rs 10,000 paid by Rahul, split equally (Rs 2,000 each).
+  - Snacks on Trail: Rs 2,500 paid by Priya, split equally (Rs 500 each).
+- Total Spend: Rs 92,500. Share per person: Rs 18,500.
+- Net Balances:
+  - Rahul: Paid 90,000, Share 18,500 -> Net +71,500 (Heavy Creditor)
+  - Priya: Paid 2,500, Share 18,500 -> Net -16,000 (Debtor)
+  - Amit: Paid 0, Share 18,500 -> Net -18,500 (Debtor)
+  - Sneha: Paid 0, Share 18,500 -> Net -18,500 (Debtor)
+  - Vikram: Paid 0, Share 18,500 -> Net -18,500 (Debtor)
+- Gini: 0.78 (Severe inequality). FSI: 82 (Critical Stress).
+- Recommendation: Rahul has fronted 97% of total trip costs. Interim settlements should be executed immediately before the trip concludes.
+
+### Scenario 3: Kerala Backwaters (Uneven / Custom Split Model)
+- Participants: Meera (id: k1), Arjun (id: k2), Rohan (id: k3)
+- Houseboat: Rs 30,000 paid by Meera. Meera takes master suite (Rs 15,000), Arjun and Rohan take standard rooms (Rs 7,500 each).
+- Ayurvedic Spa: Rs 6,000 paid by Arjun for Arjun and Rohan only (Rs 3,000 each; Meera opted out).
+- Total Spend: Rs 36,000.
+- Shares:
+  - Meera: Rs 15,000.
+  - Arjun: Rs 7,500 + Rs 3,000 = Rs 10,500.
+  - Rohan: Rs 7,500 + Rs 3,000 = Rs 10,500.
+- Net Balances:
+  - Meera: Paid 30,000 - Share 15,000 = +15,000.
+  - Arjun: Paid 6,000 - Share 10,500 = -4,500.
+  - Rohan: Paid 0 - Share 10,500 = -10,500.
+- Settlement:
+  1. Rohan pays Meera Rs 10,500.
+  2. Arjun pays Meera Rs 4,500.
+- Result: 2 clean transactions completely clear the ledger.
+
+---
+
+## 4. Anomaly Detection and Ledger Integrity
+
+### Anomaly Type A: Duplicate Payment Submissions
+When two payment records with identical sender, receiver, and amount occur within short succession (e.g. UPI double-tap):
+- Detection Rule: (fromMemberId == prior.fromMemberId && toMemberId == prior.toMemberId && amount == prior.amount && timeDelta < 24h)
+- Resolution: Flag as critical anomaly. Halt automatic balance deduction until confirmed by payer and receiver.
+
+### Anomaly Type B: Unusually Disproportionate Single Expense
+- When an individual booking exceeds 40% of the entire trip budget, tag for explicit breakdown validation.
+- Prevents accidental decimal errors (e.g. typing 50,000 instead of 5,000 for a local taxi).
+
+---
+
+## 5. Alternative Settlement Strategies
+1. Min Transfers (Bipartite Optimization): Minimizes transaction count to (n - 1). Recommended default for friends and travel peers.
+2. Organizer Hub: All debtors send funds to the trip leader/organizer; the organizer disburses to all creditors. Best for corporate or structured group tours.
+3. Threshold Filtering: Any micro-debt below Rs 20 is absorbed or rounded down to eliminate annoying micro-transactions.

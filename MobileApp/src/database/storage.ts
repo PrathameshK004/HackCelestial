@@ -4,16 +4,16 @@
  * Relational trip/ledger data is NOT stored here; it is stored in SQLite.
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User } from '../types';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { User } from "../types";
 
-export const TOKEN_STORAGE_KEY = 'triptual_auth_token';
-export const REFRESH_TOKEN_KEY = 'triptual_refresh_token';
-export const USER_STORAGE_KEY = 'triptual_auth_user';
-export const OFFLINE_MODE_PREF_KEY = 'triptual_offline_pref';
-export const PUSH_TOKEN_KEY = 'triptual_fcm_push_token';
-export const READ_NOTIFICATIONS_KEY = 'triptual_read_notifications';
-export const EXPLORE_PACKAGES_CACHE_KEY = 'triptual_explore_packages_v1';
+export const TOKEN_STORAGE_KEY = "triptual_auth_token";
+export const REFRESH_TOKEN_KEY = "triptual_refresh_token";
+export const USER_STORAGE_KEY = "triptual_auth_user";
+export const OFFLINE_MODE_PREF_KEY = "triptual_offline_pref";
+export const PUSH_TOKEN_KEY = "triptual_fcm_push_token";
+export const READ_NOTIFICATIONS_KEY = "triptual_read_notifications";
+export const EXPLORE_PACKAGES_CACHE_KEY = "triptual_explore_packages_v1";
 
 export const storage = {
   async getAuthToken(): Promise<string | null> {
@@ -28,7 +28,7 @@ export const storage = {
     try {
       await AsyncStorage.setItem(TOKEN_STORAGE_KEY, token);
     } catch (e) {
-      console.warn('Failed to save auth token:', e);
+      console.warn("Failed to save auth token:", e);
     }
   },
 
@@ -44,7 +44,7 @@ export const storage = {
     try {
       await AsyncStorage.setItem(REFRESH_TOKEN_KEY, token);
     } catch (e) {
-      console.warn('Failed to save refresh token:', e);
+      console.warn("Failed to save refresh token:", e);
     }
   },
 
@@ -61,7 +61,7 @@ export const storage = {
     try {
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     } catch (e) {
-      console.warn('Failed to save auth user:', e);
+      console.warn("Failed to save auth user:", e);
     }
   },
 
@@ -77,17 +77,24 @@ export const storage = {
 
   async setCachedExplorePackages<T>(packages: T[]): Promise<void> {
     try {
-      await AsyncStorage.setItem(EXPLORE_PACKAGES_CACHE_KEY, JSON.stringify(packages));
+      await AsyncStorage.setItem(
+        EXPLORE_PACKAGES_CACHE_KEY,
+        JSON.stringify(packages),
+      );
     } catch (e) {
-      console.warn('Failed to cache explore packages:', e);
+      console.warn("Failed to cache explore packages:", e);
     }
   },
 
   async clearSession(): Promise<void> {
     try {
-      await AsyncStorage.multiRemove([TOKEN_STORAGE_KEY, REFRESH_TOKEN_KEY, USER_STORAGE_KEY]);
+      await AsyncStorage.multiRemove([
+        TOKEN_STORAGE_KEY,
+        REFRESH_TOKEN_KEY,
+        USER_STORAGE_KEY,
+      ]);
     } catch (e) {
-      console.warn('Failed to clear session:', e);
+      console.warn("Failed to clear session:", e);
     }
   },
 
@@ -103,7 +110,7 @@ export const storage = {
     try {
       await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
     } catch (e) {
-      console.warn('Failed to save push token:', e);
+      console.warn("Failed to save push token:", e);
     }
   },
 
@@ -111,7 +118,7 @@ export const storage = {
     try {
       await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
     } catch (e) {
-      console.warn('Failed to remove push token:', e);
+      console.warn("Failed to remove push token:", e);
     }
   },
 
@@ -128,7 +135,7 @@ export const storage = {
     try {
       await AsyncStorage.setItem(READ_NOTIFICATIONS_KEY, JSON.stringify(ids));
     } catch (e) {
-      console.warn('Failed to save read notification IDs:', e);
+      console.warn("Failed to save read notification IDs:", e);
     }
   },
 
@@ -141,7 +148,7 @@ export const storage = {
         await this.setReadNotificationIds(existing);
       }
     } catch (e) {
-      console.warn('Failed to mark notification read in storage:', e);
+      console.warn("Failed to mark notification read in storage:", e);
     }
   },
 
@@ -151,7 +158,7 @@ export const storage = {
       const combined = Array.from(new Set([...existing, ...ids]));
       await this.setReadNotificationIds(combined);
     } catch (e) {
-      console.warn('Failed to mark all notifications read in storage:', e);
+      console.warn("Failed to mark all notifications read in storage:", e);
     }
   },
 
@@ -159,7 +166,7 @@ export const storage = {
     try {
       await AsyncStorage.removeItem(READ_NOTIFICATIONS_KEY);
     } catch (e) {
-      console.warn('Failed to clear read notification IDs:', e);
+      console.warn("Failed to clear read notification IDs:", e);
     }
-  }
+  },
 };

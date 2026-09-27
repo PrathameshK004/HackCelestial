@@ -25,8 +25,10 @@ import {
   Filter,
   Heart,
   MapPin,
+  Minus,
   Navigation,
   Phone,
+  Plus,
   Search,
   Star,
   Utensils,
@@ -39,6 +41,7 @@ import {
 } from '../data/dineData';
 import { dineService, mapServerRestaurantToAppRestaurant } from '../api/dine.service';
 import { useTrips } from '../context/TripContext';
+import { useAuth } from '../context/AuthContext';
 import { RestaurantMapView } from '../components/map/RestaurantMapView';
 import {
   backgrounds,
@@ -98,7 +101,8 @@ interface RestaurantTimeSlot {
 
 export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline = false, onClose }) => {
   const insets = useSafeAreaInsets();
-  const { trips, refreshTrips } = useTrips();
+  const { trips, refreshTrips, addExpense } = useTrips();
+  const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [restaurantLoadError, setRestaurantLoadError] = useState<string | null>(null);
@@ -117,6 +121,7 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
   const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [numPersons, setNumPersons] = useState(2);
   const [budget, setBudget] = useState('2500');
   const [mapRegion, setMapRegion] = useState<Region>({
     latitude: 15.495,
@@ -154,15 +159,29 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
   useEffect(() => {
     let isMounted = true;
 
-    const loadFavorites = async () => {
-      try {
-        const favoriteRestaurants = await dineService.getFavoriteRestaurants();
-        if (!isMounted) return;
-        setFavorites(favoriteRestaurants.map((restaurant: any) => String(restaurant.id)));
-      } catch {
+    dineService.getFavoriteRestaurants()
+      .then((favoriteRestaurants) => {
+        if (isMounted) {
+          setFavorites(favoriteRestaurants.map((restaurant: any) => String(restaurant.id)));
+        }
+      })
+      .catch(() => {
         if (isMounted) setFavorites([]);
-      }
+      });
+
+    return () => {
+      isMounted = false;
     };
+  }, []);
+
+  const requestLatitude = viewMode === 'map' ? mapRegion.latitude : null;
+  const requestLongitude = viewMode === 'map' ? mapRegion.longitude : null;
+  const requestRadius = viewMode === 'map'
+    ? Math.min(25000, Math.max(1000, mapRegion.latitudeDelta * 55500))
+    : null;
+
+  useEffect(() => {
+    let isMounted = true;
 
     const loadRestaurants = async () => {
       setIsLoading(true);
@@ -176,16 +195,16 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
         };
         const payload = viewMode === 'map' && !query
           ? await dineService.getNearbyRestaurants({
-              latitude: mapRegion.latitude,
-              longitude: mapRegion.longitude,
-              radius: Math.min(25000, Math.max(1000, mapRegion.latitudeDelta * 55500)),
+              latitude: requestLatitude!,
+              longitude: requestLongitude!,
+              radius: requestRadius!,
               ...commonFilters,
             })
           : await dineService.searchRestaurants({
               q: query || undefined,
-              latitude: viewMode === 'map' ? mapRegion.latitude : undefined,
-              longitude: viewMode === 'map' ? mapRegion.longitude : undefined,
-              radius: viewMode === 'map' ? Math.min(25000, Math.max(1000, mapRegion.latitudeDelta * 55500)) : undefined,
+              latitude: requestLatitude ?? undefined,
+              longitude: requestLongitude ?? undefined,
+              radius: requestRadius ?? undefined,
               ...commonFilters,
             });
 
@@ -214,14 +233,13 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
       }
     };
 
-    loadFavorites();
     const searchTimeout = setTimeout(() => { void loadRestaurants(); }, 350);
 
     return () => {
       isMounted = false;
       clearTimeout(searchTimeout);
     };
-  }, [searchQuery, filters.groupFriendly, filters.openNow, filters.price, mapRegion.latitude, mapRegion.longitude, viewMode, restaurantRefreshKey]);
+  }, [searchQuery, filters.groupFriendly, filters.openNow, filters.price, requestLatitude, requestLongitude, requestRadius, viewMode, restaurantRefreshKey]);
 
   const filteredRestaurants = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -322,6 +340,8 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
       .map((member) => String(member.id));
     const parsedDate = new Date(`${selectedDate}T00:00:00`);
     const estimatedBudget = Number(budget);
+    // Use numPersons if greater than selected member count (covers external guests)
+    const effectivePersonCount = Math.max(participantIds.length, numPersons);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate) || Number.isNaN(parsedDate.getTime())) {
       Alert.alert('Choose a valid date', 'Use the YYYY-MM-DD date format.');
@@ -332,7 +352,7 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
       return;
     }
     if (bookingMode === 'book' && !availableSlots.some((slot) => slot.startTime === selectedTime)) {
-      Alert.alert('Choose an available slot', 'Select one of the restaurant’s open booking times.');
+      Alert.alert('Choose an available slot', "Select one of the restaurant's open booking times.");
       return;
     }
     if (!participantIds.length) {
@@ -350,7 +370,7 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
           date: selectedDate,
           startTime: selectedTime,
           participants: participantIds,
-          guestCount: participantIds.length,
+          guestCount: effectivePersonCount,
           estimatedBudget,
           currency: selectedTrip.currency || 'INR',
           notes: `${selectedRestaurant.name} table booking`,
@@ -366,19 +386,47 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
           notes: `${selectedRestaurant.name} dinner plan`,
         });
       }
+
+      // Auto-add dining as a group expense so it shows in the expense ledger
+      const organizerMember = tripMembers.find((m) => m.role === 'Organizer') ?? tripMembers[0];
+      if (organizerMember && participantIds.length > 0) {
+        try {
+          const expenseParticipants = participantIds.map((id) => ({
+            memberId: id,
+            shareType: 'EQUAL_UNIT' as const,
+            shareValue: 1,
+            isOptedIn: true,
+          }));
+          await addExpense(selectedTrip.id, {
+            title: `Dining at ${selectedRestaurant.name}`,
+            description: `${bookingMode === 'book' ? 'Table booking' : 'Dinner plan'} at ${selectedRestaurant.name} on ${selectedDate} (${effectivePersonCount} persons)`,
+            amount: estimatedBudget,
+            category: 'Food',
+            paidById: String(organizerMember.id),
+            paidByName: organizerMember.name,
+            splitModel: 'EQUAL',
+            participants: expenseParticipants,
+            paymentMethod: 'CASH',
+          });
+        } catch {
+          // Expense add is best-effort; don't block the success flow
+        }
+      }
+
       await refreshTrips();
 
       Alert.alert(
         bookingMode === 'book' ? 'Booking request saved' : 'Dining activity added',
         bookingMode === 'book'
-          ? `${selectedRestaurant.name} booking for ${participantIds.length} guests has been saved to ${selectedTrip.name}.`
-          : `${selectedRestaurant.name} has been added to ${selectedTrip.name}.`,
+          ? `${selectedRestaurant.name} booking for ${effectivePersonCount} persons has been saved to ${selectedTrip.name} and added to group expenses.`
+          : `${selectedRestaurant.name} has been added to ${selectedTrip.name} and recorded in group expenses.`,
         [{ text: 'Great', onPress: () => setShowAddSheet(false) }],
       );
     } catch (error: any) {
       Alert.alert('Could not add dining activity', error?.message || 'Please try again.');
     }
   };
+
 
   const clearSearch = () => setSearchQuery('');
   const resetFilters = () => setFilters(initialFilters);
@@ -813,7 +861,7 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                 />
               )}
 
-              <Text style={styles.formLabel}>Participants</Text>
+              <Text style={styles.formLabel}>Trip members dining</Text>
               <View style={styles.pillRow}>
                 {(selectedTrip?.members ?? []).map((member) => {
                   const memberId = String(member.id);
@@ -836,6 +884,30 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
                 })}
               </View>
 
+              <Text style={styles.formLabel}>Total persons (incl. guests)</Text>
+              <View style={styles.personsRow}>
+                <TouchableOpacity
+                  style={styles.personsBtn}
+                  onPress={() => setNumPersons((n) => Math.max(1, n - 1))}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Decrease persons"
+                >
+                  <Minus size={16} color={palette.dark} />
+                </TouchableOpacity>
+                <View style={styles.personsValue}>
+                  <Users size={14} color={palette.primary} />
+                  <Text style={styles.personsText}>{numPersons}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.personsBtn}
+                  onPress={() => setNumPersons((n) => Math.min(40, n + 1))}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Increase persons"
+                >
+                  <Plus size={16} color={palette.dark} />
+                </TouchableOpacity>
+              </View>
+
               <Text style={styles.formLabel}>Estimated budget</Text>
               <TextInput
                 value={budget}
@@ -846,9 +918,9 @@ export const DineScreen: React.FC<DineScreenProps> = ({ visible = true, inline =
               />
 
               <View style={styles.expenseSummary}>
-                <Text style={styles.expenseLabel}>Dining Expense</Text>
+                <Text style={styles.expenseLabel}>Dining Expense → Group Ledger</Text>
                 <Text style={styles.expenseAmount}>₹{budget}</Text>
-                <Text style={styles.expenseMeta}>{selectedParticipants.length} people • ₹{Math.round(Number(budget || 0) / Math.max(selectedParticipants.length, 1))} per person</Text>
+                <Text style={styles.expenseMeta}>{Math.max(selectedParticipants.length, numPersons)} persons • ₹{Math.round(Number(budget || 0) / Math.max(selectedParticipants.length, numPersons, 1))} per person</Text>
               </View>
 
               <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleAddToTrip} disabled={bookingMode === 'book' && (isAvailabilityLoading || availableSlots.length === 0)} activeOpacity={0.9}>
@@ -1001,7 +1073,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: palette.line,
+    borderColor: palette.darkMuted,
     overflow: 'hidden',
   },
   toggleButton: {
@@ -1830,5 +1902,30 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 12,
     color: palette.darkMuted,
+  },
+  personsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  personsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  personsValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  personsText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: palette.dark,
   },
 });
